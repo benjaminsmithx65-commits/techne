@@ -844,8 +844,8 @@ async function loadPools() {
             filtered = filterPoolsByAssetType(filtered, filters.assetType, filters.stablecoinType);
         }
 
-        // Limit to max 15 pools on Explore page
-        filtered = filtered.slice(0, 15);
+        // Don't limit here - renderPools handles 15 FREE pools with blur on rest
+        // Maximum 50 pools to show (15 free + 35 blurred)
 
         // Render
         renderPools(filtered);
