@@ -89,6 +89,90 @@ STABLE_WHITELIST = {
     'USD+', 'DOLA', 'MIM', 'alUSD', 'USDD', 'USDN', 'USDX'
 }
 
+# ============================================
+# PROTOCOL CATEGORIES - For pool type labels
+# Dual-sided (is_single=False) = IL Risk!
+# ============================================
+PROTOCOL_CATEGORIES = {
+    # Lending Protocols (Single-sided, No IL)
+    "lending": {
+        "protocols": ["aave", "compound", "morpho", "moonwell", "seamless", "sonne", 
+                      "exactly", "radiant", "benqi", "solend", "marginfi", "kamino",
+                      "spark", "maker", "frax-lend"],
+        "icon": "🏦",
+        "label": "Lending",
+        "is_single": True
+    },
+    # Yield Vaults (Single deposit, auto-compound)
+    "vault": {
+        "protocols": ["beefy", "yearn", "convex", "origin", "infinifi", "stargate"],
+        "icon": "🏛️",
+        "label": "Vault",
+        "is_single": True
+    },
+    # Liquid Staking (Single-sided, No IL)
+    "staking": {
+        "protocols": ["lido", "rocketpool", "marinade", "jito", "sanctum", "frax",
+                      "eigenlayer", "mango"],
+        "icon": "💎",
+        "label": "Staking",
+        "is_single": True
+    },
+    # AMM DEX (Dual-sided LP = IL Risk!)
+    "amm": {
+        "protocols": ["uniswap", "curve", "balancer", "aerodrome", "velodrome", 
+                      "raydium", "orca", "meteora", "sushiswap"],
+        "icon": "🔄",
+        "label": "AMM",
+        "is_single": False  # IL RISK!
+    },
+    # Perpetuals/Derivatives (Single-sided usually)
+    "perps": {
+        "protocols": ["gmx", "drift", "avantis", "jupiter-perps"],
+        "icon": "📊",
+        "label": "Perps",
+        "is_single": True
+    },
+    # Reward Aggregators (Depends on underlying)
+    "rewards": {
+        "protocols": ["merkl", "pendle", "extra"],
+        "icon": "🎁",
+        "label": "Rewards",
+        "is_single": False  # Usually on top of LP = IL Risk
+    }
+}
+
+def get_pool_category(project: str, symbol: str = "") -> dict:
+    """Get pool category based on protocol name."""
+    project_lower = project.lower() if project else ""
+    
+    for cat_name, cat_data in PROTOCOL_CATEGORIES.items():
+        for proto in cat_data["protocols"]:
+            if proto in project_lower:
+                return {
+                    "category": cat_name,
+                    "category_icon": cat_data["icon"],
+                    "category_label": cat_data["label"],
+                    "is_single_sided": cat_data["is_single"]
+                }
+    
+    # Fallback: detect by symbol if has separator = dual-sided
+    has_separator = any(sep in symbol for sep in ["-", "/", " / "])
+    if has_separator:
+        return {
+            "category": "lp",
+            "category_icon": "💧",
+            "category_label": "LP Pool",
+            "is_single_sided": False
+        }
+    
+    return {
+        "category": "unknown",
+        "category_icon": "❓",
+        "category_label": "DeFi",
+        "is_single_sided": True
+    }
+
 def is_stablecoin(token: str) -> bool:
     """Check if token symbol is a known stablecoin"""
     if not token:
@@ -437,6 +521,8 @@ def format_defillama_pool(pool: Dict[str, Any], blur: bool = True) -> Dict[str, 
         "exposure_type": exposure_type,
         "underlying_tokens": underlying_tokens,
         "premium_insights": premium_insights,
+        # POOL CATEGORY - Auto-classified by protocol
+        **get_pool_category(pool.get("project", ""), pool.get("symbol", "")),
     }
 
 
@@ -678,8 +764,9 @@ async def get_aggregated_pools(
                 if not any(ap in project for ap in allowed_protocols):
                     continue
 
-            # Check if pool is single-sided (no LP separators)
-            is_single_sided = not any(sep in symbol for sep in ["-", "/", " / "])
+            # Use get_pool_category for proper single/dual-sided classification
+            category_info = get_pool_category(project, symbol)
+            is_single_sided = category_info["is_single_sided"]
             
             # Pool type filter
             if pool_type == "single" and not is_single_sided:

@@ -990,6 +990,7 @@ function createPoolCard(pool, isUnlocked, index, freeIndices = new Set()) {
 
             
             <div class="pool-badges">
+                ${pool.category_icon && pool.category_label ? `<span class="badge category" title="${pool.category}">${pool.category_icon} ${pool.category_label}</span>` : ''}
                 ${isVerified ? `<span class="badge verified">🤖 Verified</span>` : ''}
                 ${airdropPotential ? `<span class="badge airdrop">🎁 Airdrop</span>` : ''}
                 ${pool.stablecoin ? `<span class="badge stable">Stable</span>` : ''}
