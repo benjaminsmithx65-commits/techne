@@ -844,8 +844,9 @@ async function loadPools() {
             filtered = filterPoolsByAssetType(filtered, filters.assetType, filters.stablecoinType);
         }
 
-        // Don't limit here - renderPools handles 15 FREE pools with blur on rest
-        // Maximum 50 pools to show (15 free + 35 blurred)
+        // Limit to 15 FREE pools on Explore page (daily rotation, same for all users)
+        // Using filters/credits shows different results
+        filtered = filtered.slice(0, 15);
 
         // Render
         renderPools(filtered);
@@ -950,24 +951,13 @@ function createPoolCard(pool, isUnlocked, index, freeIndices = new Set()) {
     const isVerified = pool.verified || pool.agent_verified;
     const poolData = JSON.stringify(pool).replace(/"/g, '&quot;');
 
-    // Check if this pool is in today's FREE rotation (15 pools, same for everyone, rotates daily)
-    const isFreePool = freeIndices.has(index);
-    const shouldShowPool = isFreePool || isUnlocked;
-
-    const blurredClass = shouldShowPool ? '' : 'pool-blurred';
-    const lockedOverlay = shouldShowPool ? '' : `
-        <div class="pool-locked-overlay">
-            <span class="lock-icon">🔒</span>
-        </div>
-    `;
-
-
+    // All 15 pools are FREE preview - no blur needed
+    // Using filters/credits shows different results
 
     return `
-        <div class="pool-card ${isVerified ? 'verified' : ''} ${blurredClass}" 
-             onclick='${shouldShowPool ? `PoolDetailModal?.show(${poolData})` : ""}' 
+        <div class="pool-card ${isVerified ? 'verified' : ''}" 
+             onclick='PoolDetailModal?.show(${poolData})' 
              data-pool-index="${index}">
-            ${lockedOverlay}
             <div class="pool-header">
                 <div class="pool-protocol">
                     <img src="${protocolIcon}" alt="${pool.project}" class="protocol-icon" onerror="this.style.display='none'">
