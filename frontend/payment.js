@@ -119,7 +119,7 @@ const UnlockModal = {
                         border-radius: 100px;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
                      ">
-                        <img src="/static/icons/usdc.png" width="32" height="32" alt="USDC" style="border-radius: 50%;">
+                        <img src="/icons/usdc.png" width="32" height="32" alt="USDC" style="border-radius: 50%;">
                         <div style="text-align: left;">
                             <div style="font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: #fff; line-height: 1;">0.10</div>
                             <div style="font-size: 0.75rem; color: var(--gold); font-weight: 600; letter-spacing: 0.5px;">USDC (Base)</div>

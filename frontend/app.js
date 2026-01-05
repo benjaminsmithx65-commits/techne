@@ -1239,11 +1239,11 @@ function getProtocolIconUrl(protocol) {
     // Use local icons - SVG for some protocols
     const svgProtocols = ['infinifi'];
     const ext = svgProtocols.includes(slug) ? 'svg' : 'png';
-    return `/static/icons/protocols/${slug}.${ext}`;
+    return `/icons/protocols/${slug}.${ext}`;
 }
 
 function getChainIconUrl(chain) {
-    if (!chain) return '/static/icons/ethereum.png';
+    if (!chain) return '/icons/ethereum.png';
 
     const chainMap = {
         'ethereum': 'ethereum',
@@ -1258,7 +1258,7 @@ function getChainIconUrl(chain) {
     };
 
     const slug = chainMap[chain.toLowerCase()] || 'ethereum';
-    return `/static/icons/${slug}.png`;
+    return `/icons/${slug}.png`;
 }
 
 function getChainEmoji(chain) {

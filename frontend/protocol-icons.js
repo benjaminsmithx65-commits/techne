@@ -93,7 +93,7 @@ const PROTOCOL_ICONS = {
     // RWA & Stablecoin
     peapods: {
         name: 'Peapods Finance',
-        icon: '/static/icons/protocols/peapods.png',
+        icon: '/icons/protocols/peapods.png',
         color: '#00D26A',
         chains: ['ethereum', 'base', 'arbitrum']
     },
@@ -181,7 +181,7 @@ const CHAIN_ICONS = {
 function getProtocolIcon(protocolId, size = 24) {
     const protocol = PROTOCOL_ICONS[protocolId.toLowerCase()];
     if (protocol) {
-        return `<img src="${protocol.icon}" alt="${protocol.name}" width="${size}" height="${size}" class="protocol-icon" onerror="this.src='/static/icons/default.svg'">`;
+        return `<img src="${protocol.icon}" alt="${protocol.name}" width="${size}" height="${size}" class="protocol-icon" onerror="this.src='/icons/default.svg'">`;
     }
     return `<div class="protocol-icon-placeholder" style="width:${size}px;height:${size}px;"></div>`;
 }
