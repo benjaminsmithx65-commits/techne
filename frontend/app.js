@@ -1159,7 +1159,7 @@ function addUnlockOverlay(poolGrid) {
     overlay.className = 'unlock-cta-overlay';
     overlay.innerHTML = `
         <div class="unlock-cta-content">
-            <h3>🔓 Unlock 12 AI-Verified Pools</h3>
+            <h3>🔓 Unlock 16 AI-Verified Pools</h3>
             <p>Get full risk analysis, airdrop potential, and deposit verification for all pools</p>
             <button class="btn-unlock-cta" onclick="UnlockModal.open()">
                 <span>⚡</span> 16 Pools for $0.10 USDC
