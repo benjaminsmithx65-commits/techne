@@ -163,12 +163,20 @@ def is_cache_valid(key: str) -> bool:
 # ============================================
 PROJECT_WHITELIST = {
     # Base chain protocols
-    "morpho", "morpho-blue",
-    "aave", "aave-v3",
+    "morpho", "morpho-blue", "morpho-v1",
+    "aave", "aave-v3", "aave-v2",
     "moonwell",
-    "compound", "compound-v3",
+    "compound", "compound-v3", "compound-v2",
     "aerodrome", "aerodrome-v2", "aerodrome-slipstream",
     "beefy",
+    "merkl",  # Reward aggregator
+    "avantis",  # Perpetuals
+    "origin", "origin-ether",  # Origin Protocol
+    "extra-finance", "extra",
+    "seamless", "seamless-protocol",
+    "sonne", "sonne-finance",
+    "exactly", "exactly-protocol",
+    "infinifi",
     
     # Solana protocols
     "marinade", "marinade-finance",
@@ -189,14 +197,14 @@ PROJECT_WHITELIST = {
     "curve", "curve-dex",
     "convex", "convex-finance",
     "yearn", "yearn-finance",
-    "uniswap", "uniswap-v3",
+    "uniswap", "uniswap-v3", "uniswap-v4",
     "sushiswap",
     "balancer",
     "gmx",
     "pendle",
     "eigenlayer", "eigen-layer",
     "rocketpool", "rocket-pool",
-    "frax", "frax-finance",
+    "frax", "frax-finance", "frax-lend",
     "maker", "makerdao",
     "spark", "spark-protocol",
     "radiant", "radiant-capital",
