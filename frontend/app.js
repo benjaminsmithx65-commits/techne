@@ -844,9 +844,9 @@ async function loadPools() {
             filtered = filterPoolsByAssetType(filtered, filters.assetType, filters.stablecoinType);
         }
 
-        // Limit to 15 FREE pools on Explore page (daily rotation, same for all users)
+        // Limit to 16 FREE pools on Explore page (daily rotation, same for all users)
         // Using filters/credits shows different results
-        filtered = filtered.slice(0, 15);
+        filtered = filtered.slice(0, 16);
 
         // Render
         renderPools(filtered);
