@@ -477,6 +477,24 @@ def format_defillama_pool(pool: Dict[str, Any], blur: bool = True) -> Dict[str, 
     # FIXED: Use classify_pool_type for accurate IL risk
     classification = classify_pool_type(pool.get("symbol", ""))
     
+    # Get pool category for protocol-based IL risk
+    category_info = get_pool_category(pool.get("project", ""), pool.get("symbol", ""))
+    
+    # IL Risk Logic:
+    # - Single-sided protocols (lending, staking) = No IL
+    # - Dual-sided protocols (AMM, LP) = IL Risk (even stablecoin pairs have some IL)
+    if category_info["is_single_sided"]:
+        il_risk = "no"
+        il_risk_level = "None"
+    else:
+        # AMM/LP pools - check if all stablecoins for reduced IL
+        if classification["pool_type"] == "stable":
+            il_risk = "low"  # Stablecoin LP = low IL risk
+            il_risk_level = "Low"
+        else:
+            il_risk = "yes"  # Volatile LP = high IL risk
+            il_risk_level = "High"
+    
     # Extract reward token from project name or symbol
     reward_token = pool.get("rewardTokens", ["TOKEN"])[0] if pool.get("rewardTokens") else "TOKEN"
     
@@ -499,13 +517,13 @@ def format_defillama_pool(pool: Dict[str, Any], blur: bool = True) -> Dict[str, 
         "volume_24h": round(volume_1d),
         "volume_24h_formatted": f"${volume_1d:,.0f}" if volume_1d else None,
         "volume_7d": round(volume_7d),
-        "stablecoin": classification["pool_type"] == "stable",  # FIXED
-        "pool_type": classification["pool_type"],  # NEW: "stable" or "volatile"
+        "stablecoin": classification["pool_type"] == "stable",
+        "pool_type": classification["pool_type"],
         "risk_score": risk,
         "risk_reasons": risk_reasons,
-        "il_risk": classification["il_risk"],  # FIXED: Uses token analysis
-        "il_risk_level": classification["il_risk_level"],  # NEW: "None" or "High"
-        "reward_token": reward_token,  # NEW: Token symbol for rewards
+        "il_risk": il_risk,  # FIXED: Uses protocol category + token analysis
+        "il_risk_level": il_risk_level,  # "None", "Low", or "High"
+        "reward_token": reward_token,
         "source": "defillama",
         "source_badge": "",
         "source_name": "DefiLlama",
