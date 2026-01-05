@@ -27,7 +27,7 @@ pip install -r backend/requirements.txt
 
 # 5. Environment variables
 cat > $APP_DIR/.env << 'EOF'
-TELEGRAM_BOT_TOKEN=8555503724:AAGUFGvYTKnQtXIKjqfLi0Sq04xcYP0BqNg
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-your_telegram_bot_token_here}
 PYTHONUNBUFFERED=1
 EOF
 
