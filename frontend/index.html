@@ -1077,13 +1077,21 @@
                     <div class="builder-terminal-grid">
 
                         <!-- ROW 1: MISSION CONTROL (Full Width) -->
-                        <div class="terminal-panel span-full mission-briefing-wrapper">
-                            <span class="mission-label-large"><span class="cursor-blink">></span> MISSION:</span>
-                            <input type="text" id="missionPrompt" class="mission-input-large"
-                                placeholder="Describe strategy (e.g., 'Stablecoin yield on Base, low risk')..."
-                                autocomplete="off">
+                        <div class="terminal-panel span-full mission-briefing-wrapper"
+                            style="justify-content: space-between; align-items: center; padding-right: 12px;">
+                            <div style="display: flex; gap: 16px; align-items: center; flex: 1;">
+                                <span class="mission-label-large"><span class="cursor-blink">></span> MISSION:</span>
+                                <input type="text" id="missionPrompt" class="mission-input-large"
+                                    placeholder="Describe strategy (e.g., 'Stablecoin yield on Base, low risk')..."
+                                    autocomplete="off">
+                            </div>
+                            <div class="mode-toggle" id="builderModeToggle"
+                                style="margin-left: 10px; transform: scale(0.9);">
+                                <button class="mode-btn active" data-mode="basic">Basic</button>
+                                <button class="mode-btn" data-mode="pro">Pro</button>
+                            </div>
                             <button id="btnGenerateStrategy" class="btn-generate"
-                                style="height: 40px; font-size: 0.8rem;">EXECUTE</button>
+                                style="height: 40px; font-size: 0.8rem; margin-left: 12px;">EXECUTE</button>
                         </div>
 
                         <!-- ROW 2: DASHBOARD (Split Columns) -->
@@ -1216,6 +1224,20 @@
                                         <span class="lev-label" data-lev="100">1x</span>
                                         <span class="lev-label" data-lev="200">2x</span>
                                         <span class="lev-label" data-lev="300">3x</span>
+                                    </div>
+                                </div>
+
+                                <div class="liquidity-manager-compact"
+                                    style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; margin-top: 8px;">
+                                    <div
+                                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
+                                        <label style="font-size:0.7rem; color:var(--text-dim);">LIQUIDITY MODE</label>
+                                    </div>
+                                    <div class="liquidity-strategy-toggle" style="display:flex; gap:4px;">
+                                        <button class="liq-btn active" data-strategy="passive"
+                                            style="flex:1; padding:4px; font-size:0.75rem; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-dim); cursor:pointer;">Passive</button>
+                                        <button class="liq-btn" data-strategy="active"
+                                            style="flex:1; padding:4px; font-size:0.75rem; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:var(--text-dim); cursor:pointer;">Active</button>
                                     </div>
                                 </div>
                             </div>

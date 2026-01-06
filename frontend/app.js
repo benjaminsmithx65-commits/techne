@@ -2293,3 +2293,99 @@ window.addToStrategy = addToStrategy;
 window.toggleAccordion = toggleAccordion;
 window.pools = pools;
 window.handleDeposit = handleDeposit;
+
+// ===========================================
+// TERMINAL GRID LOGIC (RESTORED & ENHANCED)
+// ===========================================
+function initTerminalGridLogic() {
+    console.log('[Techne] 🟢 Initializing Terminal Grid Logic...');
+
+    // 1. Mode Toggle (Basic <-> Pro)
+    const modeBtns = document.querySelectorAll('#builderModeToggle .mode-btn');
+    const proSections = document.querySelectorAll('.pro-section, .liquidity-manager-compact');
+
+    // Default State: Hide Pro sections if Basic is active
+    const activeMode = document.querySelector('#builderModeToggle .mode-btn.active')?.dataset.mode || 'basic';
+    if (activeMode === 'basic') {
+        proSections.forEach(el => el.style.display = 'none');
+    }
+
+    modeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            modeBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const mode = btn.dataset.mode;
+            const isPro = mode === 'pro';
+
+            // Toggle UI State
+            document.body.classList.toggle('builder-pro-mode', isPro);
+
+            // Specific Element Handling
+            proSections.forEach(el => {
+                if (isPro) {
+                    el.style.display = 'block';
+                    el.classList.remove('hidden');
+                } else {
+                    el.style.display = 'none';
+                    el.classList.add('hidden');
+                }
+            });
+
+            Toast?.show(`Switched to ${mode.toUpperCase()} Mode`, 'info');
+        });
+    });
+
+    // 2. Strategy Presets & Custom Handling
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    const customInputs = document.querySelectorAll('#leverageSlider, #maxDrawdown, #volatilityGuard, #smartGasEnabled');
+
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            presetBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const preset = btn.dataset.preset;
+
+            if (preset === 'custom') {
+                // Unlock inputs
+                customInputs.forEach(input => {
+                    input.removeAttribute('disabled');
+                    input.style.opacity = '1';
+                    input.style.cursor = 'pointer';
+                    input.parentElement.style.opacity = '1';
+                });
+                Toast?.show('🔓 Custom Mode: Manual Inputs Enabled', 'warning');
+            } else {
+                // Lock inputs to preset defaults
+                customInputs.forEach(input => {
+                    input.setAttribute('disabled', 'true');
+                    input.style.opacity = '0.6';
+                    input.style.cursor = 'not-allowed';
+                    input.parentElement.style.opacity = '0.6';
+                });
+                // Apply preset values (Mock logic)
+                if (preset === 'yield-maximizer') {
+                    const slider = document.getElementById('leverageSlider');
+                    if (slider) slider.value = 300;
+                }
+            }
+        });
+    });
+
+    // 3. Liquidity Manager Toggle (Restored)
+    const liqBtns = document.querySelectorAll('.liquidity-strategy-toggle .liq-btn');
+    liqBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            liqBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+}
+
+// Auto-init when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(initTerminalGridLogic, 500));
+} else {
+    setTimeout(initTerminalGridLogic, 500);
+}
