@@ -1115,6 +1115,31 @@ async def health_check():
 
 
 # ============================================
+# STATIC FILES - Frontend
+# ============================================
+
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+
+@app.get("/")
+async def serve_index():
+    """Serve the main index.html"""
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+@app.get("/styles.css")
+async def serve_styles():
+    """Serve styles.css"""
+    return FileResponse(os.path.join(FRONTEND_DIR, "styles.css"), media_type="text/css")
+
+@app.get("/app.js")
+async def serve_app_js():
+    """Serve app.js"""
+    return FileResponse(os.path.join(FRONTEND_DIR, "app.js"), media_type="application/javascript")
+
+# Mount frontend as static files for all other assets
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+
+# ============================================
 # RUN
 # ============================================
 

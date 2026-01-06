@@ -40,7 +40,13 @@ class AgentBuilderUI {
             compoundFrequency: 7,
             onlyAudited: true,
             avoidIL: true,  // True for single-sided
-            emergencyExit: true
+            emergencyExit: true,
+
+            // Pro Features
+            minPoolTvl: 500000,
+            harvestStrategy: 'compound',
+            volatilityThreshold: 10,
+            mevProtection: false
         };
 
         // Preset configurations - All use Base-only protocols
@@ -394,49 +400,50 @@ class AgentBuilderUI {
     }
 
     bindChatEvents() {
-        const input = document.getElementById('agentChatInput');
-        const sendBtn = document.getElementById('sendAgentMessage');
+        // New Command Bar (replaces old chat)
+        const commandInput = document.getElementById('agentCommandInput');
+        const sendBtn = document.getElementById('sendCommand');
 
         if (sendBtn) {
             sendBtn.addEventListener('click', () => this.sendMessage());
         }
 
-        if (input) {
-            input.addEventListener('keypress', (e) => {
+        if (commandInput) {
+            commandInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') this.sendMessage();
             });
         }
 
-        // Quick commands
-        document.querySelectorAll('.quick-cmd').forEach(btn => {
+        // Harvest Strategy buttons
+        document.querySelectorAll('.harvest-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                const cmd = btn.dataset.cmd;
-                if (input) input.value = cmd;
-                this.sendMessage();
+                document.querySelectorAll('.harvest-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.config.harvestStrategy = btn.dataset.harvest;
+                console.log('[AgentBuilder] Harvest strategy:', this.config.harvestStrategy);
             });
         });
     }
 
     async sendMessage() {
-        const input = document.getElementById('agentChatInput');
-        const messagesContainer = document.getElementById('agentChatMessages');
+        const input = document.getElementById('agentCommandInput');
         if (!input || !input.value.trim()) return;
 
         const userMessage = input.value.trim();
         input.value = '';
 
-        // Add user message
-        messagesContainer.innerHTML += `
-            <div class="chat-message user">
-                <div class="message-content">
-                    <p>${userMessage}</p>
-                </div>
-            </div>
-        `;
+        console.log('[AgentBuilder] Command:', userMessage);
 
         // Process with AI
         const response = await this.processAgentCommand(userMessage);
-        this.addAgentMessage(response);
+
+        // Show response in console (could add toast notification later)
+        console.log('[AgentBuilder] Response:', response);
+
+        // Optional: Show alert or toast for now
+        if (response) {
+            alert(`Agent: ${response}`);
+        }
     }
 
     async processAgentCommand(message) {

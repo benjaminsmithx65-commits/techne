@@ -2192,3 +2192,97 @@ window.getChainIconUrl = getChainIconUrl;
 window.addToStrategy = addToStrategy;
 window.pools = pools;
 window.handleDeposit = handleDeposit;
+
+// ===========================================
+// BUILD SECTION: TVL CUSTOM TOGGLE
+// ===========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const tvlCustomBtn = document.getElementById('tvlCustomBtn');
+    const tvlSliderDisplay = document.getElementById('tvlSliderDisplay');
+    const tvlCustomInputs = document.getElementById('tvlCustomInputs');
+    const dualRangeWrapper = document.querySelector('.dual-range-wrapper');
+    const tvlMinSlider = document.getElementById('tvlMinSlider');
+    const tvlMaxSlider = document.getElementById('tvlMaxSlider');
+    const tvlMinDisplay = document.getElementById('tvlMinDisplay');
+    const tvlMaxDisplay = document.getElementById('tvlMaxDisplay');
+    const tvlMinInput = document.getElementById('tvlMinInput');
+    const tvlMaxInput = document.getElementById('tvlMaxInput');
+    const tvlRangeFill = document.getElementById('tvlRangeFill');
+
+    // TVL values mapping (slider step to value)
+    const tvlValues = ['$100K', '$500K', '$1M', '$5M', '$10M', '$50M', '$100M+'];
+
+    // Update display from slider values
+    function updateTvlDisplay() {
+        if (tvlMinSlider && tvlMaxSlider && tvlMinDisplay && tvlMaxDisplay) {
+            const minVal = parseInt(tvlMinSlider.value);
+            const maxVal = parseInt(tvlMaxSlider.value);
+
+            tvlMinDisplay.textContent = tvlValues[minVal] || '$100K';
+            tvlMaxDisplay.textContent = tvlValues[maxVal] || '$100M+';
+
+            // Update fill bar position
+            if (tvlRangeFill) {
+                const leftPercent = (minVal / 6) * 100;
+                const rightPercent = 100 - (maxVal / 6) * 100;
+                tvlRangeFill.style.left = leftPercent + '%';
+                tvlRangeFill.style.right = rightPercent + '%';
+            }
+        }
+    }
+
+    // Slider event listeners
+    if (tvlMinSlider) {
+        tvlMinSlider.addEventListener('input', () => {
+            if (parseInt(tvlMinSlider.value) > parseInt(tvlMaxSlider.value)) {
+                tvlMinSlider.value = tvlMaxSlider.value;
+            }
+            updateTvlDisplay();
+        });
+    }
+
+    if (tvlMaxSlider) {
+        tvlMaxSlider.addEventListener('input', () => {
+            if (parseInt(tvlMaxSlider.value) < parseInt(tvlMinSlider.value)) {
+                tvlMaxSlider.value = tvlMinSlider.value;
+            }
+            updateTvlDisplay();
+        });
+    }
+
+    // Custom input event listeners
+    if (tvlMinInput) {
+        tvlMinInput.addEventListener('input', () => {
+            if (tvlMinDisplay) tvlMinDisplay.textContent = '$' + (tvlMinInput.value || '100K');
+        });
+    }
+
+    if (tvlMaxInput) {
+        tvlMaxInput.addEventListener('input', () => {
+            if (tvlMaxDisplay) tvlMaxDisplay.textContent = '$' + (tvlMaxInput.value || '100M+');
+        });
+    }
+
+    // Custom button toggle
+    if (tvlCustomBtn) {
+        tvlCustomBtn.addEventListener('click', () => {
+            const isCustomMode = tvlCustomBtn.classList.toggle('active');
+
+            if (isCustomMode) {
+                if (tvlSliderDisplay) tvlSliderDisplay.style.display = 'none';
+                if (tvlCustomInputs) tvlCustomInputs.style.display = 'flex';
+                if (dualRangeWrapper) dualRangeWrapper.style.display = 'none';
+                tvlCustomBtn.textContent = 'Slider';
+            } else {
+                if (tvlSliderDisplay) tvlSliderDisplay.style.display = 'flex';
+                if (tvlCustomInputs) tvlCustomInputs.style.display = 'none';
+                if (dualRangeWrapper) dualRangeWrapper.style.display = 'block';
+                tvlCustomBtn.textContent = 'Custom';
+                updateTvlDisplay();
+            }
+        });
+    }
+
+    // Initialize display on load
+    updateTvlDisplay();
+});

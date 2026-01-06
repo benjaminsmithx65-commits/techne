@@ -7026,3 +7026,248 @@ body.builder-pro .basic-mode-only {
     visibility: visible;
     bottom: calc(100% + 8px);
 }
+
+/* ===========================================
+   BUILD SECTION - FULL WIDTH SINGLE COLUMN
+   Hides chat panel, makes config panel full width
+   =========================================== */
+
+/* Hide the right chat panel */
+.agent-chat-panel {
+    display: none !important;
+}
+
+/* Make agent-builder single column */
+.agent-builder {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: var(--space-4);
+}
+
+/* Config panel - single column, centered */
+.agent-config-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: var(--space-6) !important;
+}
+
+/* Limit card widths */
+.agent-config-panel .config-card {
+    max-width: 700px;
+    width: 100%;
+}
+
+/* ===========================================
+   INLINE COMMAND BAR (Header Section)
+   =========================================== */
+.builder-command-section {
+    flex: 1;
+}
+
+.command-bar-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-gold);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2) var(--space-4);
+}
+
+.command-bar-inline .command-prompt {
+    color: var(--gold);
+    font-family: 'Fira Code', 'Monaco', monospace;
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.command-bar-inline .command-input-inline {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+    min-width: 200px;
+}
+
+.command-bar-inline .command-input-inline::placeholder {
+    color: var(--text-muted);
+}
+
+.command-bar-inline .command-execute-btn {
+    padding: var(--space-2) var(--space-4);
+    background: var(--gradient-gold);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--bg-void);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.command-bar-inline .command-execute-btn:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(212, 168, 83, 0.3);
+}
+
+/* ===========================================
+   TVL DUAL RANGE SLIDER (Build Section)
+   =========================================== */
+.tvl-range-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.tvl-range-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tvl-range-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.tvl-range-values {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+    color: var(--gold);
+}
+
+.dual-range-wrapper {
+    position: relative;
+    height: 24px;
+}
+
+.dual-range-track {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 100%;
+    height: 6px;
+    background: var(--bg-elevated);
+    border-radius: 3px;
+}
+
+.dual-range-fill {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 6px;
+    background: var(--gold);
+    border-radius: 3px;
+    left: 33%;
+    right: 0%;
+}
+
+.dual-range-slider {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+}
+
+.dual-range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    background: var(--gold);
+    border: 2px solid var(--bg-void);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(212, 168, 83, 0.4);
+}
+
+.dual-range-slider::-moz-range-thumb {
+    pointer-events: auto;
+    width: 18px;
+    height: 18px;
+    background: var(--gold);
+    border: 2px solid var(--bg-void);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.tvl-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* TVL Custom Input */
+.tvl-range-display {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.tvl-custom-btn {
+    padding: var(--space-1) var(--space-3);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.tvl-custom-btn:hover,
+.tvl-custom-btn.active {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(212, 168, 83, 0.1);
+}
+
+.tvl-custom-inputs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.tvl-input-group {
+    display: flex;
+    align-items: center;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-1) var(--space-2);
+}
+
+.tvl-input-group:focus-within {
+    border-color: var(--gold);
+}
+
+.tvl-input-prefix {
+    color: var(--gold);
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.tvl-custom-input {
+    width: 60px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    outline: none;
+}
+
+.tvl-custom-input::placeholder {
+    color: var(--text-muted);
+}

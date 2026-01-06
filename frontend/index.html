@@ -1072,28 +1072,13 @@
                             </div>
                         </div>
 
-                        <!-- Amount Input -->
-                        <div class="builder-amount-section">
-                            <div class="amount-input-group">
-                                <label>Investment Amount</label>
-                                <div class="amount-input-wrapper">
-                                    <span class="currency-symbol">$</span>
-                                    <input type="number" id="builderAmount" class="amount-input" placeholder="10,000"
-                                        value="10000">
-                                    <div class="quick-amounts">
-                                        <button data-amount="1000">1K</button>
-                                        <button data-amount="5000">5K</button>
-                                        <button data-amount="10000" class="active">10K</button>
-                                        <button data-amount="50000">50K</button>
-                                        <button data-amount="100000">100K</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="selected-assets-display">
-                                <label>Selected Assets</label>
-                                <div class="asset-pills" id="selectedAssetPills">
-                                    <span class="asset-pill">USDC</span>
-                                </div>
+                        <!-- Agent Command Bar -->
+                        <div class="builder-command-section">
+                            <div class="command-bar-inline">
+                                <span class="command-prompt">></span>
+                                <input type="text" id="agentCommandInput" class="command-input-inline"
+                                    placeholder="Deploy stablecoin farmer with $10k, low risk...">
+                                <button class="command-execute-btn" id="sendCommand">Execute</button>
                             </div>
                         </div>
                     </div>
@@ -1146,6 +1131,54 @@
                                         <span class="type-name">All Pools</span>
                                         <span class="type-desc">Mixed strategy</span>
                                     </button>
+                                </div>
+                            </div>
+
+                            <!-- TVL Filter (Both Basic & Pro) -->
+                            <div class="config-card">
+                                <h3>📊 TVL Filter</h3>
+                                <div class="tvl-range-container">
+                                    <div class="tvl-range-header">
+                                        <span class="tvl-range-label">TVL Range</span>
+                                        <div class="tvl-range-display">
+                                            <span class="tvl-range-values" id="tvlSliderDisplay">
+                                                <span id="tvlMinDisplay">$100K</span>
+                                                <span>—</span>
+                                                <span id="tvlMaxDisplay">$100M+</span>
+                                            </span>
+                                            <div class="tvl-custom-inputs" id="tvlCustomInputs" style="display: none;">
+                                                <div class="tvl-input-group">
+                                                    <span class="tvl-input-prefix">$</span>
+                                                    <input type="text" id="tvlMinInput" class="tvl-custom-input"
+                                                        placeholder="100K">
+                                                </div>
+                                                <span>—</span>
+                                                <div class="tvl-input-group">
+                                                    <span class="tvl-input-prefix">$</span>
+                                                    <input type="text" id="tvlMaxInput" class="tvl-custom-input"
+                                                        placeholder="100M">
+                                                </div>
+                                            </div>
+                                            <button class="tvl-custom-btn" id="tvlCustomBtn">Custom</button>
+                                        </div>
+                                    </div>
+                                    <div class="dual-range-wrapper">
+                                        <div class="dual-range-track"></div>
+                                        <div class="dual-range-fill" id="tvlRangeFill"></div>
+                                        <input type="range" id="tvlMinSlider" class="dual-range-slider min" min="0"
+                                            max="6" value="2" step="1">
+                                        <input type="range" id="tvlMaxSlider" class="dual-range-slider max" min="0"
+                                            max="6" value="6" step="1">
+                                    </div>
+                                    <div class="tvl-labels">
+                                        <span>$100K</span>
+                                        <span>$500K</span>
+                                        <span>$1M</span>
+                                        <span>$5M</span>
+                                        <span>$10M</span>
+                                        <span>$50M</span>
+                                        <span>$100M+</span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1671,9 +1704,11 @@
                                 <div class="chat-message agent">
                                     <div class="message-avatar">🤖</div>
                                     <div class="message-content">
-                                        <p>Hello! I'm your Artisan Agent. Tell me how you want to invest your funds, and
+                                        <p>Hello! I'm your Artisan Agent. Tell me how you want to invest your funds,
+                                            and
                                             I'll configure the optimal strategy.</p>
-                                        <p class="message-hint">Try: "I want stable 15% APY with low risk" or "Maximize
+                                        <p class="message-hint">Try: "I want stable 15% APY with low risk" or
+                                            "Maximize
                                             yield on my ETH"</p>
                                     </div>
                                 </div>
