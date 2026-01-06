@@ -1095,28 +1095,33 @@
                             </div>
                         </div>
 
-                        <!-- Amount Input -->
-                        <div class="builder-amount-section">
+                        <!-- MISSION BRIEFING (New) -->
+                        <div class="mission-briefing-section">
+                            <label class="mission-label"><span class="cursor-blink">></span> MISSION BRIEFING</label>
+                            <div class="mission-input-wrapper">
+                                <textarea id="missionPrompt" class="mission-input"
+                                    placeholder="Describe your strategy... e.g., 'Maximize stablecoin yield on Base with low risk'"></textarea>
+                                <button id="btnGenerateStrategy" class="btn-generate">
+                                    <span class="btn-icon">⚡</span> GENERATE STRATEGY
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Amount Input (Compact) -->
+                        <div class="builder-amount-section compact">
                             <div class="amount-input-group">
                                 <label>Investment Amount</label>
                                 <div class="amount-input-wrapper">
                                     <span class="currency-symbol">$</span>
                                     <input type="number" id="builderAmount" class="amount-input" placeholder="10,000"
                                         value="10000">
-                                    <div class="quick-amounts">
-                                        <button data-amount="1000">1K</button>
-                                        <button data-amount="5000">5K</button>
-                                        <button data-amount="10000" class="active">10K</button>
-                                        <button data-amount="50000">50K</button>
-                                        <button data-amount="100000">100K</button>
-                                    </div>
                                 </div>
                             </div>
-                            <div class="selected-assets-display">
-                                <label>Selected Assets</label>
-                                <div class="asset-pills" id="selectedAssetPills">
-                                    <span class="asset-pill">USDC</span>
-                                </div>
+                            <!-- Quick amounts moved inline or hidden for compactness -->
+                            <div class="quick-amounts inline">
+                                <button data-amount="1000">1K</button>
+                                <button data-amount="5000">5K</button>
+                                <button data-amount="10000" class="active">10K</button>
                             </div>
                         </div>
                     </div>
@@ -1229,59 +1234,54 @@
 
                         </div>
 
-                        <!-- CENTER COLUMN: ENGINE -->
+                        <!-- CENTER COLUMN: ENGINE (Compact - Accordions) -->
                         <div class="cockpit-col center">
 
-                            <!-- Yield Engineering -->
-                            <div class="cockpit-panel" id="yieldEngineeringCard" style="border-color: var(--gold);">
-                                <h3><span class="greek-icon">⚡</span> Yield Reactor</h3>
-
-                                <!-- Smart Loop Engine -->
-                                <div class="pro-section" id="smartLoopSection">
-                                    <div class="pro-section-header">
-                                        <span class="pro-badge"
-                                            style="background: rgba(212,175,55,0.2); color: var(--gold); border: 1px solid var(--gold);">🔄
-                                            Smart Loop Engine</span>
-                                    </div>
-                                    <div class="leverage-control">
-                                        <label>Power Output (Leverage)</label>
-                                        <div class="leverage-slider-container">
-                                            <input type="range" id="leverageSlider" min="100" max="300" value="100"
-                                                step="10">
-                                            <div class="leverage-labels">
-                                                <span class="lev-label" data-lev="100">1.0x</span>
-                                                <span class="lev-label" data-lev="200">2.0x</span>
-                                                <span class="lev-label" data-lev="300">3.0x</span>
-                                            </div>
-                                        </div>
-                                        <div class="leverage-stats">
-                                            <div class="lev-stat">
-                                                <span class="lev-stat-label">Proj. Yield</span>
-                                                <span class="lev-stat-value" id="leverageApy"
-                                                    style="color: var(--cyan);">12% → <span
-                                                        class="highlight">12%</span></span>
-                                            </div>
-                                            <div class="lev-stat warning">
-                                                <span class="lev-stat-label">Liq. Price</span>
-                                                <span class="lev-stat-value" id="liquidationPrice">$0.00</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                            <!-- Accordion: Yield Reactor -->
+                            <div class="accordion-panel open" id="accYield">
+                                <div class="accordion-header" onclick="toggleAccordion('accYield')">
+                                    <h3><span class="greek-icon">⚡</span> Yield Reactor</h3>
+                                    <span class="accordion-icon">▼</span>
                                 </div>
-
-                                <!-- Liquidity Manager -->
-                                <div class="pro-section hidden" id="liquidityManagerSection">
-                                    <div class="pro-section-header">
-                                        <span class="pro-badge">💧 Active Manager</span>
-                                    </div>
-                                    <div class="liquidity-strategy-toggle">
-                                        <button class="liq-btn active" data-strategy="passive">Passive</button>
-                                        <button class="liq-btn" data-strategy="active">Active</button>
+                                <div class="accordion-content">
+                                    <div class="accordion-body">
+                                        <!-- Smart Loop Engine -->
+                                        <div class="pro-section" id="smartLoopSection">
+                                            <div class="pro-section-header">
+                                                <span class="pro-badge"
+                                                    style="background: rgba(212,175,55,0.2); color: var(--gold); border: 1px solid var(--gold);">🔄
+                                                    Smart Loop Engine</span>
+                                            </div>
+                                            <div class="leverage-control">
+                                                <label>Power Output (Leverage)</label>
+                                                <div class="leverage-slider-container">
+                                                    <input type="range" id="leverageSlider" min="100" max="300"
+                                                        value="100" step="10">
+                                                    <div class="leverage-labels">
+                                                        <span class="lev-label" data-lev="100">1.0x</span>
+                                                        <span class="lev-label" data-lev="200">2.0x</span>
+                                                        <span class="lev-label" data-lev="300">3.0x</span>
+                                                    </div>
+                                                </div>
+                                                <div class="leverage-stats">
+                                                    <div class="lev-stat">
+                                                        <span class="lev-stat-label">Proj. Yield</span>
+                                                        <span class="lev-stat-value" id="leverageApy"
+                                                            style="color: var(--cyan);">12% → <span
+                                                                class="highlight">12%</span></span>
+                                                    </div>
+                                                    <div class="lev-stat warning">
+                                                        <span class="lev-stat-label">Liq. Price</span>
+                                                        <span class="lev-stat-value" id="liquidationPrice">$0.00</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Harvest Strategy -->
+                            <!-- Harvest Strategy (Kept Visible or Accordion? Let's keep visible but compact style) -->
                             <div class="cockpit-panel" id="harvestStrategyCard">
                                 <h3><span class="greek-icon">Σ</span> Harvest Strategy</h3>
                                 <div class="harvest-options">
@@ -1290,7 +1290,7 @@
                                         <div class="harvest-icon">Σ</div>
                                         <div class="harvest-info">
                                             <span class="harvest-title">Auto-Compound</span>
-                                            <span class="harvest-desc">Reinvest rewards for exponential growth</span>
+                                            <span class="harvest-desc">Reinvest</span>
                                         </div>
                                     </label>
                                     <label class="harvest-card" data-strategy="cash-out">
@@ -1298,55 +1298,54 @@
                                         <div class="harvest-icon">Δ</div>
                                         <div class="harvest-info">
                                             <span class="harvest-title">Cash Out</span>
-                                            <span class="harvest-desc">Convert to USDC</span>
-                                        </div>
-                                    </label>
-                                    <label class="harvest-card" data-strategy="hodl">
-                                        <input type="radio" name="harvestStrategy" value="hodl">
-                                        <div class="harvest-icon">Ω</div>
-                                        <div class="harvest-info">
-                                            <span class="harvest-title">HODL</span>
-                                            <span class="harvest-desc">Keep rewards</span>
+                                            <span class="harvest-desc">To USDC</span>
                                         </div>
                                     </label>
                                 </div>
                             </div>
 
-                            <!-- Safety & Risk -->
-                            <div class="cockpit-panel" id="safetyGasCard">
-                                <h3><span class="greek-icon">Φ</span> Safety Protocols</h3>
-
-                                <div class="config-group toggle-group">
-                                    <label><span>⚡ Volatility Circuit Breaker</span></label>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="volatilityGuard">
-                                        <span class="toggle-slider"></span>
-                                    </label>
+                            <!-- Accordion: Safety Protocols -->
+                            <div class="accordion-panel" id="accSafety">
+                                <div class="accordion-header" onclick="toggleAccordion('accSafety')">
+                                    <h3><span class="greek-icon">Φ</span> Safety Protocols</h3>
+                                    <span class="accordion-icon">▼</span>
                                 </div>
-                                <div class="volatility-threshold hidden" id="volatilityThresholdGroup">
-                                    <label>Threshold</label>
-                                    <div class="input-with-unit">
-                                        <input type="number" id="volatilityThreshold" value="50">
-                                        <span class="unit">%</span>
+                                <div class="accordion-content">
+                                    <div class="accordion-body">
+                                        <div class="config-group toggle-group">
+                                            <label><span>⚡ Volatility Circuit Breaker</span></label>
+                                            <label class="toggle-switch">
+                                                <input type="checkbox" id="volatilityGuard">
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                        </div>
+                                        <div class="volatility-threshold hidden" id="volatilityThresholdGroup">
+                                            <label>Threshold</label>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="volatilityThreshold" value="50">
+                                                <span class="unit">%</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="config-group toggle-group">
+                                            <label><span>⛽ Smart Gas Optimization</span></label>
+                                            <label class="toggle-switch">
+                                                <input type="checkbox" id="smartGasEnabled" checked>
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                        </div>
+
+                                        <div class="config-group toggle-group">
+                                            <label><span>🔒 Stealth Mode (MEV)</span></label>
+                                            <label class="toggle-switch">
+                                                <input type="checkbox" id="mevProtection">
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
-
-                                <div class="config-group toggle-group">
-                                    <label><span>⛽ Smart Gas Optimization</span></label>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="smartGasEnabled" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-
-                                <div class="config-group toggle-group">
-                                    <label><span>🔒 Stealth Mode (MEV)</span></label>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="mevProtection">
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
                             </div>
+
                         </div>
 
                         <!-- RIGHT COLUMN: FLIGHT CONTROLS -->

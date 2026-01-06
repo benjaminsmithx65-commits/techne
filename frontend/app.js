@@ -2212,10 +2212,19 @@ window.addEventListener('sectionChanged', () => {
     setTimeout(initAllButtonHandlers, 100);
 });
 
+// Accordion Functionality for Agent Builder
+function toggleAccordion(id) {
+    const panel = document.getElementById(id);
+    if (panel) {
+        panel.classList.toggle('open');
+    }
+}
+
 // Export shared functions for components.js
 window.formatTvl = formatTvl;
 window.getProtocolIconUrl = getProtocolIconUrl;
 window.getChainIconUrl = getChainIconUrl;
 window.addToStrategy = addToStrategy;
+window.toggleAccordion = toggleAccordion;
 window.pools = pools;
 window.handleDeposit = handleDeposit;

@@ -8135,3 +8135,166 @@ body.oracle-visible .oracle-toggle-btn {
         flex-direction: column;
     }
 }
+
+/* --- Agent Builder Refinement (Compact Mode) --- */
+
+/* Mission Briefing */
+.mission-briefing-section {
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    padding: 16px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.mission-briefing-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--gold);
+}
+
+.mission-label {
+    display: block;
+    color: var(--gold);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+}
+
+.mission-input-wrapper {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.mission-input {
+    flex: 1;
+    background: #000;
+    border: 1px solid #333;
+    color: #4ade80;
+    /* Matrix Green */
+    font-family: var(--font-mono);
+    padding: 12px;
+    min-height: 80px;
+    resize: none;
+    font-size: 0.95rem;
+}
+
+.mission-input:focus {
+    outline: none;
+    border-color: #4ade80;
+    box-shadow: 0 0 15px rgba(74, 222, 128, 0.2);
+}
+
+.btn-generate {
+    background: var(--gradient-gold);
+    border: none;
+    color: #000;
+    font-weight: 800;
+    padding: 0 24px;
+    font-family: var(--font-display);
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 1px;
+}
+
+.btn-generate:hover {
+    transform: scale(1.02);
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+}
+
+/* Compact Builder Layout */
+.builder-amount-section.compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 12px 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.builder-amount-section.compact .amount-input-wrapper {
+    margin-bottom: 0;
+}
+
+.builder-amount-section.compact .amount-input {
+    font-size: 1.5rem;
+    width: 140px;
+}
+
+.quick-amounts.inline {
+    display: flex;
+    gap: 8px;
+}
+
+.quick-amounts.inline button {
+    padding: 4px 12px;
+    font-size: 0.8rem;
+}
+
+/* Accordions for Panels */
+.accordion-panel {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.4);
+    margin-bottom: 8px;
+    transition: all 0.3s;
+}
+
+.accordion-header {
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.accordion-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.accordion-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.accordion-icon {
+    transition: transform 0.3s;
+}
+
+.accordion-panel.open .accordion-icon {
+    transform: rotate(180deg);
+}
+
+.accordion-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+
+.accordion-panel.open .accordion-content {
+    max-height: 800px;
+    /* Arbitrary large height */
+    overflow: visible;
+}
+
+.accordion-body {
+    padding: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Compact specific spacing */
+.pro-section {
+    padding: 12px;
+}
