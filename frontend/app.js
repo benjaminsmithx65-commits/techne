@@ -2381,6 +2381,38 @@ function initTerminalGridLogic() {
             btn.classList.add('active');
         });
     });
+
+    // 4. Protocol Filtering (Single vs Dual)
+    const poolTypeBtns = document.querySelectorAll('.pool-type-btn-build');
+    const protocolChips = document.querySelectorAll('.protocol-chip');
+
+    poolTypeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // UI toggle
+            poolTypeBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const selectedType = btn.dataset.poolType; // 'single' or 'dual'
+
+            // Filter Logic
+            let visibleCount = 0;
+            protocolChips.forEach(chip => {
+                const chipSide = chip.dataset.poolSide;
+                if (chipSide === selectedType) {
+                    chip.style.display = 'flex';
+                    visibleCount++;
+                } else {
+                    chip.style.display = 'none';
+                }
+            });
+
+            Toast?.show(`Showing ${visibleCount} ${selectedType === 'single' ? 'Single-Sided' : 'LP'} Protocols`, 'info');
+        });
+    });
+
+    // Run filter once on init
+    const activeTypeBtn = document.querySelector('.pool-type-btn-build.active');
+    if (activeTypeBtn) activeTypeBtn.click();
 }
 
 // Auto-init when DOM is ready
