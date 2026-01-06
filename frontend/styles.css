@@ -7448,3 +7448,114 @@ body.builder-pro .basic-mode-only {
     height: 20px;
     border-radius: 50%;
 }
+
+/* Custom Duration Popup */
+.custom-duration-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--gold);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    z-index: 100;
+    min-width: 280px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.custom-duration-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border);
+}
+
+.custom-duration-header span {
+    font-weight: 600;
+    color: var(--gold);
+}
+
+.close-popup-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.close-popup-btn:hover {
+    color: var(--text);
+}
+
+.custom-duration-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.duration-input-group {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.duration-input {
+    flex: 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    color: var(--text);
+    font-size: 1rem;
+    text-align: center;
+}
+
+.duration-input:focus {
+    border-color: var(--gold);
+    outline: none;
+}
+
+.duration-unit-select {
+    flex: 1.5;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    color: var(--text);
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.duration-unit-select:focus {
+    border-color: var(--gold);
+    outline: none;
+}
+
+.apply-duration-btn {
+    background: linear-gradient(135deg, var(--gold), #b8860b);
+    border: none;
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4);
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.apply-duration-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(212, 168, 83, 0.3);
+}
+
+.duration-custom-btn.active {
+    background: linear-gradient(135deg, var(--gold), #b8860b) !important;
+    color: #000 !important;
+    border-color: var(--gold) !important;
+}
+
+.config-group {
+    position: relative;
+}

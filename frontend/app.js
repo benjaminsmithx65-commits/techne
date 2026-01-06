@@ -2286,3 +2286,234 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize display on load
     updateTvlDisplay();
 });
+
+// ===========================================
+// COPY STRATEGY FUNCTIONALITY
+// ===========================================
+function copyStrategy(button) {
+    const card = button.closest('.strategy-card');
+    if (!card) return;
+
+    const strategyData = {
+        chain: card.dataset.chain || 'base',
+        protocols: (card.dataset.protocols || '').split(','),
+        poolType: card.dataset.poolType || 'single',
+        risk: card.dataset.risk || 'medium',
+        assets: (card.dataset.assets || '').split(','),
+        name: card.querySelector('h3')?.textContent || 'Strategy'
+    };
+
+    // Navigate to Build section
+    navigateToSection('build');
+
+    // Apply settings after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        applyStrategyToBuild(strategyData);
+
+        // Show success notification
+        showCopyNotification(strategyData.name);
+    }, 200);
+}
+
+function applyStrategyToBuild(data) {
+    // 1. Set chain (Base is default, already active)
+    const chainBtns = document.querySelectorAll('.chain-btn-build');
+    chainBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.chain === data.chain);
+    });
+
+    // 2. Set pool type
+    const poolTypeBtns = document.querySelectorAll('.pool-type-btn-build');
+    poolTypeBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.poolType === data.poolType);
+    });
+
+    // Trigger pool type change to show correct protocols
+    if (typeof filterBuildProtocols === 'function') {
+        filterBuildProtocols(data.poolType);
+    }
+
+    // 3. Set protocols
+    const protocolChips = document.querySelectorAll('.protocol-chip');
+    protocolChips.forEach(chip => {
+        const protocol = chip.dataset.protocol;
+        chip.classList.toggle('active', data.protocols.includes(protocol));
+    });
+
+    // 4. Set risk level
+    const riskOptions = document.querySelectorAll('.risk-option');
+    riskOptions.forEach(option => {
+        option.classList.toggle('active', option.dataset.risk === data.risk);
+    });
+
+    // 5. Set assets
+    const assetChips = document.querySelectorAll('.asset-chip');
+    assetChips.forEach(chip => {
+        const asset = chip.dataset.asset;
+        chip.classList.toggle('active', data.assets.includes(asset));
+    });
+
+    // 6. Select matching strategy preset
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    presetBtns.forEach(btn => btn.classList.remove('active'));
+
+    // Map risk to preset
+    const riskToPreset = {
+        'low': 'stable-farmer',
+        'medium': 'balanced-growth',
+        'high': 'yield-maximizer',
+        'critical': 'yield-maximizer'
+    };
+    const targetPreset = riskToPreset[data.risk] || 'balanced-growth';
+    const matchingPreset = document.querySelector(`.preset-btn[data-preset="${targetPreset}"]`);
+    if (matchingPreset) matchingPreset.classList.add('active');
+}
+
+function showCopyNotification(strategyName) {
+    // Remove existing notifications
+    const existing = document.querySelector('.copy-notification');
+    if (existing) existing.remove();
+
+    const notification = document.createElement('div');
+    notification.className = 'copy-notification';
+    notification.innerHTML = `
+        <span class="copy-icon">✓</span>
+        <span>Strategy "${strategyName}" copied! Configure your deposit amount above.</span>
+    `;
+
+    // Style the notification
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, var(--gold), #b8860b);
+        color: #000;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 20px rgba(212, 168, 83, 0.4);
+        animation: slideUp 0.3s ease-out;
+    `;
+
+    document.body.appendChild(notification);
+
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+        notification.style.animation = 'fadeOut 0.3s ease-out';
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+}
+
+// Add CSS animation if not exists
+if (!document.querySelector('#copy-notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'copy-notification-styles';
+    style.textContent = `
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// ===========================================
+// CUSTOM DURATION COMPONENT
+// ===========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const customBtn = document.getElementById('durationCustomBtn');
+    const popup = document.getElementById('customDurationPopup');
+    const closeBtn = document.getElementById('closeDurationPopup');
+    const applyBtn = document.getElementById('applyCustomDuration');
+    const valueInput = document.getElementById('customDurationValue');
+    const unitSelect = document.getElementById('customDurationUnit');
+    const durationBtns = document.querySelectorAll('.duration-btn:not(.duration-custom-btn)');
+
+    if (!customBtn || !popup) return;
+
+    // Toggle popup
+    customBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = popup.style.display !== 'none';
+        popup.style.display = isVisible ? 'none' : 'block';
+
+        // Remove active from other buttons when opening popup
+        if (!isVisible) {
+            durationBtns.forEach(btn => btn.classList.remove('active'));
+            customBtn.classList.add('active');
+        }
+    });
+
+    // Close popup
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            popup.style.display = 'none';
+        });
+    }
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (popup.style.display !== 'none' && !popup.contains(e.target) && e.target !== customBtn) {
+            popup.style.display = 'none';
+        }
+    });
+
+    // Apply custom duration
+    if (applyBtn) {
+        applyBtn.addEventListener('click', () => {
+            const value = parseInt(valueInput.value) || 1;
+            const unit = unitSelect.value;
+
+            // Calculate hours for internal use
+            const unitToHours = {
+                minutes: 1 / 60,
+                hours: 1,
+                days: 24,
+                weeks: 24 * 7,
+                months: 24 * 30,
+                years: 24 * 365
+            };
+
+            const totalHours = value * unitToHours[unit];
+
+            // Update button text
+            const unitShort = {
+                minutes: 'min',
+                hours: 'h',
+                days: 'd',
+                weeks: 'w',
+                months: 'mo',
+                years: 'y'
+            };
+            customBtn.textContent = `${value}${unitShort[unit]}`;
+            customBtn.dataset.hours = totalHours;
+
+            // Close popup
+            popup.style.display = 'none';
+
+            // Keep custom active
+            durationBtns.forEach(btn => btn.classList.remove('active'));
+            customBtn.classList.add('active');
+        });
+    }
+
+    // Handle standard duration button clicks
+    durationBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            durationBtns.forEach(b => b.classList.remove('active'));
+            customBtn.classList.remove('active');
+            customBtn.textContent = 'Custom';
+            btn.classList.add('active');
+            popup.style.display = 'none';
+        });
+    });
+});
