@@ -1051,8 +1051,51 @@
                 <!-- Section: Build -->
                 <section class="section" id="section-build">
                     <div class="section-header">
-                        <h1>🤖 Agent Builder</h1>
-                        <p class="section-desc">Configure your AI agent to manage your DeFi investments</p>
+                        <div class="builder-header-row">
+                            <div>
+                                <h1>🤖 Agent Builder</h1>
+                                <p class="section-desc">Configure your AI agent to manage your DeFi investments</p>
+                            </div>
+                            <!-- Mode Toggle -->
+                            <div class="mode-toggle-container">
+                                <span class="mode-label">Mode:</span>
+                                <div class="mode-toggle" id="builderModeToggle">
+                                    <button class="mode-btn active" data-mode="basic">
+                                        <span class="mode-icon">🍎</span>
+                                        <span>Basic</span>
+                                    </button>
+                                    <button class="mode-btn" data-mode="pro">
+                                        <span class="mode-icon">📊</span>
+                                        <span>Pro</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Amount Input -->
+                        <div class="builder-amount-section">
+                            <div class="amount-input-group">
+                                <label>Investment Amount</label>
+                                <div class="amount-input-wrapper">
+                                    <span class="currency-symbol">$</span>
+                                    <input type="number" id="builderAmount" class="amount-input" placeholder="10,000"
+                                        value="10000">
+                                    <div class="quick-amounts">
+                                        <button data-amount="1000">1K</button>
+                                        <button data-amount="5000">5K</button>
+                                        <button data-amount="10000" class="active">10K</button>
+                                        <button data-amount="50000">50K</button>
+                                        <button data-amount="100000">100K</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="selected-assets-display">
+                                <label>Selected Assets</label>
+                                <div class="asset-pills" id="selectedAssetPills">
+                                    <span class="asset-pill">USDC</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="agent-builder">
@@ -1141,6 +1184,173 @@
                                         <span class="preset-desc">Configure everything manually</span>
                                     </button>
                                 </div>
+                            </div>
+
+                            <!-- PRO MODE: Yield Engineering -->
+                            <div class="config-card pro-mode-only" id="yieldEngineeringCard">
+                                <h3>⚡ Yield Engineering</h3>
+
+                                <!-- Smart Loop Engine (Single-Sided) -->
+                                <div class="pro-section" id="smartLoopSection">
+                                    <div class="pro-section-header">
+                                        <span class="pro-badge">🔄 Smart Loop Engine</span>
+                                        <span class="pro-tooltip"
+                                            title="Automatically loop your position for amplified yields">ⓘ</span>
+                                    </div>
+                                    <div class="leverage-control">
+                                        <label>Leverage Level</label>
+                                        <div class="leverage-slider-container">
+                                            <input type="range" id="leverageSlider" min="100" max="300" value="100"
+                                                step="10">
+                                            <div class="leverage-labels">
+                                                <span class="lev-label" data-lev="100">1.0x</span>
+                                                <span class="lev-label" data-lev="150">1.5x</span>
+                                                <span class="lev-label" data-lev="200">2.0x</span>
+                                                <span class="lev-label" data-lev="250">2.5x</span>
+                                                <span class="lev-label" data-lev="300">3.0x</span>
+                                            </div>
+                                        </div>
+                                        <div class="leverage-stats">
+                                            <div class="lev-stat">
+                                                <span class="lev-stat-label">Est. APY</span>
+                                                <span class="lev-stat-value" id="leverageApy">12% → <span
+                                                        class="highlight">12%</span></span>
+                                            </div>
+                                            <div class="lev-stat warning">
+                                                <span class="lev-stat-label">Liquidation</span>
+                                                <span class="lev-stat-value" id="liquidationPrice">$0.00</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Active Liquidity Manager (Dual-Sided) -->
+                                <div class="pro-section hidden" id="liquidityManagerSection">
+                                    <div class="pro-section-header">
+                                        <span class="pro-badge">💧 Active Liquidity Manager</span>
+                                        <span class="pro-tooltip"
+                                            title="Automatically rebalance your LP position">ⓘ</span>
+                                    </div>
+                                    <div class="liquidity-strategy-toggle">
+                                        <button class="liq-btn active" data-strategy="passive">
+                                            <span class="btn-icon">🧘</span>
+                                            <span class="btn-text">Passive (Fixed)</span>
+                                        </button>
+                                        <button class="liq-btn" data-strategy="active">
+                                            <span class="btn-icon">🎯</span>
+                                            <span class="btn-text">Active (Auto-Rebalance)</span>
+                                        </button>
+                                        <button class="liq-btn" data-strategy="jit">
+                                            <span class="btn-icon">⚡</span>
+                                            <span class="btn-text">JIT Liquidity</span>
+                                        </button>
+                                    </div>
+                                    <div class="rebalance-config" id="rebalanceConfig">
+                                        <label>Rebalance if price moves ></label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="rebalancePercent" value="5" min="1" max="50">
+                                            <span class="unit">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- PRO MODE: Precision Duration -->
+                            <div class="config-card pro-mode-only" id="precisionDurationCard">
+                                <h3>⏱️ Precision Timing</h3>
+
+                                <div class="duration-mode-toggle">
+                                    <button class="dur-mode-btn" data-mode="preset">Preset</button>
+                                    <button class="dur-mode-btn active" data-mode="custom">Custom</button>
+                                </div>
+
+                                <div class="custom-duration-input" id="customDurationInput">
+                                    <label>Farm Duration</label>
+                                    <div class="duration-split-input">
+                                        <input type="number" id="durationValue" value="24" min="1" max="365">
+                                        <select id="durationUnit">
+                                            <option value="hours" selected>Hours</option>
+                                            <option value="days">Days</option>
+                                            <option value="weeks">Weeks</option>
+                                            <option value="months">Months</option>
+                                        </select>
+                                    </div>
+                                    <p class="duration-hint">⚡ Snipe mode: Farm for exactly 24 hours</p>
+                                </div>
+
+                                <!-- Exit Targets -->
+                                <div class="exit-targets">
+                                    <h4>🎯 Exit Targets</h4>
+                                    <div class="exit-target">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="takeProfitEnabled">
+                                            <span class="checkmark"></span>
+                                            Take Profit at
+                                        </label>
+                                        <div class="input-with-unit">
+                                            <span class="unit">$</span>
+                                            <input type="number" id="takeProfitAmount" value="500" min="0" disabled>
+                                        </div>
+                                    </div>
+                                    <div class="exit-target">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="stopLossEnabled" checked>
+                                            <span class="checkmark"></span>
+                                            Stop Loss at
+                                        </label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="stopLossPercent" value="15" min="1" max="50">
+                                            <span class="unit">%</span>
+                                        </div>
+                                    </div>
+                                    <div class="exit-target">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="apyTargetEnabled">
+                                            <span class="checkmark"></span>
+                                            Exit if APY drops below
+                                        </label>
+                                        <div class="input-with-unit">
+                                            <input type="number" id="apyTargetValue" value="5" min="0" max="100"
+                                                disabled>
+                                            <span class="unit">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- PRO MODE: Safety & Gas -->
+                            <div class="config-card pro-mode-only" id="safetyGasCard">
+                                <h3>🛡️ Safety & Gas</h3>
+
+                                <div class="config-group toggle-group">
+                                    <label>
+                                        <span>Volatility Guard</span>
+                                        <span class="pro-tooltip"
+                                            title="Emergency exit to stablecoins if market volatility exceeds 200%">ⓘ</span>
+                                    </label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="volatilityGuard" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="config-group">
+                                    <label>Gas Strategy</label>
+                                    <select id="gasStrategy" class="pro-select">
+                                        <option value="standard">Standard (Always Harvest)</option>
+                                        <option value="smart" selected>Smart Compound (Profit > 5x Gas)</option>
+                                        <option value="gas-saver">Gas Saver (Low Priority)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- PRO MODE: Custom Instructions -->
+                            <div class="config-card pro-mode-only" id="customInstructionsCard">
+                                <h3>💬 Agent Command Interface</h3>
+                                <p class="card-desc">Give your agent natural language instructions</p>
+                                <textarea id="customInstructions" class="custom-instructions-input"
+                                    placeholder="Example: Keep farming until ETH hits $4000, then withdraw everything to USDC. Prioritize Aave and Morpho for safety."
+                                    rows="4"></textarea>
                             </div>
 
                             <!-- Risk & Returns -->

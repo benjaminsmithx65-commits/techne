@@ -64,8 +64,37 @@ function initProtocolSearch() {
     });
 }
 
-// Build Section - Filter protocols by pool type
+// Build Section - Full Pro Mode Logic
 function initBuildSection() {
+    initModeToggle();
+    initPoolTypeFiltering();
+    initQuickAmounts();
+    initLeverageSlider();
+    initExitTargetCheckboxes();
+    initLiquidityStrategyToggle();
+}
+
+// Mode Toggle (Basic/Pro)
+function initModeToggle() {
+    const modeButtons = document.querySelectorAll('#builderModeToggle .mode-btn');
+
+    modeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            modeButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const mode = btn.dataset.mode;
+            if (mode === 'pro') {
+                document.body.classList.add('builder-pro');
+            } else {
+                document.body.classList.remove('builder-pro');
+            }
+        });
+    });
+}
+
+// Pool Type Filtering
+function initPoolTypeFiltering() {
     const poolTypeButtons = document.querySelectorAll('.pool-type-btn-build');
     const protocolGrid = document.getElementById('buildProtocolGrid');
 
@@ -73,23 +102,24 @@ function initBuildSection() {
 
     poolTypeButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            // Update active state
             poolTypeButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
             const selectedType = btn.dataset.poolType;
             filterBuildProtocols(selectedType);
+            updateYieldEngineeringSection(selectedType);
         });
     });
 
-    // Initial filter based on default selection (single)
+    // Initial filter
     const activeBtn = document.querySelector('.pool-type-btn-build.active');
     if (activeBtn) {
         filterBuildProtocols(activeBtn.dataset.poolType);
+        updateYieldEngineeringSection(activeBtn.dataset.poolType);
     }
 }
 
-// Filter protocol chips based on pool type (single/dual/all)
+// Filter protocol chips based on pool type
 function filterBuildProtocols(poolType) {
     const protocolGrid = document.getElementById('buildProtocolGrid');
     if (!protocolGrid) return;
@@ -97,10 +127,9 @@ function filterBuildProtocols(poolType) {
     const chips = protocolGrid.querySelectorAll('.protocol-chip');
 
     chips.forEach(chip => {
-        const chipSide = chip.dataset.poolSide; // 'single' or 'dual'
+        const chipSide = chip.dataset.poolSide;
 
         if (poolType === 'all') {
-            // Show all protocols
             chip.style.display = '';
         } else if (poolType === 'single' && chipSide === 'single') {
             chip.style.display = '';
@@ -111,11 +140,110 @@ function filterBuildProtocols(poolType) {
         }
     });
 
-    // Deselect hidden protocols
     chips.forEach(chip => {
         if (chip.style.display === 'none') {
             chip.classList.remove('active');
         }
+    });
+}
+
+// Update Yield Engineering section based on pool type
+function updateYieldEngineeringSection(poolType) {
+    const smartLoopSection = document.getElementById('smartLoopSection');
+    const liquidityManagerSection = document.getElementById('liquidityManagerSection');
+
+    if (!smartLoopSection || !liquidityManagerSection) return;
+
+    if (poolType === 'single') {
+        smartLoopSection.classList.remove('hidden');
+        liquidityManagerSection.classList.add('hidden');
+    } else if (poolType === 'dual') {
+        smartLoopSection.classList.add('hidden');
+        liquidityManagerSection.classList.remove('hidden');
+    } else {
+        // All - show both
+        smartLoopSection.classList.remove('hidden');
+        liquidityManagerSection.classList.remove('hidden');
+    }
+}
+
+// Quick Amount Buttons
+function initQuickAmounts() {
+    const quickBtns = document.querySelectorAll('.quick-amounts button');
+    const amountInput = document.getElementById('builderAmount');
+
+    if (!quickBtns.length || !amountInput) return;
+
+    quickBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            quickBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            amountInput.value = btn.dataset.amount;
+        });
+    });
+}
+
+// Leverage Slider with APY Calculation
+function initLeverageSlider() {
+    const slider = document.getElementById('leverageSlider');
+    const apyDisplay = document.getElementById('leverageApy');
+    const liquidationDisplay = document.getElementById('liquidationPrice');
+
+    if (!slider || !apyDisplay) return;
+
+    const baseApy = 12; // Base APY percentage
+
+    slider.addEventListener('input', () => {
+        const leverage = slider.value / 100;
+        const boostedApy = (baseApy * leverage).toFixed(1);
+
+        apyDisplay.innerHTML = `${baseApy}% → <span class="highlight">${boostedApy}%</span>`;
+
+        // Calculate approximate liquidation price for stablecoins
+        if (leverage > 1) {
+            const liquidationPct = ((1 - (1 / leverage)) * 100).toFixed(0);
+            liquidationDisplay.textContent = `-${liquidationPct}% from entry`;
+        } else {
+            liquidationDisplay.textContent = 'No liquidation';
+        }
+    });
+}
+
+// Exit Target Checkboxes - Enable/Disable inputs
+function initExitTargetCheckboxes() {
+    const takeProfitCheck = document.getElementById('takeProfitEnabled');
+    const takeProfitInput = document.getElementById('takeProfitAmount');
+    const apyTargetCheck = document.getElementById('apyTargetEnabled');
+    const apyTargetInput = document.getElementById('apyTargetValue');
+
+    if (takeProfitCheck && takeProfitInput) {
+        takeProfitCheck.addEventListener('change', () => {
+            takeProfitInput.disabled = !takeProfitCheck.checked;
+        });
+    }
+
+    if (apyTargetCheck && apyTargetInput) {
+        apyTargetCheck.addEventListener('change', () => {
+            apyTargetInput.disabled = !apyTargetCheck.checked;
+        });
+    }
+}
+
+// Liquidity Strategy Toggle
+function initLiquidityStrategyToggle() {
+    const liqBtns = document.querySelectorAll('.liq-btn');
+    const rebalanceConfig = document.getElementById('rebalanceConfig');
+
+    liqBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            liqBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Show rebalance config only for active strategy
+            if (rebalanceConfig) {
+                rebalanceConfig.style.display = btn.dataset.strategy === 'active' ? 'flex' : 'none';
+            }
+        });
     });
 }
 
