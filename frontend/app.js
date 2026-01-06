@@ -1936,6 +1936,71 @@ function initAllButtonHandlers() {
         });
     });
 
+    // --- Terminal Grid Listeners ---
+
+    // Chain Selection (Build)
+    document.querySelectorAll('.chain-btn-build').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.hasAttribute('disabled')) return;
+            document.querySelectorAll('.chain-btn-build').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            // Update logic if needed
+            Toast?.show(`Network set to: ${btn.textContent.trim()}`, 'info');
+        });
+    });
+
+    // Pool Type Selection (Build)
+    document.querySelectorAll('.pool-type-btn-build').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.pool-type-btn-build').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Asset Chips
+    document.querySelectorAll('.asset-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.classList.toggle('active'); // Multi-select behavior for chips
+        });
+    });
+
+    // Quick Amounts
+    document.querySelectorAll('.quick-amounts button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const amount = btn.dataset.amount;
+            const input = document.getElementById('builderAmount');
+            if (input) input.value = amount;
+
+            document.querySelectorAll('.quick-amounts button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Duration Buttons
+    document.querySelectorAll('.duration-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.duration-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Risk Options
+    document.querySelectorAll('.risk-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.risk-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Protocol Chips (Build)
+    document.querySelectorAll('.protocol-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.classList.toggle('active');
+        });
+    });
+
+    // --- End Terminal Grid Listeners ---
+
     // Preset Buttons
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {

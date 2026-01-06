@@ -8298,3 +8298,141 @@ body.oracle-visible .oracle-toggle-btn {
 .pro-section {
     padding: 12px;
 }
+
+/* --- Terminal Grid Layout (High Density) --- */
+.builder-terminal-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr 1fr 280px;
+    /* 4 Columns */
+    grid-template-rows: auto auto auto;
+    gap: 4px;
+    background: transparent;
+    border: 1px solid rgba(212, 175, 55, 0.2);
+    padding: 4px;
+}
+
+/* Grid Areas (Implicit mapping via order) */
+
+.terminal-panel {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+}
+
+.terminal-panel h3 {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0 0 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Spanning Classes */
+.span-full {
+    grid-column: 1 / -1;
+}
+
+.span-2 {
+    grid-column: span 2;
+}
+
+.span-3 {
+    grid-column: span 3;
+}
+
+/* Mission Briefing Override */
+.mission-briefing-wrapper {
+    background: rgba(10, 10, 12, 0.95);
+    border-bottom: 2px solid var(--gold);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.mission-label-large {
+    color: var(--gold);
+    font-family: var(--font-mono);
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.mission-input-large {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    color: #4ade80;
+    width: 100%;
+    font-family: var(--font-mono);
+    outline: none;
+}
+
+/* Compact Inputs */
+.terminal-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.terminal-input-group label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
+.terminal-value-display {
+    font-size: 1.2rem;
+    color: var(--gold);
+    font-family: var(--font-mono);
+}
+
+/* High Density Overrides */
+.strategy-presets {
+    grid-template-columns: repeat(4, 1fr);
+    /* 4 per row */
+}
+
+.preset-btn {
+    height: 70px;
+    padding: 8px;
+}
+
+.asset-chips {
+    flex-wrap: wrap;
+}
+
+.chain-selector-build {
+    display: flex;
+    gap: 4px;
+}
+
+.chain-btn-build {
+    flex: 1;
+    justify-content: center;
+}
+
+/* Hide specific elements for density */
+.section-desc,
+.builder-header-row {
+    display: none;
+    /* Hide old headers */
+}
+
+@media (max-width: 1200px) {
+    .builder-terminal-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 800px) {
+    .builder-terminal-grid {
+        grid-template-columns: 1fr;
+    }
+}
