@@ -2302,13 +2302,25 @@ function initTerminalGridLogic() {
 
     // 1. Mode Toggle (Basic <-> Pro)
     const modeBtns = document.querySelectorAll('#builderModeToggle .mode-btn');
-    const proSections = document.querySelectorAll('.pro-section, .liquidity-manager-compact');
+    const proSections = document.querySelectorAll('.liquidity-manager-compact');
 
-    // Default State: Hide Pro sections if Basic is active
+    // Helper to Apply Mode
+    const applyMode = (isPro) => {
+        proSections.forEach(el => {
+            if (isPro) {
+                el.style.display = 'block';
+                el.classList.remove('hidden');
+            } else {
+                el.style.display = 'none';
+                el.classList.add('hidden');
+            }
+        });
+        document.body.classList.toggle('builder-pro-mode', isPro);
+    };
+
+    // Default State
     const activeMode = document.querySelector('#builderModeToggle .mode-btn.active')?.dataset.mode || 'basic';
-    if (activeMode === 'basic') {
-        proSections.forEach(el => el.style.display = 'none');
-    }
+    applyMode(activeMode === 'pro');
 
     modeBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2316,21 +2328,7 @@ function initTerminalGridLogic() {
             btn.classList.add('active');
 
             const mode = btn.dataset.mode;
-            const isPro = mode === 'pro';
-
-            // Toggle UI State
-            document.body.classList.toggle('builder-pro-mode', isPro);
-
-            // Specific Element Handling
-            proSections.forEach(el => {
-                if (isPro) {
-                    el.style.display = 'block';
-                    el.classList.remove('hidden');
-                } else {
-                    el.style.display = 'none';
-                    el.classList.add('hidden');
-                }
-            });
+            applyMode(mode === 'pro');
 
             Toast?.show(`Switched to ${mode.toUpperCase()} Mode`, 'info');
         });
