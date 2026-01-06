@@ -249,6 +249,100 @@ class EngineerAgent:
         
         return task
     
+    async def create_pro_deposit_task(
+        self,
+        user_id: str,
+        vault_address: str,
+        amount_usdt: float,
+        pro_config: Dict[str, Any],
+        max_gas_usd: float = 2.0
+    ) -> EngineeringTask:
+        """
+        Create a Pro Mode deposit task with advanced settings
+        
+        Pro Config includes:
+        - leverage: float (1.0 to 3.0)
+        - rebalance_threshold: int (percentage)
+        - stop_loss_percent: int
+        - take_profit_amount: float
+        - volatility_guard: bool
+        - gas_strategy: str (standard/smart/gas-saver)
+        - duration: Dict with value and unit
+        - custom_instructions: str
+        """
+        task_id = self._generate_task_id(user_id, "pro_deposit")
+        
+        # Extract Pro Mode settings
+        leverage = pro_config.get('leverage', 1.0)
+        stop_loss = pro_config.get('stopLossPercent', 15)
+        take_profit = pro_config.get('takeProfitAmount', None)
+        volatility_guard = pro_config.get('volatilityGuard', True)
+        duration = pro_config.get('duration', {'value': 30, 'unit': 'days'})
+        custom_instructions = pro_config.get('customInstructions', '')
+        
+        logger.info(f"🔥 PRO MODE Task Created:")
+        logger.info(f"   Leverage: {leverage}x")
+        logger.info(f"   Stop Loss: {stop_loss}%")
+        logger.info(f"   Take Profit: ${take_profit if take_profit else 'None'}")
+        logger.info(f"   Volatility Guard: {volatility_guard}")
+        logger.info(f"   Duration: {duration.get('value')} {duration.get('unit')}")
+        if custom_instructions:
+            logger.info(f"   Custom: {custom_instructions[:50]}...")
+        
+        # USDT on Base
+        usdt_address = "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"
+        
+        # Build steps based on leverage
+        steps = [
+            TransactionStep(
+                action="approve",
+                contract_address=usdt_address,
+                function_name="approve",
+            ),
+        ]
+        
+        # If leveraged, add loop steps
+        if leverage > 1.0:
+            # For Smart Looping: deposit, borrow, deposit again
+            loop_iterations = int((leverage - 1) * 2)  # Approximate number of loops
+            logger.info(f"   Loop iterations: {loop_iterations}")
+            
+            for i in range(loop_iterations):
+                steps.append(TransactionStep(
+                    action="deposit_loop",
+                    contract_address=vault_address,
+                    function_name="supply",
+                ))
+                steps.append(TransactionStep(
+                    action="borrow_loop", 
+                    contract_address=vault_address,
+                    function_name="borrow",
+                ))
+        else:
+            steps.append(TransactionStep(
+                action="deposit",
+                contract_address=vault_address,
+                function_name="deposit",
+            ))
+        
+        task = EngineeringTask(
+            id=task_id,
+            user_id=user_id,
+            task_type=TaskType.SIMPLE_DEPOSIT,  # Can add PRO_DEPOSIT later
+            steps=steps,
+            max_gas_cost_usd=max_gas_usd,
+            max_gas_gwei=10,
+            min_output_amount=amount_usdt * 0.999
+        )
+        
+        # Store pro config for monitoring
+        task.pro_config = pro_config  # type: ignore
+        
+        self.pending_tasks.append(task)
+        logger.info(f"✅ Created PRO deposit task {task_id} for ${amount_usdt} USDT @ {leverage}x")
+        
+        return task
+    
     # ===========================================
     # GAS OPTIMIZATION LOOP
     # ===========================================

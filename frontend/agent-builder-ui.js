@@ -539,10 +539,45 @@ What would you like to configure?`;
         const btn = document.getElementById('deployAgentBtn');
         const statusBar = document.getElementById('agentStatusBar');
 
+        // Check if wallet is connected (required for deployment)
+        if (!window.connectedWallet) {
+            this.addAgentMessage('⚠️ Please connect your wallet first to deploy an agent.');
+            return;
+        }
+
         btn.innerHTML = '<span>⏳</span> Deploying...';
         btn.disabled = true;
 
         try {
+            // Get Pro Mode configuration if available
+            const proHelper = window.AgentBuilderPro;
+            const isProMode = proHelper?.isProModeActive() || false;
+            let proConfig = null;
+
+            if (isProMode && proHelper) {
+                proConfig = proHelper.getProConfig();
+
+                // Validate Pro Mode settings
+                const validation = proHelper.validate();
+                if (!validation.valid) {
+                    this.addAgentMessage(`❌ Validation failed:\n${validation.errors.join('\n')}`);
+                    btn.innerHTML = '<span>🚀</span> Deploy Agent';
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Show warnings if any
+                if (validation.warnings.length > 0) {
+                    console.log('[AgentBuilder] Pro Mode warnings:', validation.warnings);
+                }
+            }
+
+            // Run Neural Terminal deployment sequence
+            const terminal = window.NeuralTerminal;
+            if (terminal) {
+                await terminal.runDeploymentSequence(this.config, proConfig);
+            }
+
             // Simulate wallet creation
             const address = '0x' + Array.from({ length: 40 }, () =>
                 '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
@@ -554,7 +589,8 @@ What would you like to configure?`;
             statusBar.style.display = 'flex';
             btn.innerHTML = '<span>✅</span> Agent Deployed';
 
-            this.addAgentMessage(`🚀 Agent deployed successfully on **Base**!
+            // Build configuration summary
+            let configSummary = `🚀 Agent deployed successfully on **Base**!
 
 **Agent Wallet:** \`${address.slice(0, 10)}...${address.slice(-6)}\`
 
@@ -565,13 +601,68 @@ What would you like to configure?`;
 • APY Target: ${this.config.minApy}%-${this.config.maxApy}%
 • Protocols: ${this.config.protocols.slice(0, 3).join(', ')}${this.config.protocols.length > 3 ? '...' : ''}
 • Assets: ${this.config.preferredAssets.slice(0, 4).join(', ')}${this.config.preferredAssets.length > 4 ? '...' : ''}
-• Max per vault: ${this.config.maxAllocation}%
+• Max per vault: ${this.config.maxAllocation}%`;
 
-⚠️ Send USDC or ETH to the agent address on Base to start. The agent will automatically allocate to single-sided pools based on your settings.`);
+            // Add Pro Mode details if active
+            if (isProMode && proConfig) {
+                configSummary += `
+
+**🔥 Pro Mode Settings:**`;
+                if (proConfig.leverage > 1) {
+                    configSummary += `\n• Leverage: ${proConfig.leverage.toFixed(1)}x`;
+                }
+                if (proConfig.stopLossEnabled) {
+                    configSummary += `\n• Stop Loss: ${proConfig.stopLossPercent}%`;
+                }
+                if (proConfig.takeProfitEnabled) {
+                    configSummary += `\n• Take Profit: $${proConfig.takeProfitAmount}`;
+                }
+                if (proConfig.volatilityGuard) {
+                    configSummary += `\n• Volatility Guard: Enabled`;
+                }
+                configSummary += `\n• Duration: ${proConfig.duration.value} ${proConfig.duration.unit}`;
+                if (proConfig.customInstructions) {
+                    configSummary += `\n• Custom: "${proConfig.customInstructions.slice(0, 50)}${proConfig.customInstructions.length > 50 ? '...' : ''}"`;
+                }
+            }
+
+            configSummary += `
+
+⚠️ Send USDC or ETH to the agent address on Base to start. The agent will automatically allocate to single-sided pools based on your settings.`;
+
+            this.addAgentMessage(configSummary);
+
+            // Log to backend (optional - for analytics)
+            this.logDeploymentToBackend(address, isProMode, proConfig);
 
         } catch (error) {
             btn.innerHTML = '<span>❌</span> Deploy Failed';
             this.addAgentMessage(`Deployment failed: ${error.message}. Please try again.`);
+
+            if (window.NeuralTerminal) {
+                window.NeuralTerminal.log(`[ERROR] Deployment failed: ${error.message}`, 'error');
+                window.NeuralTerminal.setStatus('ERROR');
+            }
+        }
+    }
+
+    async logDeploymentToBackend(address, isProMode, proConfig) {
+        try {
+            // Optional: Send deployment data to backend for analytics
+            const payload = {
+                agentAddress: address,
+                chain: this.config.chain,
+                preset: this.config.preset,
+                riskLevel: this.config.riskLevel,
+                protocols: this.config.protocols,
+                assets: this.config.preferredAssets,
+                isProMode: isProMode,
+                proConfig: proConfig
+            };
+            console.log('[AgentBuilder] Deployment logged:', payload);
+            // Could send to backend: await fetch('/api/agents/deploy', { ... })
+        } catch (e) {
+            console.error('[AgentBuilder] Failed to log deployment:', e);
         }
     }
 

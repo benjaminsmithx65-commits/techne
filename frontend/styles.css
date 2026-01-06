@@ -6729,3 +6729,300 @@ body.builder-pro .basic-mode-only {
 .custom-instructions-input::placeholder {
     color: var(--text-muted);
 }
+
+/* ===========================================
+   NEURAL TERMINAL - Matrix/Cyberpunk Style
+   =========================================== */
+
+.neural-terminal {
+    position: relative;
+    margin-top: var(--space-6);
+    background: rgba(0, 0, 0, 0.95);
+    border: 1px solid var(--gold-dim);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    box-shadow:
+        0 0 20px rgba(212, 168, 83, 0.1),
+        inset 0 0 60px rgba(0, 255, 65, 0.02);
+}
+
+.terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(180deg, rgba(212, 168, 83, 0.15), rgba(212, 168, 83, 0.05));
+    border-bottom: 1px solid var(--gold-dim);
+}
+
+.terminal-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.terminal-icon {
+    font-size: 1rem;
+    animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        opacity: 1;
+        text-shadow: 0 0 10px var(--gold);
+    }
+
+    50% {
+        opacity: 0.7;
+        text-shadow: 0 0 5px var(--gold);
+    }
+}
+
+.terminal-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.terminal-status {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: rgba(100, 100, 100, 0.3);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.terminal-status.deploying {
+    background: rgba(234, 179, 8, 0.2);
+    color: var(--warning);
+    animation: blink 0.5s infinite;
+}
+
+.terminal-status.active {
+    background: rgba(34, 197, 94, 0.2);
+    color: var(--success);
+}
+
+.terminal-status.error {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.terminal-controls {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.terminal-btn {
+    width: 24px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.terminal-btn:hover {
+    background: rgba(212, 168, 83, 0.2);
+    border-color: var(--gold);
+    color: var(--gold);
+}
+
+.terminal-body {
+    display: flex;
+    flex-direction: column;
+    height: 300px;
+}
+
+.terminal-output {
+    flex: 1;
+    padding: var(--space-4);
+    overflow-y: auto;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
+.terminal-output::-webkit-scrollbar {
+    width: 6px;
+}
+
+.terminal-output::-webkit-scrollbar-thumb {
+    background: var(--gold-dim);
+    border-radius: 3px;
+}
+
+.log-line {
+    margin-bottom: 4px;
+    opacity: 0;
+    animation: fadeIn 0.3s forwards;
+}
+
+@keyframes fadeIn {
+    to {
+        opacity: 1;
+    }
+}
+
+.log-line .log-time {
+    color: rgba(150, 150, 150, 0.6);
+    font-size: 0.7rem;
+    margin-right: 8px;
+}
+
+.log-line.info {
+    color: #00ff41;
+    /* Matrix green */
+}
+
+.log-line.success {
+    color: #22c55e;
+}
+
+.log-line.warning {
+    color: var(--warning);
+}
+
+.log-line.error {
+    color: var(--danger);
+}
+
+.log-line.system {
+    color: var(--gold);
+    opacity: 0.8;
+}
+
+.log-line.command {
+    color: #a855f7;
+    /* Purple for user commands */
+}
+
+/* Syntax highlighting in logs */
+.highlight-address {
+    color: #60a5fa;
+    /* Blue for addresses */
+}
+
+.highlight-number {
+    color: #f472b6;
+    /* Pink for numbers */
+}
+
+.highlight-success {
+    color: #22c55e;
+    font-weight: 600;
+}
+
+.highlight-error {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.highlight-warning {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.terminal-input-area {
+    display: flex;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid rgba(212, 168, 83, 0.2);
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.terminal-prompt {
+    color: var(--gold);
+    font-weight: 600;
+    margin-right: var(--space-2);
+}
+
+.terminal-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #00ff41;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.terminal-input::placeholder {
+    color: rgba(0, 255, 65, 0.3);
+}
+
+/* ===========================================
+   PRO MODE TOOLTIPS
+   =========================================== */
+
+.pro-tooltip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: rgba(212, 168, 83, 0.1);
+    border: 1px solid rgba(212, 168, 83, 0.3);
+    border-radius: 50%;
+    font-size: 0.7rem;
+    color: var(--gold);
+    cursor: help;
+    margin-left: var(--space-2);
+    transition: all 0.2s;
+    position: relative;
+}
+
+.pro-tooltip:hover {
+    background: rgba(212, 168, 83, 0.3);
+    transform: scale(1.1);
+}
+
+.pro-tooltip::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elevated);
+    border: 1px solid var(--gold);
+    color: var(--text);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: 0.75rem;
+    font-weight: normal;
+    white-space: nowrap;
+    max-width: 250px;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: var(--shadow-gold);
+}
+
+.pro-tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+    bottom: calc(100% + 8px);
+}
