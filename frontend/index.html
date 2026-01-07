@@ -29,6 +29,10 @@
 
             <!-- Main Navigation -->
             <nav class="main-nav">
+                <a href="#verify" class="nav-item" data-section="verify">
+                    <img src="/icons/nav/verify.svg" alt="Verify" class="nav-icon">
+                    <span class="nav-text">Verify</span>
+                </a>
                 <a href="#explore" class="nav-item active" data-section="explore">
                     <img src="/icons/nav/explore.svg" alt="Explore" class="nav-icon">
                     <span class="nav-text">Explore</span>
@@ -1748,6 +1752,40 @@
                     </div>
                 </section>
 
+                <!-- Section: Verify Pools -->
+                <section class="section" id="section-verify">
+                    <div class="section-header">
+                        <h1>🔍 Verify Pool</h1>
+                        <p class="section-desc">Analyze any pool by address or URL. Get detailed risk assessment.</p>
+                    </div>
+
+                    <!-- Verify Input -->
+                    <div class="verify-input-container">
+                        <div class="verify-input-wrapper">
+                            <input type="text" id="verifyPoolInput" class="verify-input"
+                                placeholder="Enter pool address, DefiLlama URL, or protocol URL...">
+                            <button id="verifyPoolBtn" class="btn-verify">
+                                <span>🔍 Verify</span>
+                                <span class="verify-cost">🪙 <span id="verifyCreditCost">10</span> credits</span>
+                            </button>
+                        </div>
+                        <p class="verify-hint">Supports: Contract address (0x...), DefiLlama pool URL, Aerodrome/Uniswap
+                            pool links</p>
+                    </div>
+
+                    <!-- Verification History -->
+                    <div class="verify-history-section">
+                        <h2 class="verify-history-title">Recent Verifications</h2>
+                        <div id="verifyHistoryGrid" class="verify-history-grid">
+                            <div class="empty-state"
+                                style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">
+                                <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
+                                <p>No verified pools yet. Enter an address above to verify.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Section: Build -->
                 <section class="section" id="section-build">
                     <div class="section-header">
@@ -2717,6 +2755,7 @@
     <script src="/features.js"></script>
     <script src="/history.js"></script>
     <script src="/pool-detail.js"></script>
+    <script src="/verify-pools.js"></script>
     <script src="/wallet-connect.js"></script>
     <script src="/agent-builder-ui.js"></script>
     <script src="/agent-builder-pro.js"></script>
