@@ -158,6 +158,57 @@ const PoolDetailModal = {
         }
     },
 
+    // Render Artisan Agent verdict banner for verified pools
+    renderVerdictBanner(pool) {
+        const riskScore = pool.riskScore || pool.risk_score || 50;
+        const riskLevel = pool.riskLevel || pool.risk_level || 'Medium';
+        const dataSource = pool.dataSource || 'defillama';
+
+        let verdict, verdictClass, verdictIcon, verdictDesc;
+
+        if (riskScore >= 70 || riskLevel === 'Low') {
+            verdict = 'VERIFIED SAFE';
+            verdictClass = 'verdict-safe';
+            verdictIcon = '✅';
+            verdictDesc = 'This pool has passed Artisan Agent risk assessment';
+        } else if (riskScore >= 40 || riskLevel === 'Medium') {
+            verdict = 'CAUTION';
+            verdictClass = 'verdict-caution';
+            verdictIcon = '⚠️';
+            verdictDesc = 'This pool requires careful consideration before investing';
+        } else {
+            verdict = 'HIGH RISK';
+            verdictClass = 'verdict-danger';
+            verdictIcon = '❌';
+            verdictDesc = 'This pool has significant risk factors - proceed with caution';
+        }
+
+        // Dynamic data source indicator
+        let sourceLabel;
+        if (dataSource === 'geckoterminal') {
+            sourceLabel = '🦎 Real-time data via GeckoTerminal';
+        } else if (dataSource === 'onchain') {
+            sourceLabel = '⛓️ On-chain data (most accurate)';
+        } else {
+            sourceLabel = '📊 Data: DefiLlama (may differ from protocol)';
+        }
+
+        return `
+            <div class="artisan-verdict ${verdictClass}">
+                <div class="verdict-stamp">
+                    <span class="verdict-icon">${verdictIcon}</span>
+                    <span class="verdict-text">${verdict}</span>
+                </div>
+                <div class="verdict-details">
+                    <span class="verdict-agent">🤖 Artisan Agent Analysis</span>
+                    <span class="verdict-desc">${verdictDesc}</span>
+                    <span class="verdict-score">Risk Score: ${riskScore}/100</span>
+                    <span class="verdict-source">${sourceLabel}</span>
+                </div>
+            </div>
+        `;
+    },
+
     show(pool) {
         this.currentPool = pool;
 
@@ -201,6 +252,8 @@ const PoolDetailModal = {
         modal.innerHTML = `
             <div class="pool-detail-modal">
                 <button class="modal-close" onclick="PoolDetailModal.close()" title="Close (ESC)">${PoolIcons.close}</button>
+                
+                ${pool.isVerified ? this.renderVerdictBanner(pool) : ''}
                 
                 <!-- Trust Links -->
                 <div class="trust-links">

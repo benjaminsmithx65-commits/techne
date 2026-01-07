@@ -130,17 +130,79 @@ const VerifyPools = {
                 console.log('[VerifyPools] Parsed Aerodrome pool address:', liquidityMatch[1]);
                 return { type: 'address', id: liquidityMatch[1].toLowerCase(), protocol: 'aerodrome' };
             }
-            // Try token0 from deposit URL
-            const tokenMatch = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
-            if (tokenMatch) {
-                console.log('[VerifyPools] Parsed Aerodrome token0:', tokenMatch[1]);
-                return { type: 'address', id: tokenMatch[1].toLowerCase(), protocol: 'aerodrome' };
+
+            // Extract BOTH tokens from deposit URL for pair matching
+            const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
+            const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+
+            if (token0Match && token1Match) {
+                console.log('[VerifyPools] Parsed Aerodrome pair:', token0Match[1], token1Match[1]);
+                return {
+                    type: 'pair',
+                    token0: token0Match[1].toLowerCase(),
+                    token1: token1Match[1].toLowerCase(),
+                    protocol: 'aerodrome',
+                    chain: 'Base'
+                };
+            }
+
+            // Fallback to single token if only one found
+            if (token0Match) {
+                console.log('[VerifyPools] Parsed Aerodrome token0:', token0Match[1]);
+                return { type: 'address', id: token0Match[1].toLowerCase(), protocol: 'aerodrome' };
+            }
+        }
+
+        // Velodrome URL (similar to Aerodrome): https://velodrome.finance/deposit?token0=...&token1=...
+        if (input.includes('velodrome.finance')) {
+            const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
+            const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+
+            if (token0Match && token1Match) {
+                console.log('[VerifyPools] Parsed Velodrome pair:', token0Match[1], token1Match[1]);
+                return {
+                    type: 'pair',
+                    token0: token0Match[1].toLowerCase(),
+                    token1: token1Match[1].toLowerCase(),
+                    protocol: 'velodrome',
+                    chain: 'Optimism'
+                };
+            }
+        }
+
+        // PancakeSwap URLs
+        if (input.includes('pancakeswap.finance')) {
+            const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
+            const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+
+            if (token0Match && token1Match) {
+                console.log('[VerifyPools] Parsed PancakeSwap pair');
+                return {
+                    type: 'pair',
+                    token0: token0Match[1].toLowerCase(),
+                    token1: token1Match[1].toLowerCase(),
+                    protocol: 'pancakeswap'
+                };
             }
         }
 
         // Uniswap URL: https://app.uniswap.org/pools/POOL_ID or /pool/CHAIN/0x...
         if (input.includes('uniswap.org') || input.includes('uniswap.com')) {
-            const poolMatch = input.match(/pool[s]?\/([\w]+)\/(0x[a-fA-F0-9]{40})/i);
+            // Check for token pair in URL params first
+            const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
+            const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+
+            if (token0Match && token1Match) {
+                console.log('[VerifyPools] Parsed Uniswap pair');
+                return {
+                    type: 'pair',
+                    token0: token0Match[1].toLowerCase(),
+                    token1: token1Match[1].toLowerCase(),
+                    protocol: 'uniswap-v3'
+                };
+            }
+
+            const poolMatch = input.match(/pool[s]?\/([\\w]+)\/(0x[a-fA-F0-9]{40})/i);
             if (poolMatch) {
                 console.log('[VerifyPools] Parsed Uniswap pool:', poolMatch[2]);
                 return { type: 'address', id: poolMatch[2].toLowerCase(), protocol: 'uniswap' };
@@ -157,6 +219,21 @@ const VerifyPools = {
             if (poolMatch) {
                 console.log('[VerifyPools] Parsed Curve pool:', poolMatch[1]);
                 return { type: 'name', id: poolMatch[1], protocol: 'curve' };
+            }
+        }
+
+        // UNIVERSAL: Any URL with token0 & token1 query params
+        if (input.includes('token0=') && input.includes('token1=')) {
+            const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
+            const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+
+            if (token0Match && token1Match) {
+                console.log('[VerifyPools] Parsed generic pair URL');
+                return {
+                    type: 'pair',
+                    token0: token0Match[1].toLowerCase(),
+                    token1: token1Match[1].toLowerCase()
+                };
             }
         }
 
@@ -243,6 +320,9 @@ const VerifyPools = {
             riskScore: riskScore,
             riskLevel: riskLevel,
 
+            // IMPORTANT: Flag for showing verdict banner in modal
+            isVerified: true,
+
             // Additional metrics
             underlyingTokens: pool.underlyingTokens || [],
 
@@ -258,6 +338,9 @@ const VerifyPools = {
 
             // Smart insights for rich analysis
             smart_insights: premiumInsights,
+
+            // Data source indicator
+            dataSource: pool.dataSource || pool.source || 'defillama',
 
             // Keep original data for reference
             _raw: pool
@@ -375,6 +458,64 @@ const VerifyPools = {
         return '0.00';
     },
 
+    // Search for pool by token pair (e.g., from Aerodrome deposit URLs)
+    async searchByPair(parsed) {
+        const { token0, token1, protocol, chain } = parsed;
+        console.log('[VerifyPools] Searching for pair:', token0, token1, 'on', protocol);
+
+        Toast?.show('Searching for token pair in DefiLlama...', 'info');
+
+        try {
+            // Call backend API for pair search
+            const response = await fetch(
+                `http://localhost:8000/api/scout/pool-pair?token0=${encodeURIComponent(token0)}&token1=${encodeURIComponent(token1)}&protocol=${encodeURIComponent(protocol || '')}&chain=${encodeURIComponent(chain || '')}`
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.pool) {
+                    console.log('[VerifyPools] Found pair pool:', data.pool);
+                    Toast?.show('Pool found!', 'success');
+                    return data.pool;
+                }
+            }
+
+            // Fallback: try to find in local pools
+            if (typeof pools !== 'undefined' && Array.isArray(pools) && pools.length > 0) {
+                const found = pools.find(p => {
+                    const poolLower = (p.pool || '').toLowerCase();
+                    const underlying = p.underlyingTokens || [];
+
+                    // Check if both tokens are in the pool
+                    const hasToken0 = poolLower.includes(token0) ||
+                        underlying.some(t => t?.toLowerCase().includes(token0));
+                    const hasToken1 = poolLower.includes(token1) ||
+                        underlying.some(t => t?.toLowerCase().includes(token1));
+
+                    // If protocol specified, filter by it
+                    if (protocol && p.project?.toLowerCase() !== protocol.toLowerCase()) {
+                        return false;
+                    }
+
+                    return hasToken0 && hasToken1;
+                });
+
+                if (found) {
+                    console.log('[VerifyPools] Found pair in local pools:', found);
+                    Toast?.show('Pool found!', 'success');
+                    return found;
+                }
+            }
+
+            Toast?.show('Token pair not found in DefiLlama database', 'warning');
+            return null;
+        } catch (error) {
+            console.error('[VerifyPools] Pair search error:', error);
+            Toast?.show('Error searching for token pair', 'error');
+            return null;
+        }
+    },
+
     // Fetch pool data from API
     async fetchPoolData(parsed) {
         console.log('[VerifyPools] Searching for pool:', parsed);
@@ -384,6 +525,11 @@ const VerifyPools = {
         const protocol = parsed.protocol;
 
         try {
+            // Handle 'pair' type search (e.g., from Aerodrome deposit URL)
+            if (searchType === 'pair') {
+                return await this.searchByPair(parsed);
+            }
+
             // Try to find in existing pools first (already loaded from backend)
             if (typeof pools !== 'undefined' && Array.isArray(pools) && pools.length > 0) {
                 console.log('[VerifyPools] Searching in', pools.length, 'local pools');

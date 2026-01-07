@@ -104,6 +104,97 @@ async def get_pool_by_address(address: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/pool-pair")
+async def get_pool_by_pair(
+    token0: str = Query(..., description="First token address"),
+    token1: str = Query(..., description="Second token address"),
+    protocol: str = Query("", description="Optional protocol filter (e.g., aerodrome)"),
+    chain: str = Query("Base", description="Chain filter (e.g., Base)")
+):
+    """
+    Search for a pool containing both specified tokens.
+    Uses GeckoTerminal for real-time data, falls back to DefiLlama.
+    """
+    import httpx
+    from data_sources.geckoterminal import gecko_client
+    
+    try:
+        token0 = token0.lower()
+        token1 = token1.lower()
+        logger.info(f"Searching for pair: {token0[:10]}... / {token1[:10]}... on {chain}")
+        
+        # PRIORITY 1: Try GeckoTerminal first (real-time data)
+        gecko_pool = await gecko_client.search_pool_by_tokens(
+            chain=chain or "base",
+            token0=token0,
+            token1=token1,
+            dex=protocol if protocol else None
+        )
+        
+        if gecko_pool:
+            logger.info(f"Found pool via GeckoTerminal: {gecko_pool.get('name')}")
+            gecko_pool["dataSource"] = "geckoterminal"
+            return {"success": True, "pool": gecko_pool, "source": "geckoterminal"}
+        
+        logger.info("GeckoTerminal: not found, trying DefiLlama...")
+        
+        # PRIORITY 2: Fall back to DefiLlama
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get("https://yields.llama.fi/pools")
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=502, detail="DefiLlama API unavailable")
+            
+            data = response.json()
+            pools = data.get("data", [])
+            
+            # Filter by protocol if specified (use contains for partial match like aerodrome -> aerodrome-slipstream)
+            if protocol:
+                protocol_lower = protocol.lower()
+                # Filter pools where protocol name contains the search term
+                pools = [p for p in pools if protocol_lower in p.get("project", "").lower()]
+                logger.info(f"After protocol filter: {len(pools)} pools")
+            
+            # Filter by chain if specified
+            if chain:
+                chain_lower = chain.lower()
+                pools = [p for p in pools if chain_lower in p.get("chain", "").lower()]
+            
+            logger.info(f"Searching {len(pools)} pools for tokens: {token0[:10]}... / {token1[:10]}...")
+            
+            # Search for pool containing both tokens
+            for p in pools:
+                pool_id = (p.get("pool") or "").lower()
+                underlying = p.get("underlyingTokens") or []
+                underlying_lower = [str(t).lower() for t in underlying if t]
+                
+                # Check if both tokens are in underlyingTokens (exact match)
+                has_token0 = token0 in underlying_lower
+                has_token1 = token1 in underlying_lower
+                
+                # Also check pool ID (partial match)
+                if not has_token0:
+                    has_token0 = token0 in pool_id
+                if not has_token1:
+                    has_token1 = token1 in pool_id
+                
+                if has_token0 and has_token1:
+                    logger.info(f"Found pair pool via DefiLlama: {p.get('symbol')} on {p.get('chain')}")
+                    p["dataSource"] = "defillama"
+                    return {"success": True, "pool": p, "source": "defillama"}
+            
+            logger.warning(f"Pool pair not found after checking all pools")
+            
+            raise HTTPException(status_code=404, detail="Pool pair not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching pool by pair: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/risk/{pool_id}")
 async def get_risk_score(pool_id: str):
     """

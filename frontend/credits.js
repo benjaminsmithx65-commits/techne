@@ -59,16 +59,25 @@ const CreditsManager = {
 
     // Update credits display in UI
     updateDisplay() {
+        const credits = this.getCredits();
+
+        // Update sidebar credits count
         const countEl = document.getElementById('creditsCount');
         if (countEl) {
-            countEl.textContent = this.getCredits();
+            countEl.textContent = credits;
+        }
+
+        // Update header credits balance
+        const headerAmount = document.getElementById('creditsAmount');
+        if (headerAmount) {
+            headerAmount.textContent = credits;
         }
 
         // Update apply button state
         const applyBtn = document.getElementById('applyFiltersBtn');
         if (applyBtn) {
             const textEl = applyBtn.querySelector('.apply-text');
-            if (this.getCredits() < this.FILTER_COST) {
+            if (credits < this.FILTER_COST) {
                 applyBtn.disabled = true;
                 if (textEl) textEl.textContent = 'Need 25 Credits';
             } else {
