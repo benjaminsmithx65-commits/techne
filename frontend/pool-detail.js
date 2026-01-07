@@ -12,13 +12,125 @@ const PoolIcons = {
     trendDown: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>`,
     check: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`,
     activity: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>`,
-    bot: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="16" r="4"></circle><path d="M7 6h10"></path><line x1="8" y1="6" x2="8" y2="2"></line><line x1="16" y1="6" x2="16" y2="2"></line></svg>`
+    bot: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="16" r="4"></circle><path d="M7 6h10"></path><line x1="8" y1="6" x2="8" y2="2"></line><line x1="16" y1="6" x2="16" y2="2"></line></svg>`,
+    externalLink: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>`,
+    fileText: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`
 };
+
+// Known token address to symbol mapping (Base mainnet)
+const TOKEN_ADDRESS_MAP = {
+    '0x194f7cd4da3514c7fb38f079d79e4b7200e98bf4': 'MERKL',
+    '0x940181a94a35a4569e4529a3cdfb74e38fd98631': 'AERO',
+    '0x4200000000000000000000000000000000000006': 'WETH',
+    '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC',
+    '0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca': 'USDbC',
+    '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 'DAI',
+    '0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22': 'cbETH',
+    '0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452': 'wstETH',
+    '0xb6fe221fe9eef5aba221c348ba20a1bf5e73624c': 'rETH',
+    '0x0578d8a44db98b23bf096a382e016e29a5ce0ffe': 'COMP',
+    '0x4f604735c1cf31399c6e711d5962b2b3e0225ad3': 'MORPHO',
+    '0x78a087d713be963bf3f1c1a8e73af1a31d9eb08d': 'ARB',
+};
+
+// Format reward token name - resolve addresses to symbols
+function formatRewardTokenName(name) {
+    if (!name) return 'TOKEN';
+
+    // Check if it's a hex address (starts with 0x and has 42 chars)
+    const addressMatch = name.match(/0x[a-fA-F0-9]{40}/i);
+    if (addressMatch) {
+        const address = addressMatch[0].toLowerCase();
+        // Check mapping first
+        if (TOKEN_ADDRESS_MAP[address]) {
+            return TOKEN_ADDRESS_MAP[address];
+        }
+        // Return shortened address
+        return `${address.slice(0, 6)}...${address.slice(-4)}`;
+    }
+
+    // Check if it's in format "Reward (0x...):" or similar
+    if (name.match(/\(0x[a-fA-F0-9]+\)/)) {
+        const innerMatch = name.match(/0x[a-fA-F0-9]{40}/i);
+        if (innerMatch) {
+            const addr = innerMatch[0].toLowerCase();
+            if (TOKEN_ADDRESS_MAP[addr]) {
+                return TOKEN_ADDRESS_MAP[addr];
+            }
+            return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+        }
+    }
+
+    return name;
+}
+
+// Get protocol website URL
+function getProtocolWebsite(project) {
+    const websites = {
+        'aerodrome': 'https://aerodrome.finance',
+        'velodrome': 'https://velodrome.finance',
+        'aave': 'https://aave.com',
+        'aave-v3': 'https://aave.com',
+        'compound': 'https://compound.finance',
+        'compound-v3': 'https://compound.finance',
+        'morpho': 'https://morpho.org',
+        'moonwell': 'https://moonwell.fi',
+        'curve-dex': 'https://curve.fi',
+        'curve': 'https://curve.fi',
+        'uniswap': 'https://uniswap.org',
+        'uniswap-v3': 'https://uniswap.org',
+        'beefy': 'https://beefy.finance',
+        'yearn': 'https://yearn.fi',
+        'yearn-finance': 'https://yearn.fi',
+        'seamless': 'https://seamlessprotocol.com',
+        'seamless-protocol': 'https://seamlessprotocol.com',
+        'sonne': 'https://sonne.finance',
+        'sonne-finance': 'https://sonne.finance',
+        'exactly': 'https://exactly.finance',
+        'extra-finance': 'https://extra.finance',
+        'merkl': 'https://merkl.angle.money',
+        'pendle': 'https://pendle.finance',
+        'radiant': 'https://radiant.capital',
+        'radiant-v2': 'https://radiant.capital',
+        'spark': 'https://spark.fi',
+        'convex': 'https://convexfinance.com',
+        'convex-finance': 'https://convexfinance.com',
+        'lido': 'https://lido.fi',
+        'gmx': 'https://gmx.io',
+        'balancer': 'https://balancer.fi',
+        'balancer-v2': 'https://balancer.fi',
+        'stargate': 'https://stargate.finance',
+        'origin': 'https://originprotocol.com',
+        'origin-ether': 'https://originprotocol.com',
+        'avantis': 'https://avantis.finance',
+        'infinifi': 'https://infinifi.xyz'
+    };
+    const key = (project || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    return websites[key] || null;
+}
+
+// Get explorer URL for contract
+function getExplorerUrl(pool) {
+    const chain = (pool.chain || 'base').toLowerCase();
+    const explorers = {
+        'base': 'https://basescan.org/address/',
+        'ethereum': 'https://etherscan.io/address/',
+        'arbitrum': 'https://arbiscan.io/address/',
+        'optimism': 'https://optimistic.etherscan.io/address/',
+        'polygon': 'https://polygonscan.com/address/'
+    };
+    const baseUrl = explorers[chain] || explorers['base'];
+    const contractAddress = pool.pool_address || pool.contract || pool.id;
+    if (contractAddress && contractAddress.startsWith('0x')) {
+        return `${baseUrl}${contractAddress}`;
+    }
+    return null;
+}
 
 const PoolDetailModal = {
     currentPool: null,
 
-    // Calculate time until next Aerodrome epoch (Wednesday 00:00 UTC)
+    // Calculate time until next Aerodrome/Velodrome epoch (Wednesday 00:00 UTC)
     getEpochCountdown() {
         const now = new Date();
         const nextWed = new Date(now);
@@ -29,7 +141,14 @@ const PoolDetailModal = {
         const diff = nextWed - now;
         const days = Math.floor(diff / 86400000);
         const hours = Math.floor((diff % 86400000) / 3600000);
-        return { days, hours, display: `${days}d ${hours}h` };
+        const minutes = Math.floor((diff % 3600000) / 60000);
+        return { days, hours, minutes, display: `${days}d ${hours}h ${minutes}m` };
+    },
+
+    // Check if protocol has epoch-based rewards
+    isEpochProtocol(project) {
+        const ep = (project || '').toLowerCase();
+        return ep.includes('aerodrome') || ep.includes('velodrome');
     },
 
     // Keydown handler
@@ -85,8 +204,9 @@ const PoolDetailModal = {
                 
                 <!-- Trust Links -->
                 <div class="trust-links">
-                    ${pool.explorer_link ? `<a href="${pool.explorer_link}" target="_blank" title="View Contract on Explorer">📜 Contract</a>` : ''}
-                    ${pool.pool_link ? `<a href="${pool.pool_link}" target="_blank" title="View on ${pool.project}">🏊 Pool</a>` : ''}
+                    ${getExplorerUrl(pool) ? `<a href="${getExplorerUrl(pool)}" target="_blank" title="View Contract on ${pool.chain || 'Base'} Explorer">${PoolIcons.fileText} Contract</a>` : ''}
+                    ${getProtocolWebsite(pool.project) ? `<a href="${getProtocolWebsite(pool.project)}" target="_blank" title="Visit ${pool.project} website">${PoolIcons.externalLink} Protocol</a>` : ''}
+                    ${pool.pool_link ? `<a href="${pool.pool_link}" target="_blank" title="View Pool on ${pool.project}">🏊 Pool</a>` : ''}
                 </div>
                 
                 <div class="pool-detail-header">
@@ -138,9 +258,9 @@ const PoolDetailModal = {
                 <div class="detail-section premium-analysis">
                     <div class="section-header">
                         <h3>📊 Market Dynamics</h3>
-                        ${pool.project?.includes('aerodrome') ? `
-                            <div class="epoch-timer" title="Aerodrome rewards reset each epoch">
-                                ⏱️ Epoch ends: ${epoch.display}
+                        ${this.isEpochProtocol(pool.project) ? `
+                            <div class="epoch-timer" title="${pool.project} rewards reset each epoch (Wednesday 00:00 UTC)">
+                                ⏳ Epoch ends in: ${epoch.display}
                             </div>
                         ` : ''}
                     </div>
@@ -167,8 +287,8 @@ const PoolDetailModal = {
                                     <div class="apy-part base" title="Base Yield">
                                         <span class="dot"></span> Base: ${pool.apy_base}%
                                     </div>
-                                    <div class="apy-part reward" title="Reward Yield - paid in ${pool.reward_token || 'TOKEN'}">
-                                        <span class="dot"></span> Reward (${pool.reward_token || 'TOKEN'}): ${pool.apy_reward}%
+                                    <div class="apy-part reward" title="Reward Yield - paid in ${formatRewardTokenName(pool.reward_token)}">
+                                        <span class="dot"></span> Reward (${formatRewardTokenName(pool.reward_token)}): ${pool.apy_reward}%
                                         ${pool.pool_type !== 'stable' ? '<span class="reward-warning" title="Rewards paid in volatile token">⚠️</span>' : ''}
                                     </div>
                                 </div>
@@ -287,11 +407,11 @@ detailStyles.textContent = `
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius-xl);
-        max-width: 700px;
+        max-width: 650px;
         width: 100%;
-        max-height: 85vh;
+        max-height: 95vh;
         overflow-y: auto;
-        padding: var(--space-6);
+        padding: var(--space-3);
         position: relative;
     }
     
@@ -302,21 +422,36 @@ detailStyles.textContent = `
         right: 50px;
         display: flex;
         gap: var(--space-3);
+        z-index: 10;
     }
     
     .trust-links a {
         font-size: 0.75rem;
         color: var(--text-muted);
         text-decoration: none;
-        padding: 4px 8px;
+        padding: 6px 10px;
         background: var(--bg-elevated);
         border-radius: var(--radius-sm);
         transition: var(--transition-base);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
     }
     
     .trust-links a:hover {
         color: var(--gold);
-        background: rgba(234, 179, 8, 0.1);
+        background: rgba(234, 179, 8, 0.15);
+    }
+    
+    .trust-links a svg {
+        width: 14px;
+        height: 14px;
+    }
+    
+    .modal-close {
+        z-index: 20;
+        position: relative;
     }
     
     /* Epoch Timer */
@@ -358,9 +493,9 @@ detailStyles.textContent = `
     .pool-detail-header {
         display: flex;
         align-items: center;
-        gap: var(--space-4);
-        margin-bottom: var(--space-5);
-        padding-bottom: var(--space-4);
+        gap: var(--space-3);
+        margin-bottom: var(--space-3);
+        padding-bottom: var(--space-3);
         border-bottom: 1px solid var(--border);
     }
     
@@ -424,14 +559,14 @@ detailStyles.textContent = `
     .pool-detail-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: var(--space-3);
-        margin-bottom: var(--space-5);
+        gap: var(--space-2);
+        margin-bottom: var(--space-3);
     }
     
     .detail-card {
         background: var(--bg-elevated);
         border-radius: var(--radius-md);
-        padding: var(--space-3);
+        padding: var(--space-2);
         text-align: center;
     }
     
@@ -453,8 +588,8 @@ detailStyles.textContent = `
     .detail-section {
         background: var(--bg-elevated);
         border-radius: var(--radius-lg);
-        padding: var(--space-4);
-        margin-bottom: var(--space-4);
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
     }
     
     .detail-section h3 {
@@ -529,13 +664,13 @@ detailStyles.textContent = `
     
     .pool-detail-actions {
         display: flex;
-        gap: var(--space-3);
-        margin-top: var(--space-5);
+        gap: var(--space-2);
+        margin-top: var(--space-3);
     }
     
     .btn-primary-large {
         flex: 2;
-        padding: var(--space-4) var(--space-5);
+        padding: var(--space-3) var(--space-4);
         background: var(--gradient-gold);
         border: none;
         border-radius: var(--radius-lg);

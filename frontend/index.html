@@ -114,13 +114,13 @@
 
                     <!-- Credits Info Banner -->
                     <div class="credits-info" id="creditsInfo">
-                        <p class="credits-tip">Each filter search costs <strong>1 credit</strong></p>
+                        <p class="credits-tip">Each filter search costs <strong>25 credits</strong></p>
                         <div class="credits-actions">
                             <button class="btn-buy-credits" id="buyCreditsBtn">
-                                <span>Buy 5 Credits</span>
-                                <span class="credits-price">0.1 USDC</span>
+                                <span>Buy 100 Credits</span>
+                                <span class="credits-price">0.10 USDC</span>
                             </button>
-                            <a href="#premium" class="premium-link">Premium: 50 credits/day →</a>
+                            <a href="#premium" class="premium-link">Premium: 3000 credits/day →</a>
                         </div>
                     </div>
 
@@ -577,7 +577,7 @@
                                             <circle cx="12" cy="12" r="3" />
                                         </svg>
                                     </span>
-                                    <span>15 Pool Searches per pack</span>
+                                    <span>4 Pool Searches per pack</span>
                                 </li>
                                 <li class="feature-item checked">
                                     <span class="feature-icon" title="Data">
@@ -617,7 +617,7 @@
                             </ul>
 
                             <button id="buy-credits-btn" class="btn-secondary-greek">
-                                Buy 15 Searches
+                                Buy 4 Searches
                             </button>
                         </div>
 
@@ -639,7 +639,7 @@
                                             <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5z" />
                                         </svg>
                                     </span>
-                                    <span>200 Searches / Day</span>
+                                    <span>120 Searches / Day</span>
                                 </li>
                                 <li class="feature-item checked">
                                     <span class="feature-icon" title="Speed">
@@ -771,21 +771,44 @@
                     <!-- Protocol Stats -->
                     <div class="protocol-stats-bar">
                         <div class="stat-item">
-                            <span class="stat-value" id="totalProtocols">40+</span>
+                            <span class="stat-value" id="totalProtocols">37</span>
                             <span class="stat-label">Protocols</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-value" id="totalProtocolTvl">$45B+</span>
+                            <span class="stat-value" id="totalProtocolTvl">$50B+</span>
                             <span class="stat-label">Combined TVL</span>
                         </div>
                         <div class="stat-item">
-                            <span class="stat-value">5</span>
+                            <span class="stat-value">4</span>
                             <span class="stat-label">Chains</span>
                         </div>
                     </div>
 
                     <!-- Protocol Grid -->
                     <div class="protocol-grid" id="protocolGrid">
+                        <!-- Lido -->
+                        <div class="protocol-card" data-protocol="lido">
+                            <div class="protocol-header">
+                                <img src="/icons/protocols/lido.png" alt="Lido" class="protocol-icon">
+                                <div class="protocol-info">
+                                    <h3>Lido</h3>
+                                    <div class="protocol-tags">
+                                        <span class="tag staking">Staking</span>
+                                        <span class="tag rewards">Rewards</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="protocol-stats">
+                                <div class="protocol-tvl">
+                                    <span class="tvl-value">$22.1B</span>
+                                    <span class="tvl-label">TVL</span>
+                                </div>
+                                <div class="protocol-chains">
+                                    <img src="/icons/ethereum.png" alt="Ethereum" title="Ethereum">
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Aave -->
                         <div class="protocol-card" data-protocol="aave">
                             <div class="protocol-header">
@@ -807,29 +830,6 @@
                                     <img src="/icons/ethereum.png" alt="Ethereum" title="Ethereum">
                                     <img src="/icons/base.png" alt="Base" title="Base">
                                     <img src="/icons/arbitrum.png" alt="Arbitrum" title="Arbitrum">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Lido -->
-                        <div class="protocol-card" data-protocol="lido">
-                            <div class="protocol-header">
-                                <img src="/icons/protocols/lido.png" alt="Lido" class="protocol-icon">
-                                <div class="protocol-info">
-                                    <h3>Lido</h3>
-                                    <div class="protocol-tags">
-                                        <span class="tag staking">Staking</span>
-                                        <span class="tag rewards">Rewards</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="protocol-stats">
-                                <div class="protocol-tvl">
-                                    <span class="tvl-value">$22.1B</span>
-                                    <span class="tvl-label">TVL</span>
-                                </div>
-                                <div class="protocol-chains">
-                                    <img src="/icons/ethereum.png" alt="Ethereum" title="Ethereum">
                                 </div>
                             </div>
                         </div>

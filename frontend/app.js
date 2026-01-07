@@ -37,8 +37,42 @@ document.addEventListener('DOMContentLoaded', () => {
     initViewToggle();
     initProtocolSearch();
     initBuildSection();
+    sortProtocolsByTVL();
     loadPools();
 });
+
+// Sort protocol cards by TVL (descending)
+function sortProtocolsByTVL() {
+    const grid = document.querySelector('#section-protocols .protocol-grid');
+    if (!grid) return;
+
+    const cards = Array.from(grid.querySelectorAll('.protocol-card'));
+    if (cards.length === 0) return;
+
+    // Parse TVL value from string like "$22.1B", "$1.4B", "$450M", "$12M"
+    function parseTVL(tvlStr) {
+        if (!tvlStr) return 0;
+        const match = tvlStr.match(/\$([\d.]+)([BMK]?)/i);
+        if (!match) return 0;
+        let value = parseFloat(match[1]);
+        const suffix = (match[2] || '').toUpperCase();
+        if (suffix === 'B') value *= 1000000000;
+        else if (suffix === 'M') value *= 1000000;
+        else if (suffix === 'K') value *= 1000;
+        return value;
+    }
+
+    // Sort cards by TVL descending
+    cards.sort((a, b) => {
+        const tvlA = parseTVL(a.querySelector('.tvl-value')?.textContent);
+        const tvlB = parseTVL(b.querySelector('.tvl-value')?.textContent);
+        return tvlB - tvlA;
+    });
+
+    // Reorder in DOM
+    cards.forEach(card => grid.appendChild(card));
+    console.log('[Protocols] Sorted', cards.length, 'protocol cards by TVL');
+}
 
 // Protocol search in More Protocols section
 function initProtocolSearch() {

@@ -3,16 +3,17 @@
  * Manages credits for advanced filtering
  * 
  * Model:
- * - 1 credit = 1 filter search (via Apply Filters button)
- * - 5 credits = 0.1 USDC
- * - Premium = 50 credits/day
+ * - 25 credits = 1 filter search (via Apply Filters button)
+ * - 100 credits = 0.1 USDC
+ * - Premium = 3000 credits/day
  */
 
 const CreditsManager = {
     STORAGE_KEY: 'techne_credits',
-    CREDITS_PER_PURCHASE: 5,
+    CREDITS_PER_PURCHASE: 100,
+    FILTER_COST: 25,
     PRICE_USDC: 0.1,
-    PREMIUM_DAILY_CREDITS: 50,
+    PREMIUM_DAILY_CREDITS: 3000,
 
     // Get current credits
     getCredits() {
@@ -41,19 +42,19 @@ const CreditsManager = {
         return this.setCredits(current + amount);
     },
 
-    // Use 1 credit for filter search
+    // Use credits for filter search (25 credits per filter)
     useCredit() {
         const current = this.getCredits();
-        if (current <= 0) {
+        if (current < this.FILTER_COST) {
             return false;
         }
-        this.setCredits(current - 1);
+        this.setCredits(current - this.FILTER_COST);
         return true;
     },
 
-    // Check if can filter
+    // Check if can filter (need at least FILTER_COST credits)
     canFilter() {
-        return this.getCredits() > 0;
+        return this.getCredits() >= this.FILTER_COST;
     },
 
     // Update credits display in UI
@@ -67,12 +68,12 @@ const CreditsManager = {
         const applyBtn = document.getElementById('applyFiltersBtn');
         if (applyBtn) {
             const textEl = applyBtn.querySelector('.apply-text');
-            if (this.getCredits() <= 0) {
+            if (this.getCredits() < this.FILTER_COST) {
                 applyBtn.disabled = true;
-                if (textEl) textEl.textContent = 'No Credits';
+                if (textEl) textEl.textContent = 'Need 25 Credits';
             } else {
                 applyBtn.disabled = false;
-                if (textEl) textEl.textContent = 'Apply Filters';
+                if (textEl) textEl.textContent = `Apply (${this.FILTER_COST} credits)`;
             }
         }
     },
@@ -90,13 +91,14 @@ const CreditsManager = {
                 <h2 style="margin-bottom: 16px;">⚡ Buy Filter Credits</h2>
                 
                 <div style="background: var(--bg-elevated); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
-                    <div style="font-size: 3rem; margin-bottom: 8px;">5</div>
+                    <div style="font-size: 3rem; margin-bottom: 8px;">100</div>
                     <div style="color: var(--text-muted);">filter credits</div>
+                    <div style="color: var(--gold); font-size: 0.85rem; margin-top: 8px;">= 4 filter searches</div>
                 </div>
                 
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; color: var(--text-secondary);">
                     <span>Price:</span>
-                    <span style="color: var(--gold); font-weight: 700;">0.1 USDC</span>
+                    <span style="color: var(--gold); font-weight: 700;">0.10 USDC</span>
                 </div>
                 
                 <button id="confirmBuyCreditsBtn" class="btn-apply-filters" style="width: 100%;">
@@ -111,7 +113,7 @@ const CreditsManager = {
                 
                 <div style="text-align: center;">
                     <p style="color: var(--gold); font-weight: 600; margin-bottom: 8px;">👑 Go Premium</p>
-                    <p style="color: var(--text-muted); font-size: 0.85rem;">Get 50 free credits every day!</p>
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">Get 3000 free credits every day!</p>
                     <a href="#premium" onclick="document.getElementById('buyCreditsModal').remove()" 
                        style="color: var(--gold); font-size: 0.8rem;">Learn more →</a>
                 </div>
@@ -153,7 +155,7 @@ const CreditsManager = {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
 
-            // Payment details - 0.1 USDC for 5 credits
+            // Payment details - 0.1 USDC for 100 credits
             const RECIPIENT = '0x542c3b6cb5c93c4e4b4c20de48ee87dd79efdfec'; // Techne treasury
             const AMOUNT = '100000'; // 0.10 USDC (6 decimals)
 
@@ -191,12 +193,12 @@ const CreditsManager = {
             // Add credits
             this.addCredits(this.CREDITS_PER_PURCHASE);
 
-            btn.innerHTML = '<span>✓</span> 5 Credits Added!';
+            btn.innerHTML = '<span>✓</span> 100 Credits Added!';
             btn.style.background = 'var(--success)';
 
             // Show toast if available
             if (window.Toast) {
-                Toast.show('✅ 5 Filter Credits added!', 'success');
+                Toast.show('✅ 100 Filter Credits added!', 'success');
             }
 
             // Close modal after delay
@@ -221,7 +223,7 @@ const CreditsManager = {
         }
 
         this.useCredit();
-        console.log('[Credits] Used 1 credit, remaining:', this.getCredits());
+        console.log('[Credits] Used 25 credits, remaining:', this.getCredits());
 
         // Set flag and call original loadPools
         window._creditsApprovedLoad = true;
@@ -290,12 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(disableAutoFilterExecution, 1000);
 });
 
-// Give 3 free credits on first visit
+// Give 50 free credits on first visit
 (function () {
     const hasVisited = localStorage.getItem('techne_first_visit');
     if (!hasVisited) {
         localStorage.setItem('techne_first_visit', 'true');
-        CreditsManager.setCredits(3);
-        console.log('[Credits] Welcome bonus: 3 free credits!');
+        CreditsManager.setCredits(50);
+        console.log('[Credits] Welcome bonus: 50 free credits!');
     }
 })();
