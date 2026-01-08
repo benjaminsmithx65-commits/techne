@@ -44,6 +44,7 @@ KNOWN_FACTORIES = {
         # Aerodrome
         "0x420dd381b31aef6683db6b902084cb0ffece40da": Protocol.AERODROME_V2,
         "0x5e7bb104d84c7cb9b682aac2f3d509f5f406809a": Protocol.AERODROME_SLIPSTREAM,
+        "0xade65c38cd4849adba595a4323a8c7ddfe89716a": Protocol.AERODROME_SLIPSTREAM,  # Slipstream Stable
         # Uniswap
         "0x33128a8fc17869897dce68ed026d694621f6fdfd": Protocol.UNISWAP_V3,
         # Other DEXes
@@ -257,34 +258,55 @@ class SmartRouter:
         protocol: Protocol
     ) -> Dict[str, Any]:
         """
-        Tier 1 (Premium): Full Aerodrome analysis with APY, Gauge, Epoch.
+        Tier 1 (Premium): Full Aerodrome analysis.
+        - V2 pools: Use on-chain Gauge for APY
+        - Slipstream (CL): Use GeckoTerminal + on-chain enrichment
         """
-        try:
-            from data_sources.aerodrome import aerodrome_client
-            
-            # Get full pool data with on-chain APY
-            pool_data = await aerodrome_client.get_pool_by_address(pool_address)
-            
-            if pool_data:
-                # Enrich with GeckoTerminal market data (volume, TVL trend)
-                pool_data = await self._enrich_with_gecko_data(pool_data, pool_address, chain)
-                
-                return {
-                    "success": True,
-                    "pool": {
-                        **pool_data,
-                        "protocol": protocol.value,
-                        "protocol_name": self._get_protocol_name(protocol),
-                    },
-                    "data_quality": DataQuality.PREMIUM.value,
-                    "quality_reason": "Full on-chain APY via Gauge analysis",
-                    "source": f"aerodrome_onchain",
-                    "chain": chain
-                }
-        except Exception as e:
-            logger.warning(f"Aerodrome adapter failed: {e}")
+        pool_data = None
+        source = "unknown"
         
-        # Fallback to universal if Aerodrome fails
+        # For Slipstream (CL pools), use GeckoTerminal as primary (more reliable for CL)
+        if protocol == Protocol.AERODROME_SLIPSTREAM:
+            try:
+                from data_sources.geckoterminal import gecko_client
+                gecko_data = await gecko_client.get_pool_by_address(chain, pool_address)
+                
+                if gecko_data and gecko_data.get("tvl", 0) > 0:
+                    pool_data = gecko_data
+                    source = "geckoterminal+factory_detected"
+                    logger.info(f"Slipstream pool via GeckoTerminal: TVL=${gecko_data.get('tvl', 0):,.0f}")
+            except Exception as e:
+                logger.warning(f"GeckoTerminal for Slipstream failed: {e}")
+        
+        # For V2 pools OR if Slipstream GeckoTerminal failed, try on-chain adapter
+        if not pool_data:
+            try:
+                from data_sources.aerodrome import aerodrome_client
+                pool_data = await aerodrome_client.get_pool_by_address(pool_address)
+                if pool_data:
+                    source = "aerodrome_onchain"
+            except Exception as e:
+                logger.warning(f"Aerodrome on-chain adapter failed: {e}")
+        
+        # If we have data, enrich and return
+        if pool_data:
+            # Enrich with GeckoTerminal market data (volume, TVL trend)
+            pool_data = await self._enrich_with_gecko_data(pool_data, pool_address, chain)
+            
+            return {
+                "success": True,
+                "pool": {
+                    **pool_data,
+                    "protocol": protocol.value,
+                    "protocol_name": self._get_protocol_name(protocol),
+                },
+                "data_quality": DataQuality.PREMIUM.value,
+                "quality_reason": "Aerodrome pool with verified factory",
+                "source": source,
+                "chain": chain
+            }
+        
+        # Fallback to universal scanner if all else fails
         return await self._route_universal(pool_address, chain, protocol)
     
     async def _route_uniswap_v3(
@@ -331,34 +353,55 @@ class SmartRouter:
     ) -> Dict[str, Any]:
         """
         Tier 3 (Basic): Universal scanner fallback for unknown protocols.
-        Returns TVL and tokens but no reliable APY.
+        OPTIMIZED: GeckoTerminal FIRST (fast), then on-chain fallback if needed.
         """
+        from data_sources.geckoterminal import gecko_client
+        
+        # STEP 1: Try GeckoTerminal FIRST - single fast API call (~2s)
+        gecko_data = await gecko_client.get_pool_by_address(chain, pool_address)
+        
+        if gecko_data and gecko_data.get("tvl", 0) > 0:
+            # GeckoTerminal has data - use it as primary source
+            logger.info(f"[Universal] GeckoTerminal fast-path: TVL=${gecko_data.get('tvl'):,.0f}")
+            
+            return {
+                "success": True,
+                "pool": {
+                    **gecko_data,
+                    "address": pool_address,
+                    "pool_address": pool_address,
+                    "protocol": protocol.value if protocol != Protocol.UNKNOWN else gecko_data.get("project", "unknown"),
+                    "protocol_name": self._get_protocol_name(protocol) if protocol != Protocol.UNKNOWN else gecko_data.get("project", "Unknown Protocol"),
+                    "contract_type": "v2_lp",  # Default assumption
+                },
+                "data_quality": DataQuality.BASIC.value,
+                "quality_reason": "GeckoTerminal fast-path",
+                "source": "geckoterminal",
+                "chain": chain
+            }
+        
+        # STEP 2: Fallback to UniversalScanner (slow but thorough)
+        logger.info(f"[Universal] GeckoTerminal miss, falling back to on-chain scan...")
         from data_sources.universal_adapter import universal_scanner
         
         result = await universal_scanner.scan(pool_address, chain)
         
         if result and result.get("contract_type") != "generic":
-            # Try to patch with DefiLlama APY
-            patched = await self._patch_with_defillama(result, pool_address, chain)
-            # Enrich with GeckoTerminal market data (volume, TVL trend)
-            patched = await self._enrich_with_gecko_data(patched, pool_address, chain)
-            
             return {
                 "success": True,
                 "pool": {
-                    **patched,
+                    **result,
                     "protocol": protocol.value if protocol != Protocol.UNKNOWN else result.get("project", "unknown"),
                     "protocol_name": self._get_protocol_name(protocol) if protocol != Protocol.UNKNOWN else result.get("project", "Unknown Protocol"),
                 },
                 "data_quality": DataQuality.BASIC.value,
-                "quality_reason": "Unknown protocol - TVL verified, APY from external source",
+                "quality_reason": "On-chain scan fallback",
                 "warning": "Unrecognized Protocol - contract verification recommended" if protocol == Protocol.UNKNOWN else None,
                 "source": "universal_scanner",
                 "chain": chain
             }
         
         if result:
-            # Generic token holder
             return {
                 "success": True,
                 "pool": result,
@@ -384,14 +427,17 @@ class SmartRouter:
     ) -> Dict[str, Any]:
         """
         Try to patch pool data with APY from DefiLlama.
+        OPTIMIZED: Short timeout, skip if already has APY.
         """
         import httpx
         
-        if pool_data.get("apy", 0) > 0:
-            return pool_data  # Already has APY
+        # Skip if already has APY or if we have volume (GeckoTerminal is faster)
+        if pool_data.get("apy", 0) > 0 or pool_data.get("volume_24h", 0) > 0:
+            return pool_data
         
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            # Short timeout - DefiLlama pools endpoint is SLOW (1.5MB)
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 response = await client.get("https://yields.llama.fi/pools")
                 if response.status_code == 200:
                     pools = response.json().get("data", [])
@@ -407,7 +453,7 @@ class SmartRouter:
                             logger.info(f"Patched APY from DefiLlama: {pool_data['apy']:.2f}%")
                             break
         except Exception as e:
-            logger.debug(f"DefiLlama patch failed: {e}")
+            logger.debug(f"DefiLlama patch skipped (timeout): {e}")
         
         return pool_data
     

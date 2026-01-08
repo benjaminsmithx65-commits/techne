@@ -108,6 +108,45 @@ async def get_pool_by_address(address: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/resolve")
+async def resolve_input(
+    input: str = Query(..., description="Any input: pool address, Aerodrome URL, Uniswap URL, DexScreener URL, etc."),
+    chain: str = Query("base", description="Chain name")
+):
+    """
+    Universal input resolver using "Vacuum Cleaner" approach.
+    Extracts pool address from ANY input format.
+    
+    Examples:
+    - Raw address: 0x1234...
+    - Aerodrome: https://aerodrome.finance/deposit?token0=0x...&token1=0x...
+    - Uniswap: https://app.uniswap.org/pools/0x1234...
+    - DexScreener: https://dexscreener.com/base/0x1234...
+    """
+    from api.input_resolver import input_resolver, InvalidInputError
+    
+    try:
+        result = await input_resolver.resolve(input, chain)
+        
+        logger.info(f"[Resolve] Input resolved to pool {result['pool_address'][:10]}... ({result['type']})")
+        
+        return {
+            "success": True,
+            "pool_address": result["pool_address"],
+            "resolution_type": result["type"],
+            "protocol": result.get("protocol", "Unknown"),
+            "factory": result.get("factory"),
+            "tokens": result.get("tokens"),
+            "stable": result.get("stable", False)
+        }
+        
+    except InvalidInputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Resolve] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/pool-pair")
 async def get_pool_by_pair(
     token0: str = Query(..., description="First token address"),
@@ -241,6 +280,38 @@ async def get_pool_by_pair(
                         merged_data["symbol"] = f"{onchain_data.get('symbol0', '???')}-{onchain_data.get('symbol1', '???')}"
             except Exception as e:
                 logger.debug(f"On-chain lookup failed: {e}")
+        
+        # =========================================
+        # STEP 2.5: ON-CHAIN APR FROM GAUGE (Aerodrome only)
+        # =========================================
+        is_aerodrome = not protocol or "aerodrome" in protocol.lower()
+        if chain_lower == "base" and merged_data.get("address") and is_aerodrome:
+            try:
+                pool_address = merged_data["address"]
+                apy_data = await aerodrome_client.get_real_time_apy(pool_address)
+                
+                if apy_data.get("has_gauge") and apy_data.get("yearly_rewards_usd", 0) > 0:
+                    # Use accurate TVL for APR calculation
+                    accurate_tvl = merged_data.get("tvl", 0)
+                    yearly_rewards = apy_data.get("yearly_rewards_usd", 0)
+                    
+                    if accurate_tvl > 0:
+                        # Recalculate APR with accurate TVL
+                        onchain_apr = (yearly_rewards / accurate_tvl) * 100
+                        
+                        # Override GeckoTerminal/DefiLlama APY with on-chain APR
+                        merged_data["apy"] = onchain_apr
+                        merged_data["apy_reward"] = onchain_apr
+                        merged_data["apy_onchain"] = onchain_apr
+                        merged_data["gauge_address"] = apy_data.get("gauge_address")
+                        merged_data["yearly_emissions_usd"] = yearly_rewards
+                        merged_data["aero_price"] = apy_data.get("aero_price")
+                        merged_data["epoch_end"] = apy_data.get("epoch_end")
+                        merged_data["sources"].append("gauge_apy")
+                        
+                        logger.info(f"[Pool-Pair] On-chain APR: {onchain_apr:.2f}% (emissions ${yearly_rewards:,.0f} / TVL ${accurate_tvl:,.0f})")
+            except Exception as e:
+                logger.debug(f"On-chain APR calculation failed: {e}")
         
         # =========================================
         # STEP 3: DefiLlama (historical APY, more metadata)
@@ -900,42 +971,64 @@ async def verify_any_pool(
         if smart_result.get("success") and smart_result.get("pool"):
             pool = smart_result["pool"]
             
-            # Generate risk analysis
-            risk_score = 50
-            risk_reasons = []
+            # =========================================================
+            # SECURITY & DATA HYGIENE LAYER
+            # =========================================================
+            from api.security_module import security_checker
             
-            tvl = pool.get("tvl", 0) or pool.get("tvlUsd", 0)
-            apy = pool.get("apy", 0)
+            # Get token addresses for security check
+            token0 = pool.get("token0", "")
+            token1 = pool.get("token1", "")
+            tokens = [t for t in [token0, token1] if t]
             
-            if tvl < 100000:
-                risk_score += 25
-                risk_reasons.append("Low TVL (<$100K) - liquidity risk")
-            elif tvl > 10000000:
-                risk_score -= 15
-                risk_reasons.append(f"High TVL (>${tvl/1e6:.1f}M) - strong liquidity")
-            
-            if apy > 1000:
-                risk_score += 20
-                risk_reasons.append(f"Very high APY ({apy:.0f}%) - sustainability concern")
-            elif apy > 100:
-                risk_score += 10
-                risk_reasons.append(f"High APY ({apy:.0f}%) - verify sources")
-            
-            if smart_result.get("data_quality") == "basic":
-                risk_score += 10
-                risk_reasons.append("Unverified protocol - limited analysis")
-            
-            risk_score = max(0, min(100, risk_score))
-            risk_level = "Low" if risk_score < 40 else "Medium" if risk_score < 70 else "High"
+            # Run security checks in parallel
+            try:
+                # Phase 1: GoPlus RugCheck
+                security_result = await security_checker.check_security(tokens, chain)
+                
+                # Phase 2: Clean symbols (fix 0x addresses)
+                pool = await security_checker.clean_pool_symbols(pool, chain)
+                
+                # Phase 3: Stablecoin peg check
+                peg_status = await security_checker.check_stablecoin_peg(pool, chain)
+                
+                # Phase 4: Calculate comprehensive risk score
+                risk_analysis = security_checker.calculate_risk_score(
+                    pool_data=pool,
+                    security_result=security_result,
+                    peg_status=peg_status,
+                    symbol_warnings=pool.get("symbol_warnings")
+                )
+                
+                # Add security details to response
+                pool["security"] = {
+                    "checked": security_result.get("status") == "success",
+                    "is_honeypot": risk_analysis.get("is_honeypot", False),
+                    "peg_status": peg_status
+                }
+                
+            except Exception as e:
+                logger.warning(f"Security check failed, using basic analysis: {e}")
+                # Fallback to basic risk analysis
+                tvl = pool.get("tvl", 0) or pool.get("tvlUsd", 0)
+                risk_score = 50
+                risk_reasons = []
+                
+                if tvl < 100000:
+                    risk_score += 25
+                    risk_reasons.append("Low TVL (<$100K) - liquidity risk")
+                
+                risk_analysis = {
+                    "risk_score": max(0, min(100, 100 - risk_score)),
+                    "risk_level": "Medium",
+                    "risk_reasons": risk_reasons,
+                    "is_honeypot": False
+                }
             
             return {
                 "success": True,
                 "pool": pool,
-                "risk_analysis": {
-                    "risk_score": risk_score,
-                    "risk_level": risk_level,
-                    "risk_reasons": risk_reasons
-                },
+                "risk_analysis": risk_analysis,
                 "source": smart_result.get("source", "smart_router"),
                 "data_quality": smart_result.get("data_quality", "unknown"),
                 "chain": chain

@@ -134,15 +134,24 @@ const VerifyPools = {
             // Extract BOTH tokens from deposit URL for pair matching
             const token0Match = input.match(/token0=(0x[a-fA-F0-9]{40})/i);
             const token1Match = input.match(/token1=(0x[a-fA-F0-9]{40})/i);
+            const typeMatch = input.match(/type=(\d+)/i);
+            const factoryMatch = input.match(/factory=(0x[a-fA-F0-9]{40})/i);
 
             if (token0Match && token1Match) {
-                console.log('[VerifyPools] Parsed Aerodrome pair:', token0Match[1], token1Match[1]);
+                // Determine if stable pool from type param (10 = stable slipstream)
+                const poolType = typeMatch ? parseInt(typeMatch[1]) : 0;
+                const isStable = poolType === 10 || poolType === 1;
+
+                console.log('[VerifyPools] Parsed Aerodrome pair:', token0Match[1], token1Match[1], 'stable:', isStable);
                 return {
                     type: 'pair',
                     token0: token0Match[1].toLowerCase(),
                     token1: token1Match[1].toLowerCase(),
                     protocol: 'aerodrome',
-                    chain: 'Base'
+                    chain: 'Base',
+                    stable: isStable,
+                    factory: factoryMatch ? factoryMatch[1].toLowerCase() : null,
+                    original: input  // Preserve for InputResolver
                 };
             }
 
@@ -460,15 +469,15 @@ const VerifyPools = {
 
     // Search for pool by token pair (e.g., from Aerodrome deposit URLs)
     async searchByPair(parsed) {
-        const { token0, token1, protocol, chain } = parsed;
-        console.log('[VerifyPools] Searching for pair:', token0, token1, 'on', protocol);
+        const { token0, token1, protocol, chain, stable } = parsed;
+        console.log('[VerifyPools] Searching for pair:', token0, token1, 'on', protocol, 'stable:', stable);
 
-        Toast?.show('Searching for token pair in DefiLlama...', 'info');
+        Toast?.show('🧠 Analyzing pool with SmartRouter...', 'info');
 
         try {
             // Call backend API for pair search
             const response = await fetch(
-                `http://localhost:8000/api/scout/pool-pair?token0=${encodeURIComponent(token0)}&token1=${encodeURIComponent(token1)}&protocol=${encodeURIComponent(protocol || '')}&chain=${encodeURIComponent(chain || '')}`
+                `http://localhost:8000/api/scout/pool-pair?token0=${encodeURIComponent(token0)}&token1=${encodeURIComponent(token1)}&protocol=${encodeURIComponent(protocol || '')}&chain=${encodeURIComponent(chain || '')}&stable=${stable ? 'true' : 'false'}`
             );
 
             if (response.ok) {
@@ -507,7 +516,7 @@ const VerifyPools = {
                 }
             }
 
-            Toast?.show('Token pair not found in DefiLlama database', 'warning');
+            Toast?.show('Pool not found - try pasting the pool contract address directly', 'warning');
             return null;
         } catch (error) {
             console.error('[VerifyPools] Pair search error:', error);
@@ -565,16 +574,34 @@ const VerifyPools = {
             Toast?.show('Fetching pool data...', 'info');
 
             try {
-                // Build search URL based on type
-                let searchUrl;
-                if (searchType === 'address') {
-                    // Use verify-any for address lookups - works with any pool type
-                    searchUrl = `http://localhost:8000/api/scout/verify-any?pool_address=${encodeURIComponent(poolId)}&chain=base`;
-                } else if (searchType === 'defillama') {
-                    searchUrl = `http://localhost:8000/api/scout/pool/${encodeURIComponent(poolId)}`;
-                } else {
-                    searchUrl = `http://localhost:8000/api/scout/pool/${encodeURIComponent(poolId)}`;
+                // STEP 1: Use InputResolver for universal input handling
+                // Works with: raw address, Aerodrome URL, Uniswap URL, DexScreener, etc.
+                let poolAddress = null;
+                const rawInput = parsed.original || poolId;
+
+                // If it looks like a URL or contains multiple addresses, use /resolve
+                if (rawInput.includes('http') || rawInput.includes('token0') || rawInput.includes('token1')) {
+                    console.log('[VerifyPools] Using InputResolver for:', rawInput.substring(0, 50) + '...');
+                    Toast?.show('🧠 Resolving input...', 'info');
+
+                    const resolveResponse = await fetch(
+                        `http://localhost:8000/api/scout/resolve?input=${encodeURIComponent(rawInput)}&chain=base`
+                    );
+
+                    if (resolveResponse.ok) {
+                        const resolveData = await resolveResponse.json();
+                        if (resolveData.success && resolveData.pool_address) {
+                            poolAddress = resolveData.pool_address;
+                            console.log('[VerifyPools] Resolved to pool:', poolAddress);
+                        }
+                    }
                 }
+
+                // Use resolved address or original poolId
+                const addressToVerify = poolAddress || poolId;
+
+                // STEP 2: Verify the pool with full data enrichment
+                const searchUrl = `http://localhost:8000/api/scout/verify-any?pool_address=${encodeURIComponent(addressToVerify)}&chain=base`;
 
                 const response = await fetch(searchUrl);
                 if (response.ok) {

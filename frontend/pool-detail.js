@@ -158,6 +158,137 @@ const PoolDetailModal = {
         }
     },
 
+    // =========================================
+    // SECURITY ASSESSMENT (Safety Guard)
+    // =========================================
+
+    /**
+     * Assess pool security from backend data
+     * Returns { isCritical, isWarning, warnings, canDeposit }
+     */
+    assessSecurity(pool) {
+        const security = pool.security || {};
+        const riskScore = pool.risk_score || pool.riskScore || 50;
+        const riskAnalysis = pool.risk_analysis || {};
+
+        const result = {
+            isCritical: false,
+            isWarning: false,
+            warnings: [],
+            canDeposit: true,
+            honeypot: false,
+            unverified: false,
+            highTax: false,
+            depeg: false
+        };
+
+        // Check 1: Honeypot detection (CRITICAL)
+        if (security.is_honeypot || riskAnalysis.is_honeypot) {
+            result.isCritical = true;
+            result.canDeposit = false;
+            result.honeypot = true;
+            result.warnings.push('🚨 HONEYPOT DETECTED - Cannot sell tokens!');
+        }
+
+        // Check 2: Risk score below 30 (CRITICAL)
+        if (riskScore < 30 && !result.isCritical) {
+            result.isCritical = true;
+            result.canDeposit = false;
+            result.warnings.push(`🚨 Critical risk level (Score: ${riskScore}/100)`);
+        }
+
+        // Check 3: Unverified contract (WARNING)
+        if (security.tokens) {
+            for (const [addr, info] of Object.entries(security.tokens)) {
+                if (info && info.is_verified === false) {
+                    result.isWarning = true;
+                    result.unverified = true;
+                    result.warnings.push('⚠️ Unverified contract - not open source');
+                    break;
+                }
+            }
+        }
+
+        // Check 4: High tax detection (WARNING)
+        if (security.tokens) {
+            for (const [addr, info] of Object.entries(security.tokens)) {
+                if (info) {
+                    const sellTax = parseFloat(info.sell_tax || 0) * 100;
+                    const buyTax = parseFloat(info.buy_tax || 0) * 100;
+                    if (sellTax > 10 || buyTax > 10) {
+                        result.isWarning = true;
+                        result.highTax = true;
+                        result.warnings.push(`⚠️ High tax detected: Buy ${buyTax.toFixed(1)}% / Sell ${sellTax.toFixed(1)}%`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Check 5: Stablecoin depeg (WARNING)
+        const pegStatus = security.peg_status || {};
+        if (pegStatus.depeg_risk) {
+            result.isWarning = true;
+            result.depeg = true;
+            const depegged = pegStatus.depegged_tokens || [];
+            depegged.forEach(t => {
+                result.warnings.push(`⚠️ ${t.symbol} DEPEG: $${t.price?.toFixed(4)} (${t.deviation?.toFixed(2)}% off peg)`);
+            });
+        }
+
+        return result;
+    },
+
+    /**
+     * Format reward token name - prefer backend symbols over addresses
+     */
+    formatRewardSymbol(token) {
+        // If backend provides symbol, use it
+        if (token.symbol && !token.symbol.startsWith('0x')) {
+            return token.symbol;
+        }
+        // Fallback to address mapping
+        if (token.address && TOKEN_ADDRESS_MAP[token.address.toLowerCase()]) {
+            return TOKEN_ADDRESS_MAP[token.address.toLowerCase()];
+        }
+        // Last resort: truncate address
+        if (token.address) {
+            return `${token.address.slice(0, 6)}...`;
+        }
+        return token.symbol || '???';
+    },
+
+    /**
+     * Render deposit button based on security assessment
+     */
+    renderDepositButton(pool, security) {
+        const project = (pool.project || '').toUpperCase();
+        const poolUrl = pool.pool_link || (window.getPoolUrl ? getPoolUrl(pool) : '#');
+
+        if (security.isCritical) {
+            // BLOCKED: Critical risk
+            return `
+                <button class="pd-btn-danger" disabled onclick="alert('⚠️ Deposit blocked: ${security.warnings[0]}')">
+                    🚫 DEPOSIT BLOCKED - CRITICAL RISK
+                </button>
+            `;
+        } else if (security.isWarning) {
+            // WARNING: Show caution but allow
+            return `
+                <a href="${poolUrl}" target="_blank" class="pd-btn-warning" onclick="return confirm('⚠️ Warning:\\n${security.warnings.join('\\n')}\\n\\nDo you want to proceed?');">
+                    ⚠️ DEPOSIT ON ${project} (CAUTION)
+                </a>
+            `;
+        } else {
+            // SAFE: Normal deposit
+            return `
+                <a href="${poolUrl}" target="_blank" class="pd-btn-primary" onclick="event.stopPropagation();">
+                    💰 DEPOSIT ON ${project}
+                </a>
+            `;
+        }
+    },
+
     // Render Artisan Agent verdict banner for verified pools
     // Greek Gold Gaming Matrix style - elegant circular score
     renderVerdictBanner(pool) {
@@ -266,11 +397,31 @@ const PoolDetailModal = {
 
         const epoch = this.getEpochCountdown();
 
+        // ========================================
+        // SECURITY ASSESSMENT (Safety Guard)
+        // ========================================
+        const securityAssessment = this.assessSecurity(pool);
+
+        // Build security warnings banner if needed
+        const securityBanner = securityAssessment.warnings.length > 0 ? `
+            <div class="pd-security-banner ${securityAssessment.isCritical ? 'critical' : 'warning'}">
+                <div class="pd-security-icon">${securityAssessment.isCritical ? '🚨' : '⚠️'}</div>
+                <div class="pd-security-content">
+                    <div class="pd-security-title">${securityAssessment.isCritical ? 'CRITICAL RISK DETECTED' : 'Security Warnings'}</div>
+                    <ul class="pd-security-list">
+                        ${securityAssessment.warnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+        ` : '';
+
         modal.innerHTML = `
             <div class="pool-detail-modal">
                 <button class="modal-close-pro" onclick="PoolDetailModal.close()" title="Close (ESC)">${PoolIcons.close}</button>
                 
                 ${pool.isVerified ? this.renderVerdictBanner(pool) : ''}
+                
+                ${securityBanner}
                 
                 <!-- Header Section -->
                 <div class="pd-header">
@@ -398,9 +549,7 @@ const PoolDetailModal = {
                 
                 <!-- Action Buttons -->
                 <div class="pd-actions">
-                    <a href="${pool.pool_link || (getPoolUrl ? getPoolUrl(pool) : '#')}" target="_blank" class="pd-btn-primary" onclick="event.stopPropagation();">
-                        💰 DEPOSIT ON ${(pool.project || '').toUpperCase()}
-                    </a>
+                    ${this.renderDepositButton(pool, securityAssessment)}
                     <button class="pd-btn-secondary" onclick="PoolDetailModal.addToStrategy()">
                         + Add to Strategy
                     </button>
@@ -740,6 +889,105 @@ detailStyles.textContent = `
     .pd-risk-badge.low { background: rgba(16, 185, 129, 0.15); color: #10B981; }
     .pd-risk-badge.medium { background: rgba(251, 191, 36, 0.15); color: #FBBF24; }
     .pd-risk-badge.high { background: rgba(239, 68, 68, 0.15); color: #EF4444; }
+    .pd-risk-badge.critical { background: rgba(239, 68, 68, 0.25); color: #EF4444; animation: pulse-danger 1.5s infinite; }
+    
+    /* Security Banner - Safety Guard Warnings */
+    .pd-security-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        margin-bottom: 12px;
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .pd-security-banner.warning {
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid rgba(251, 191, 36, 0.4);
+    }
+    
+    .pd-security-banner.critical {
+        background: rgba(239, 68, 68, 0.15);
+        border: 2px solid rgba(239, 68, 68, 0.6);
+        animation: pulse-danger 2s infinite;
+    }
+    
+    .pd-security-icon {
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+    
+    .pd-security-content {
+        flex: 1;
+    }
+    
+    .pd-security-title {
+        font-weight: 700;
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+    }
+    
+    .pd-security-banner.warning .pd-security-title { color: #FBBF24; }
+    .pd-security-banner.critical .pd-security-title { color: #EF4444; }
+    
+    .pd-security-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+    
+    .pd-security-list li {
+        margin-bottom: 4px;
+    }
+    
+    /* Danger/Warning Button Variants */
+    .pd-btn-danger {
+        flex: 1;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-align: center;
+        cursor: not-allowed;
+        background: rgba(239, 68, 68, 0.2);
+        border: 2px solid rgba(239, 68, 68, 0.5);
+        color: #EF4444;
+        opacity: 0.8;
+    }
+    
+    .pd-btn-warning {
+        flex: 1;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-decoration: none;
+        text-align: center;
+        display: block;
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.3), rgba(212, 168, 83, 0.3));
+        border: 1px solid rgba(251, 191, 36, 0.5);
+        color: #FBBF24;
+        transition: all 0.2s;
+    }
+    
+    .pd-btn-warning:hover {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.4), rgba(212, 168, 83, 0.4));
+        box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+    }
+    
+    @keyframes pulse-danger {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     
     /* Section Container */
     .pd-section {
