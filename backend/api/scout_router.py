@@ -1045,25 +1045,41 @@ async def verify_any_pool(
                     pool["liquidity_lock"] = {"has_lock": False, "source": "error"}
                 
                 # Phase 6: Analyze whale concentration
+                # SKIP for stablecoins and major tokens (highly distributed, waste of API calls)
+                SKIP_WHALE_TOKENS = {
+                    # Stablecoins
+                    "usdc", "usdt", "dai", "busd", "frax", "tusd", "usdp", "usdd", "gusd", "lusd",
+                    # Major tokens (highly distributed)
+                    "weth", "eth", "wbtc", "btc", "sol", "wsol", "matic", "wmatic", "avax", "wavax",
+                    "bnb", "wbnb", "ftm", "wftm", "op", "arb"
+                }
+                
                 whale_analysis = {"token0": None, "token1": None, "lp_token": None}
                 try:
                     from data_sources.holder_analysis import holder_analyzer
                     token0_addr = pool.get("token0") or ""
                     token1_addr = pool.get("token1") or ""
+                    symbol0 = (pool.get("symbol0") or "").lower()
+                    symbol1 = (pool.get("symbol1") or "").lower()
                     
-                    if token0_addr:
+                    # Only analyze exotic tokens (not stablecoins/majors)
+                    if token0_addr and symbol0 not in SKIP_WHALE_TOKENS:
                         whale_analysis["token0"] = await holder_analyzer.get_holder_analysis(
                             token_address=token0_addr,
                             chain=chain
                         )
+                    else:
+                        whale_analysis["token0"] = {"skipped": True, "reason": "major/stable token", "concentration_risk": "low"}
                     
-                    if token1_addr:
+                    if token1_addr and symbol1 not in SKIP_WHALE_TOKENS:
                         whale_analysis["token1"] = await holder_analyzer.get_holder_analysis(
                             token_address=token1_addr,
                             chain=chain
                         )
+                    else:
+                        whale_analysis["token1"] = {"skipped": True, "reason": "major/stable token", "concentration_risk": "low"}
                     
-                    # Also analyze LP token holders (who holds positions in this pool)
+                    # LP token analysis is useful - shows who holds positions in this pool
                     if pool_address:
                         whale_analysis["lp_token"] = await holder_analyzer.get_holder_analysis(
                             token_address=pool_address,
