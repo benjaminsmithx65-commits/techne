@@ -12,10 +12,15 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# API Configuration - prioritize Moralis (better free tier)
-MORALIS_API_KEY = os.getenv("MORALIS_API_KEY", "")
-COVALENT_API_KEY = os.getenv("COVALENT_API_KEY", "")
-HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
+# API Configuration - loaded dynamically at runtime to ensure env vars are available
+def get_moralis_key():
+    return os.getenv("MORALIS_API_KEY", "")
+
+def get_covalent_key():
+    return os.getenv("COVALENT_API_KEY", "")
+
+def get_helius_key():
+    return os.getenv("HELIUS_API_KEY", "")
 
 
 
@@ -209,14 +214,14 @@ class HolderAnalysis:
             return await self._analyze_solana_holders(token_address)
         
         # EVM chains - try Moralis first (better free tier: 40K req/month)
-        if MORALIS_API_KEY:
+        if get_moralis_key():
             try:
                 return await self._analyze_evm_holders_moralis(token_address, chain)
             except Exception as e:
                 logger.warning(f"Moralis holder analysis failed: {e}")
         
         # Fallback to Covalent/GoldRush
-        if COVALENT_API_KEY:
+        if get_covalent_key():
             try:
                 return await self._analyze_evm_holders_covalent(token_address, chain)
             except Exception as e:
@@ -243,7 +248,7 @@ class HolderAnalysis:
         moralis_chain = chain_map.get(chain.lower(), chain.lower())
         url = f"{self.moralis_base}/erc20/{token_address}/owners"
         
-        headers = {"X-API-Key": MORALIS_API_KEY}
+        headers = {"X-API-Key": get_moralis_key()}
         params = {"chain": moralis_chain, "limit": 100}
         
         async with httpx.AsyncClient(timeout=15) as client:
@@ -276,7 +281,7 @@ class HolderAnalysis:
         covalent_chain = chain_map.get(chain.lower(), chain.lower())
         url = f"{self.covalent_base}/{covalent_chain}/tokens/{token_address}/token_holders_v2/"
         
-        headers = {"Authorization": f"Bearer {COVALENT_API_KEY}"}
+        headers = {"Authorization": f"Bearer {get_covalent_key()}"}
         params = {"page-size": 100}
         
         async with httpx.AsyncClient(timeout=15) as client:
@@ -296,11 +301,11 @@ class HolderAnalysis:
         token_address: str
     ) -> Dict[str, Any]:
         """Analyze Solana token holders using Helius API."""
-        if not HELIUS_API_KEY:
+        if not get_helius_key():
             return await self._estimate_holder_distribution(token_address, "solana")
         
         url = f"{self.helius_base}/token-metadata"
-        params = {"api-key": HELIUS_API_KEY}
+        params = {"api-key": get_helius_key()}
         payload = {"mintAccounts": [token_address]}
         
         async with httpx.AsyncClient(timeout=15) as client:
