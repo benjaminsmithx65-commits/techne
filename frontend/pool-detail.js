@@ -2308,6 +2308,10 @@ const PoolDetailModal = {
     },
 
     show(pool) {
+        // Close any existing overlays from previous pool
+        this.closeOverlay();
+
+        // Store current pool reference
         this.currentPool = pool;
 
         // Add to history

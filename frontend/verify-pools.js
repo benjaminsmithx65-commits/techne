@@ -901,31 +901,30 @@ const VerifyPools = {
         return num.toFixed(0);
     },
 
-    // Save to history
+    // Save to history - saves FULL pool data for offline access
     saveToHistory(pool) {
         const history = this.getHistory();
 
         // Generate consistent ID from pool_address or pool field
         const poolId = pool.pool_address || pool.address || pool.pool || pool.pool_id || `${pool.symbol}-${pool.chain}`;
 
-        const entry = {
-            id: poolId,
-            pool_address: pool.pool_address || pool.address,
-            address: pool.pool_address || pool.address,
-            symbol: pool.symbol,
-            project: pool.project,
-            chain: pool.chain,
-            apy: pool.apy,
-            tvlUsd: pool.tvlUsd,
-            verifiedAt: Date.now()
-        };
+        // Remove the _raw field to save space, but keep everything else
+        const poolCopy = { ...pool };
+        delete poolCopy._raw;
+
+        // Add metadata
+        poolCopy.id = poolId;
+        poolCopy.verifiedAt = Date.now();
+
+        // Remove old entry for same pool (dedup by id)
+        const filtered = history.filter(p => p.id !== poolId);
 
         // Add to front, limit to 20 items
-        history.unshift(entry);
-        if (history.length > 20) history.pop();
+        filtered.unshift(poolCopy);
+        if (filtered.length > 20) filtered.pop();
 
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(history));
-        this.renderHistory(history);
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(filtered));
+        this.renderHistory(filtered);
     },
 
     // Get history from localStorage
@@ -991,8 +990,8 @@ const VerifyPools = {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     },
 
-    // Open pool from history - refetch fresh data
-    async openFromHistory(poolId) {
+    // Open pool from history - uses locally cached FULL pool data (no API call)
+    openFromHistory(poolId) {
         console.log('[VerifyPools] Opening from history:', poolId);
         const history = this.getHistory();
 
@@ -1004,11 +1003,12 @@ const VerifyPools = {
         );
 
         if (cached) {
-            // Use cached data directly - no refresh needed for history
-            console.log('[VerifyPools] Using cached data for:', poolId);
+            console.log('[VerifyPools] Using cached pool data:', cached.symbol);
+
+            // Full pool data is already in localStorage - just normalize and show
             const normalized = this.normalizePoolData(cached);
-            normalized.isVerified = true;  // Mark as verified since it came from history
-            normalized.fromCache = true;    // Flag for UI to show cached indicator
+            normalized.isVerified = true;
+            normalized.fromCache = true;
             this.showVerificationModal(normalized);
         } else {
             Toast?.show('Pool not found in history', 'warning');
