@@ -23,6 +23,22 @@ except ImportError:
     SECURITY_CHECKER_AVAILABLE = False
     logger.warning("Security checker not available")
 
+# Import holder analysis (Moralis/Covalent for whale concentration)
+try:
+    from data_sources.holder_analysis import holder_analyzer
+    HOLDER_ANALYSIS_AVAILABLE = True
+except ImportError:
+    HOLDER_ANALYSIS_AVAILABLE = False
+    logger.warning("Holder analysis not available")
+
+# Import liquidity lock checker (Team Finance/Unicrypt)
+try:
+    from data_sources.liquidity_lock import liquidity_lock_checker
+    LIQUIDITY_LOCK_AVAILABLE = True
+except ImportError:
+    LIQUIDITY_LOCK_AVAILABLE = False
+    logger.warning("Liquidity lock checker not available")
+
 
 class Protocol(Enum):
     """Detected protocol based on factory address"""
@@ -528,7 +544,7 @@ class SmartRouter:
             pool_data["security_result"] = security_result
             
             # =================================================================
-            # COMPREHENSIVE RISK ANALYSIS (IL, Volatility, Pool Age)
+            # COMPREHENSIVE RISK ANALYSIS (IL, Volatility, Pool Age, Whale)
             # =================================================================
             if SECURITY_CHECKER_AVAILABLE:
                 try:
@@ -536,12 +552,49 @@ class SmartRouter:
                     peg_status = await security_checker.check_stablecoin_peg(pool_data, chain)
                     pool_data["peg_status"] = peg_status
                     
-                    # Calculate full risk score (includes IL, volatility, age)
+                    # Determine audit status from protocol
+                    audit_status = self._get_audit_status(pool_data, protocol)
+                    pool_data["audit_status"] = audit_status
+                    
+                    # =========================================================
+                    # LIQUIDITY LOCK CHECK (Team Finance / Unicrypt)
+                    # =========================================================
+                    liquidity_lock = {"has_lock": False, "source": "not_checked"}
+                    if LIQUIDITY_LOCK_AVAILABLE:
+                        try:
+                            liquidity_lock = await liquidity_lock_checker.check_lp_lock(pool_address, chain)
+                            logger.info(f"LP Lock: {liquidity_lock.get('has_lock')} ({liquidity_lock.get('source')})")
+                        except Exception as e:
+                            logger.debug(f"LP lock check failed: {e}")
+                    pool_data["liquidity_lock"] = liquidity_lock
+                    
+                    # =========================================================
+                    # WHALE CONCENTRATION ANALYSIS (Moralis API)
+                    # =========================================================
+                    whale_analysis = {"source": "not_available"}
+                    if HOLDER_ANALYSIS_AVAILABLE:
+                        try:
+                            # Analyze LP token holders (the pool address IS the LP token)
+                            lp_analysis = await holder_analyzer.get_holder_analysis(pool_address, chain)
+                            if lp_analysis.get("source") != "error":
+                                whale_analysis = {
+                                    "lp_token": lp_analysis,
+                                    "source": lp_analysis.get("source", "moralis")
+                                }
+                                logger.info(f"Whale analysis: top10={lp_analysis.get('top_10_percent', 'N/A')}% ({lp_analysis.get('source')})")
+                        except Exception as e:
+                            logger.debug(f"Whale analysis failed: {e}")
+                    pool_data["whale_analysis"] = whale_analysis
+                    
+                    # Calculate full risk score (includes IL, volatility, age, audit, whale)
                     risk_analysis = security_checker.calculate_risk_score(
                         pool_data, 
                         security_result, 
                         peg_status,
-                        pool_data.get("symbol_warnings")
+                        pool_data.get("symbol_warnings"),
+                        audit_status=audit_status,
+                        liquidity_lock=liquidity_lock,
+                        whale_analysis=whale_analysis
                     )
                     
                     # Add all risk data to pool
@@ -1221,6 +1274,52 @@ class SmartRouter:
             })
         
         return flags
+    
+    def _get_audit_status(self, pool_data: Dict[str, Any], protocol: Protocol) -> Dict[str, Any]:
+        """
+        Get audit status for a protocol.
+        Returns audit information for risk scoring.
+        """
+        # Known audited protocols (Tier 1 = top audits, Tier 2 = standard audits)
+        AUDITED_PROTOCOLS = {
+            Protocol.AERODROME_V2: {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            Protocol.AERODROME_SLIPSTREAM: {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            Protocol.UNISWAP_V3: {"audited": True, "auditor": "ABDK, Trail of Bits", "tier": 1},
+            Protocol.VELODROME: {"audited": True, "auditor": "Code4rena", "tier": 2},
+            Protocol.BEEFY: {"audited": True, "auditor": "Certik", "tier": 2},
+            Protocol.MOONWELL: {"audited": True, "auditor": "Halborn", "tier": 2},
+            Protocol.COMPOUND: {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            Protocol.AAVE: {"audited": True, "auditor": "OpenZeppelin, Trail of Bits", "tier": 1},
+            Protocol.SUSHISWAP: {"audited": True, "auditor": "Peckshield", "tier": 2},
+        }
+        
+        # Check if protocol is in known audited list
+        if protocol in AUDITED_PROTOCOLS:
+            return AUDITED_PROTOCOLS[protocol]
+        
+        # Check by project name (for pools detected via other means)
+        project = (pool_data.get("project", "") or "").lower()
+        PROJECT_AUDITS = {
+            "aerodrome": {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            "uniswap": {"audited": True, "auditor": "ABDK", "tier": 1},
+            "curve": {"audited": True, "auditor": "Trail of Bits", "tier": 1},
+            "aave": {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            "compound": {"audited": True, "auditor": "OpenZeppelin", "tier": 1},
+            "morpho": {"audited": True, "auditor": "Spearbit", "tier": 1},
+            "moonwell": {"audited": True, "auditor": "Halborn", "tier": 2},
+            "beefy": {"audited": True, "auditor": "Certik", "tier": 2},
+            "yearn": {"audited": True, "auditor": "Multiple", "tier": 1},
+            "convex": {"audited": True, "auditor": "MixBytes", "tier": 2},
+            "balancer": {"audited": True, "auditor": "Trail of Bits", "tier": 1},
+            "merkl": {"audited": True, "auditor": "Angle Labs", "tier": 2},
+        }
+        
+        for name, audit in PROJECT_AUDITS.items():
+            if name in project:
+                return audit
+        
+        # Unknown protocol
+        return {"audited": False, "auditor": None, "tier": 0}
     
     def _get_protocol_name(self, protocol: Protocol) -> str:
         """Get human-readable protocol name"""

@@ -158,6 +158,76 @@ const PoolDetailModal = {
         }
     },
 
+    // Tab switching for Bento Grid
+    switchTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.pd-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+        // Update tab panels
+        document.querySelectorAll('.pd-tab-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.dataset.panel === tabName);
+        });
+    },
+
+    // Accordion toggle - opens as overlay
+    toggleAccordion(accordionName) {
+        const accordion = document.querySelector(`.pd-accordion[data-accordion="${accordionName}"]`);
+        if (!accordion) return;
+
+        const content = accordion.querySelector('.pd-accordion-content');
+        const title = accordion.querySelector('.pd-accordion-title')?.textContent || 'Details';
+
+        if (!content) return;
+
+        this.openOverlay(title, content.innerHTML);
+    },
+
+    // Open overlay panel
+    openOverlay(title, content) {
+        // Remove any existing overlay
+        this.closeOverlay();
+
+        // Create backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'pd-overlay-backdrop';
+        backdrop.onclick = () => this.closeOverlay();
+
+        // Create panel
+        const panel = document.createElement('div');
+        panel.className = 'pd-overlay-panel';
+        panel.innerHTML = `
+            <div class="pd-overlay-header">
+                <span class="pd-overlay-title">${title}</span>
+                <button class="pd-overlay-close" onclick="PoolDetailModal.closeOverlay()">✕</button>
+            </div>
+            <div class="pd-overlay-body">
+                ${content}
+            </div>
+        `;
+
+        document.body.appendChild(backdrop);
+        document.body.appendChild(panel);
+
+        // Close on ESC
+        document.addEventListener('keydown', this.handleOverlayKeydown);
+    },
+
+    // Close overlay panel
+    closeOverlay() {
+        const backdrop = document.querySelector('.pd-overlay-backdrop');
+        const panel = document.querySelector('.pd-overlay-panel');
+        if (backdrop) backdrop.remove();
+        if (panel) panel.remove();
+        document.removeEventListener('keydown', this.handleOverlayKeydown);
+    },
+
+    handleOverlayKeydown(e) {
+        if (e.key === 'Escape') {
+            PoolDetailModal.closeOverlay();
+        }
+    },
+
     // =========================================
     // SECURITY ASSESSMENT (Safety Guard)
     // =========================================
@@ -372,80 +442,103 @@ const PoolDetailModal = {
     },
 
     /**
-     * Render "Why this APY can change" expandable section
-     * Educates user about volatility factors
+     * Render "Why this APY can change" with full explanations
+     * Shows detailed breakdown of APY volatility factors
      */
     renderApyChangeExplainer(pool) {
         const isCL = (pool.pool_type === 'cl') || (pool.project || '').toLowerCase().includes('slipstream');
         const isEpoch = this.isEpochProtocol(pool.project);
         const hasGauge = pool.gauge_address || pool.has_gauge;
+        const apyReward = parseFloat(pool.apy_reward || 0);
+        const apyBase = parseFloat(pool.apy_base || 0);
 
         const reasons = [];
 
-        // Epoch-based emissions
         if (isEpoch) {
             reasons.push({
                 icon: '⏰',
-                title: 'Epoch-based emissions',
-                desc: 'Rewards reset each epoch (typically weekly). New votes determine emission levels.'
+                title: 'Epoch Resets (Weekly)',
+                desc: 'Aerodrome/Velodrome rewards reset every Wednesday at 00:00 UTC. Vote distribution changes weekly based on veAERO/veVELO holder decisions.',
+                impact: 'HIGH',
+                color: '#EF4444'
             });
         }
 
-        // CL liquidity dependency
         if (isCL) {
             reasons.push({
                 icon: '🎯',
-                title: 'Active liquidity dependency',
-                desc: 'CL pool APY depends on your position range. Out-of-range = 0 rewards.'
+                title: 'Range-Dependent Yield',
+                desc: 'Concentrated Liquidity pools require active management. Yield depends on your price range - narrower ranges = higher yield but more rebalancing needed.',
+                impact: 'HIGH',
+                color: '#EF4444'
             });
         }
 
-        // Gauge re-weighting
         if (hasGauge) {
             reasons.push({
                 icon: '🗳️',
-                title: 'Gauge can be re-weighted',
-                desc: 'veAERO/veVELO voters decide emissions. Gauge weight changes weekly.'
+                title: 'Gauge Vote Distribution',
+                desc: 'Emissions are distributed based on weekly governance votes. Popular pools may receive fewer emissions if votes shift to other pools.',
+                impact: 'MEDIUM',
+                color: '#F59E0B'
             });
         }
 
-        // TVL changes
         reasons.push({
             icon: '💧',
-            title: 'TVL fluctuations',
-            desc: 'Same rewards ÷ more TVL = lower APY. Large deposits dilute returns.'
+            title: 'TVL Fluctuations',
+            desc: 'When more liquidity enters the pool, rewards are diluted among more LPs. Conversely, TVL drops can increase your share of rewards.',
+            impact: 'MEDIUM',
+            color: '#F59E0B'
         });
 
-        // Token price
-        if (pool.apy_reward > 0 || hasGauge) {
+        if (apyReward > 0 || hasGauge) {
             reasons.push({
                 icon: '📉',
-                title: 'Reward token price',
-                desc: 'APY is calculated at current token prices. Token value changes affect real returns.'
+                title: 'Reward Token Price',
+                desc: `Emission rewards are paid in protocol tokens (e.g., AERO). If token price drops, the USD value of your rewards decreases even if emissions stay constant.`,
+                impact: apyReward > apyBase ? 'HIGH' : 'MEDIUM',
+                color: apyReward > apyBase ? '#EF4444' : '#F59E0B'
             });
         }
 
-        if (reasons.length === 0) return '';
+        if (apyBase > 0) {
+            reasons.push({
+                icon: '💱',
+                title: 'Trading Volume',
+                desc: 'Base APY comes from swap fees. Lower trading volume = fewer fees collected = lower base yield. Volume can vary significantly day-to-day.',
+                impact: 'LOW',
+                color: '#10B981'
+            });
+        }
+
+        if (reasons.length === 0) return '<div class="pd-no-data">No volatility factors identified</div>';
 
         return `
-            <details class="pd-apy-change-section">
-                <summary class="pd-apy-change-header">
-                    <span class="pd-change-icon">⚡</span>
-                    <span>Why this APY can change</span>
-                    <span class="pd-expand-arrow">▶</span>
-                </summary>
-                <div class="pd-apy-change-content">
+            <div class="pd-section pd-apy-change-full">
+                <div class="pd-section-header">
+                    <h3>⚡ Why This APY Can Change</h3>
+                </div>
+                <div class="pd-apy-reasons-list">
                     ${reasons.map(r => `
-                        <div class="pd-change-reason">
-                            <span class="pd-reason-icon">${r.icon}</span>
-                            <div class="pd-reason-text">
-                                <strong>${r.title}</strong>
-                                <span>${r.desc}</span>
+                        <div class="pd-reason-item">
+                            <div class="pd-reason-header">
+                                <span class="pd-reason-icon">${r.icon}</span>
+                                <span class="pd-reason-title">${r.title}</span>
+                                <span class="pd-reason-impact" style="background: ${r.color}20; color: ${r.color};">${r.impact}</span>
                             </div>
+                            <div class="pd-reason-desc">${r.desc}</div>
                         </div>
                     `).join('')}
                 </div>
-            </details>
+                <div class="pd-apy-summary">
+                    <strong>Current Composition:</strong> 
+                    ${apyBase > 0 ? `Base/Fees: ${apyBase.toFixed(2)}%` : ''}
+                    ${apyBase > 0 && apyReward > 0 ? ' + ' : ''}
+                    ${apyReward > 0 ? `Emissions: ${apyReward.toFixed(2)}%` : ''}
+                    ${!apyBase && !apyReward ? 'Data unavailable' : ''}
+                </div>
+            </div>
         `;
     },
 
@@ -530,6 +623,208 @@ const PoolDetailModal = {
             'error': 'Error during calculation'
         };
         return reasons[reason] || reason || 'Calculation not available';
+    },
+
+    // =========================================
+    // COMPACT RENDER FUNCTIONS FOR BENTO GRID
+    // =========================================
+
+    renderLiquidityStressCompact(pool) {
+        const tvl = pool.tvl || pool.tvlUsd || 0;
+        if (!tvl || tvl <= 0) return '<div class="pd-no-data">No TVL data</div>';
+
+        const formatTvl = (val) => {
+            if (val >= 1e9) return `$${(val / 1e9).toFixed(1)}B`;
+            if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+            if (val >= 1e3) return `$${(val / 1e3).toFixed(0)}K`;
+            return `$${val.toFixed(0)}`;
+        };
+
+        let stressLevel = 'HEALTHY';
+        let stressColor = '#22C55E';
+        if (tvl < 100000) { stressLevel = 'CRITICAL'; stressColor = '#EF4444'; }
+        else if (tvl < 500000) { stressLevel = 'STRESSED'; stressColor = '#F59E0B'; }
+        else if (tvl < 2000000) { stressLevel = 'MODERATE'; stressColor = '#84CC16'; }
+
+        const scenarios = [
+            { drop: 10, color: '#22C55E' },
+            { drop: 30, color: '#F59E0B' },
+            { drop: 50, color: '#EF4444' }
+        ];
+
+        return `
+            <div class="pd-compact-stress">
+                <div class="pd-compact-header">
+                    <span style="color: ${stressColor}; font-weight: 600;">${stressLevel}</span>
+                    <span style="color: var(--text-muted); font-size: 0.65rem;">TVL: ${formatTvl(tvl)}</span>
+                </div>
+                <div style="margin-top: 6px;">
+                    ${scenarios.map(s => `
+                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                            <span style="font-size: 0.6rem; color: var(--text-muted); width: 40px;">-${s.drop}%</span>
+                            <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px;">
+                                <div style="width: ${100 - s.drop}%; height: 100%; background: ${s.color}; border-radius: 3px;"></div>
+                            </div>
+                            <span style="font-size: 0.6rem; color: var(--text-muted);">${formatTvl(tvl * (1 - s.drop / 100))}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    renderYieldBreakdownCompact(pool) {
+        const apy = pool.apy || 0;
+        const apyBase = parseFloat(pool.apy_base || pool.apyBase || 0);
+        const apyReward = parseFloat(pool.apy_reward || pool.apyReward || 0);
+
+        if (apy <= 0) return '<div class="pd-no-data">No yield data</div>';
+
+        const totalApy = apyBase + apyReward;
+        const feePercent = totalApy > 0 ? (apyBase / totalApy * 100) : 0;
+        const emissionPercent = totalApy > 0 ? (apyReward / totalApy * 100) : 0;
+
+        let sustainColor = '#10B981';
+        if (emissionPercent > 80) sustainColor = '#EF4444';
+        else if (emissionPercent > 50) sustainColor = '#FBBF24';
+
+        return `
+            <div class="pd-compact-yield">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <svg viewBox="0 0 100 100" style="width: 70px; height: 70px;">
+                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="#10B981" stroke-width="16"
+                            stroke-dasharray="${feePercent * 2.51} 251" transform="rotate(-90 50 50)" />
+                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="#F59E0B" stroke-width="16"
+                            stroke-dasharray="${emissionPercent * 2.51} 251" stroke-dashoffset="${-feePercent * 2.51}"
+                            transform="rotate(-90 50 50)" />
+                        <text x="50" y="52" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${apy.toFixed(1)}%</text>
+                    </svg>
+                    <div style="font-size: 0.65rem;">
+                        <div style="margin-bottom: 4px;"><span style="color: #10B981;">●</span> Fees: ${apyBase.toFixed(2)}% (${feePercent.toFixed(0)}%)</div>
+                        <div style="margin-bottom: 4px;"><span style="color: #F59E0B;">●</span> Emissions: ${apyReward.toFixed(2)}% (${emissionPercent.toFixed(0)}%)</div>
+                        <div style="color: ${sustainColor}; font-weight: 500;">${emissionPercent > 80 ? '⚠️ High emission dependency' : emissionPercent > 50 ? 'Moderate reliance' : '✅ Sustainable'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    renderAPYHistoryCompact(pool) {
+        // Simplified APY history - just show volatility indicator
+        const apyMean = pool.apy_mean || pool.apy || 0;
+        const apyMin = pool.apy_min || (apyMean * 0.8);
+        const apyMax = pool.apy_max || (apyMean * 1.2);
+
+        const volatility = apyMean > 0 ? ((apyMax - apyMin) / apyMean * 100) : 0;
+        let volLevel = 'Low';
+        let volColor = '#10B981';
+        if (volatility > 50) { volLevel = 'High'; volColor = '#EF4444'; }
+        else if (volatility > 25) { volLevel = 'Medium'; volColor = '#FBBF24'; }
+
+        return `
+            <div class="pd-compact-history">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="font-size: 0.65rem; color: var(--text-muted);">APY Volatility:</span>
+                    <span style="font-size: 0.7rem; color: ${volColor}; font-weight: 500;">${volLevel}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--text-muted);">
+                    <div>MIN<br><span style="color: white;">${apyMin.toFixed(1)}%</span></div>
+                    <div>AVG<br><span style="color: var(--accent-gold);">${apyMean.toFixed(1)}%</span></div>
+                    <div>MAX<br><span style="color: white;">${apyMax.toFixed(1)}%</span></div>
+                </div>
+                <div style="margin-top: 8px; height: 4px; background: linear-gradient(to right, #10B981, #FBBF24, #EF4444); border-radius: 2px;"></div>
+            </div>
+        `;
+    },
+
+    renderAuditStatusCompact(pool) {
+        const audit = pool.audit_status || pool.audit;
+        const hasAudit = audit && audit.status !== 'none' && audit.status !== 'unknown';
+        const statusColor = hasAudit ? '#10B981' : '#6B7280';
+        const statusIcon = hasAudit ? '✅' : '❌';
+
+        return `
+            <div class="pd-section pd-section-compact">
+                <div class="pd-section-header"><h3>🛡️ Audit</h3></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 1rem;">${statusIcon}</span>
+                    <span style="font-size: 0.7rem; color: ${statusColor};">${hasAudit ? (audit.auditor || 'Verified') : 'Not audited'}</span>
+                </div>
+                ${hasAudit && audit.date ? `<div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">${audit.date}</div>` : ''}
+            </div>
+        `;
+    },
+
+    renderLiquidityLockCompact(pool) {
+        const lock = pool.liquidity_lock || pool.lock_status;
+        const isLocked = lock && (lock.locked || lock.status === 'locked');
+        const statusColor = isLocked ? '#10B981' : '#FBBF24';
+        const statusIcon = isLocked ? '🔒' : '⚠️';
+
+        return `
+            <div class="pd-section pd-section-compact">
+                <div class="pd-section-header"><h3>🔐 LP Lock</h3></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 1rem;">${statusIcon}</span>
+                    <span style="font-size: 0.7rem; color: ${statusColor};">${isLocked ? 'Locked' : 'No lock detected'}</span>
+                </div>
+                ${isLocked && lock.platform ? `<div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">${lock.platform}</div>` : ''}
+            </div>
+        `;
+    },
+
+    renderAdvancedRiskCompact(pool) {
+        const il = pool.il_risk || 'medium';
+        const volatility = pool.volatility_24h || pool.token_volatility || 0;
+
+        const ilColors = { low: '#10B981', medium: '#FBBF24', high: '#EF4444' };
+        const ilColor = ilColors[il.toLowerCase()] || '#6B7280';
+
+        return `
+            <div class="pd-section pd-section-compact">
+                <div class="pd-section-header"><h3>📊 Risk</h3></div>
+                <div style="font-size: 0.65rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                        <span style="color: var(--text-muted);">IL Risk:</span>
+                        <span style="color: ${ilColor}; font-weight: 500;">${il.toUpperCase()}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-muted);">Volatility:</span>
+                        <span style="color: ${volatility > 5 ? '#EF4444' : volatility > 2 ? '#FBBF24' : '#10B981'};">
+                            ${volatility > 0 ? volatility.toFixed(1) + '%' : 'N/A'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    renderHoneypotSummary(pool) {
+        const security = pool.security || {};
+        const tokens = security.tokens || {};
+        const tokenList = Object.values(tokens);
+
+        const honeypotCount = tokenList.filter(t => t.is_honeypot).length;
+        const riskyCount = tokenList.filter(t => t.is_honeypot || t.can_take_back_ownership || t.hidden_owner).length;
+
+        const isClean = riskyCount === 0;
+        const statusColor = isClean ? '#10B981' : honeypotCount > 0 ? '#EF4444' : '#FBBF24';
+        const statusIcon = isClean ? '✅' : honeypotCount > 0 ? '🚨' : '⚠️';
+
+        return `
+            <div class="pd-section pd-section-compact">
+                <div class="pd-section-header"><h3>🔍 Tokens</h3></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 1rem;">${statusIcon}</span>
+                    <span style="font-size: 0.7rem; color: ${statusColor};">
+                        ${isClean ? 'All clean' : honeypotCount > 0 ? `${honeypotCount} honeypot!` : `${riskyCount} warning(s)`}
+                    </span>
+                </div>
+                <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">
+                    ${tokenList.length} tokens checked
+                </div>
+            </div>
+        `;
     },
 
     // =========================================
@@ -1452,14 +1747,18 @@ const PoolDetailModal = {
     // =========================================
     renderWhaleConcentration(pool) {
         const whale = pool.whale_analysis || pool.whaleAnalysis || {};
+
+        // Priority: lp_token (from SmartRouter Moralis call) > token0 > token1
+        const lpAnalysis = whale.lp_token || whale.lpToken || {};
         const token0Analysis = whale.token0 || {};
         const token1Analysis = whale.token1 || {};
 
-        // Get best available data from either token
-        const hasData = token0Analysis.top_10_percent || token1Analysis.top_10_percent;
-        const source = token0Analysis.source || token1Analysis.source || 'unavailable';
+        // Check if we have any data (lp_token is primary now)
+        const hasLpData = lpAnalysis.top_10_percent !== undefined;
+        const hasTokenData = token0Analysis.top_10_percent || token1Analysis.top_10_percent;
+        const source = whale.source || lpAnalysis.source || token0Analysis.source || token1Analysis.source || 'not_available';
 
-        if (!hasData && source === 'unavailable') {
+        if (!hasLpData && !hasTokenData && source === 'not_available') {
             return `
                 <div class="pd-risk-panel">
                     <div class="pd-risk-panel-header">
@@ -1470,8 +1769,8 @@ const PoolDetailModal = {
                         N/A
                     </div>
                     <div class="pd-risk-detail">
-                        ${source === 'unavailable' ?
-                    'Requires API key (Covalent/Helius)' :
+                        ${!window.MORALIS_API_KEY ?
+                    'Requires Moralis API key' :
                     'Holder analysis not available'}
                     </div>
                 </div>
@@ -1515,11 +1814,10 @@ const PoolDetailModal = {
         const protocolStaked = token0Analysis.protocol_staked_percent || 0;
         const rawTop10 = token0Analysis.top_10_percent_raw || top10Percent;
 
-        // LP token holders (pool positions)
-        const lpAnalysis = whale.lp_token || whale.lpToken || {};
+        // LP token holders (pool positions) - lpAnalysis already defined at top
         const lpTop10 = lpAnalysis.top_10_percent || 0;
         const lpHolders = lpAnalysis.holder_count || 0;
-        const lpRisk = lpAnalysis.concentration_risk || 'unknown';
+        const lpRisk = lpAnalysis.concentration_risk || lpAnalysis.whale_risk || 'unknown';
         const lpColor = riskColors[lpRisk] || riskColors.unknown;
 
         return `
@@ -2122,44 +2420,101 @@ const PoolDetailModal = {
                 <!-- Pool Characteristics Flags (Verified pools only) -->
                 ${pool.isVerified ? this.renderVerifyFlags(pool) : ''}
                 
-                <!-- Why APY Can Change (expandable) -->
-                ${this.renderApyChangeExplainer(pool)}
+                <!-- ========================================= -->
+                <!-- BENTO GRID LAYOUT                        -->
+                <!-- ========================================= -->
+                <div class="pd-bento-main">
+                    
+                    <!-- LEFT COLUMN: Tabbed Analysis Module -->
+                    <div class="pd-section pd-section-compact">
+                        <div class="pd-tab-switcher">
+                            <button class="pd-tab-btn active" data-tab="stress" onclick="PoolDetailModal.switchTab('stress')">📊 Stress Test</button>
+                            <button class="pd-tab-btn" data-tab="yield" onclick="PoolDetailModal.switchTab('yield')">💰 Real Yield</button>
+                            <button class="pd-tab-btn" data-tab="history" onclick="PoolDetailModal.switchTab('history')">📈 APY History</button>
+                        </div>
+                        <div class="pd-tab-content">
+                            <div class="pd-tab-panel active" data-panel="stress">
+                                ${this.renderLiquidityStressCompact(pool)}
+                            </div>
+                            <div class="pd-tab-panel" data-panel="yield">
+                                ${this.renderYieldBreakdownCompact(pool)}
+                            </div>
+                            <div class="pd-tab-panel" data-panel="history">
+                                ${this.renderAPYHistoryCompact(pool)}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- RIGHT COLUMN: 2x2 Security Matrix -->
+                    <div class="pd-security-matrix">
+                        ${this.renderAuditStatusCompact(pool)}
+                        ${this.renderLiquidityLockCompact(pool)}
+                        ${this.renderAdvancedRiskCompact(pool)}
+                        ${this.renderHoneypotSummary(pool)}
+                    </div>
+                    
+                </div>
                 
-                <!-- Liquidity Stress Test -->
-                ${this.renderLiquidityStress(pool)}
+                <!-- ========================================= -->
+                <!-- COLLAPSIBLE ACCORDIONS                   -->
+                <!-- ========================================= -->
+                <div class="pd-accordions">
+                    <div class="pd-accordion" data-accordion="tokens">
+                        <div class="pd-accordion-header" onclick="PoolDetailModal.toggleAccordion('tokens')">
+                            <span class="pd-accordion-title">🔐 Token Security Details</span>
+                            <span class="pd-accordion-icon">▶</span>
+                        </div>
+                        <div class="pd-accordion-content">
+                            ${this.renderTokenSecurityAnalysis(pool)}
+                        </div>
+                    </div>
+                    
+                    <div class="pd-accordion" data-accordion="risk">
+                        <div class="pd-accordion-header" onclick="PoolDetailModal.toggleAccordion('risk')">
+                            <span class="pd-accordion-title">📊 Advanced Risk & Whale Analysis</span>
+                            <span class="pd-accordion-icon">▶</span>
+                        </div>
+                        <div class="pd-accordion-content">
+                            ${this.renderAdvancedRiskAnalysis(pool)}
+                        </div>
+                    </div>
+                    
+                    <div class="pd-accordion" data-accordion="exit">
+                        <div class="pd-accordion-header" onclick="PoolDetailModal.toggleAccordion('exit')">
+                            <span class="pd-accordion-title">🚪 Exit Strategy & Simulation</span>
+                            <span class="pd-accordion-icon">▶</span>
+                        </div>
+                        <div class="pd-accordion-content">
+                            ${this.renderExitSimulation(pool)}
+                            ${pool.isVerified ? this.renderExitStrategy(pool) : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="pd-accordion" data-accordion="apy">
+                        <div class="pd-accordion-header" onclick="PoolDetailModal.toggleAccordion('apy')">
+                            <span class="pd-accordion-title">⚡ Why APY Can Change</span>
+                            <span class="pd-accordion-icon">▶</span>
+                        </div>
+                        <div class="pd-accordion-content">
+                            ${this.renderApyChangeExplainer(pool)}
+                        </div>
+                    </div>
+                    
+                    ${pool.isVerified ? `
+                    <div class="pd-accordion" data-accordion="guidance">
+                        <div class="pd-accordion-header" onclick="PoolDetailModal.toggleAccordion('guidance')">
+                            <span class="pd-accordion-title">🎯 Decision Guidance & Data Quality</span>
+                            <span class="pd-accordion-icon">▶</span>
+                        </div>
+                        <div class="pd-accordion-content">
+                            ${this.renderDecisionGuidance(pool)}
+                            ${this.renderDataCoverage(pool)}
+                            ${this.renderConfidenceLevel(pool)}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
                 
-                <!-- Audit Status (Phase 2) -->
-                ${this.renderAuditStatus(pool)}
-                
-                <!-- Liquidity Lock (Phase 2) -->
-                ${this.renderLiquidityLock(pool)}
-                
-                <!-- Token Security Analysis (NEW) -->
-                ${this.renderTokenSecurityAnalysis(pool)}
-                
-                <!-- Advanced Risk Analysis - IL, Volatility, Whale (NEW) -->
-                ${this.renderAdvancedRiskAnalysis(pool)}
-                
-                <!-- Yield Breakdown - Real Yield vs Emissions (NEW) -->
-                ${this.renderYieldBreakdown(pool)}
-                
-                <!-- Exit Simulation - Slippage Estimate (NEW) -->
-                ${this.renderExitSimulation(pool)}
-                
-                <!-- APY History - Sparkline Chart (NEW) -->
-                ${this.renderAPYHistory(pool)}
-                
-                <!-- Data Coverage Section (Verified pools only) -->
-                ${pool.isVerified ? this.renderDataCoverage(pool) : ''}
-                
-                <!-- Confidence Level - How Certain Are We? -->
-                ${pool.isVerified ? this.renderConfidenceLevel(pool) : ''}
-                
-                <!-- Decision Guidance - Is This Right For Me? -->
-                ${pool.isVerified ? this.renderDecisionGuidance(pool) : ''}
-                
-                <!-- Exit Strategy - How Do I Withdraw? -->
-                ${pool.isVerified ? this.renderExitStrategy(pool) : ''}
                 
                 <!-- Market Dynamics Section -->
                 <div class="pd-section">
@@ -2297,18 +2652,328 @@ detailStyles.textContent = `
         padding: var(--space-4);
     }
     
-    /* Modal Container */
+    /* Modal Container - ultra compact */
     .pool-detail-modal {
         background: linear-gradient(180deg, rgba(20, 20, 20, 0.98), rgba(10, 10, 10, 0.98));
         border: 1px solid rgba(212, 168, 83, 0.3);
-        border-radius: 14px;
-        max-width: 580px;
-        width: 100%;
-        max-height: 90vh;
+        border-radius: 12px;
+        max-width: 1100px;
+        width: 95vw;
+        max-height: 94vh;
         overflow-y: auto;
-        padding: 18px;
+        padding: 12px;
         position: relative;
         box-shadow: 0 0 60px rgba(212, 168, 83, 0.1), 0 0 1px rgba(212, 168, 83, 0.5);
+    }
+    
+    /* Grid layout for sections - 4-column compact layout */
+    .pd-sections-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        margin-bottom: 4px;
+        align-items: start;
+    }
+    
+    /* ========================================= */
+    /* BENTO GRID LAYOUT                        */
+    /* ========================================= */
+    
+    .pd-bento-main {
+        display: grid;
+        grid-template-columns: 58fr 42fr;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+    
+    /* Tab Switcher */
+    .pd-tab-switcher {
+        display: flex;
+        gap: 2px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 6px;
+        padding: 3px;
+        margin-bottom: 6px;
+    }
+    
+    .pd-tab-btn {
+        flex: 1;
+        padding: 6px 8px;
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+    
+    .pd-tab-btn:hover {
+        background: rgba(255,255,255,0.05);
+        color: var(--text-secondary);
+    }
+    
+    .pd-tab-btn.active {
+        background: rgba(212, 168, 83, 0.15);
+        color: var(--accent-gold);
+        border: 1px solid rgba(212, 168, 83, 0.3);
+    }
+    
+    .pd-tab-content {
+        min-height: 140px;
+    }
+    
+    .pd-tab-panel {
+        display: none;
+    }
+    
+    .pd-tab-panel.active {
+        display: block;
+    }
+    
+    /* Security Matrix 2x2 */
+    .pd-security-matrix {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+    }
+    
+    .pd-security-matrix .pd-section {
+        margin-bottom: 0;
+        padding: 6px 8px;
+    }
+    
+    .pd-security-matrix .pd-section-header h3 {
+        font-size: 0.65rem;
+        margin-bottom: 4px;
+    }
+    
+    /* Compact section variant for matrix */
+    .pd-section-compact {
+        padding: 6px 8px !important;
+    }
+    
+    .pd-section-compact .pd-section-header {
+        margin-bottom: 4px;
+    }
+    
+    .pd-section-compact .pd-section-header h3 {
+        font-size: 0.65rem;
+    }
+    
+    /* Accordions as Overlay Triggers */
+    .pd-accordions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    
+    .pd-accordion {
+        flex: 1;
+        min-width: 120px;
+    }
+    
+    .pd-accordion-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 12px;
+        background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 6px;
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.2s ease;
+    }
+    
+    .pd-accordion-header:hover {
+        background: rgba(212, 168, 83, 0.1);
+        border-color: rgba(212, 168, 83, 0.3);
+    }
+    
+    .pd-accordion-title {
+        font-size: 0.7rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+    
+    .pd-accordion-icon {
+        font-size: 0.55rem;
+        color: var(--accent-gold);
+    }
+    
+    /* Hidden by default, shown as overlay when active */
+    .pd-accordion-content {
+        display: none;
+    }
+    
+    /* Overlay Panel (appears above modal) */
+    .pd-overlay-panel {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(180deg, rgba(25, 25, 25, 0.98), rgba(15, 15, 15, 0.98));
+        border: 1px solid rgba(212, 168, 83, 0.4);
+        border-radius: 12px;
+        max-width: 900px;
+        width: 90vw;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 16px;
+        z-index: 3000;
+        box-shadow: 0 0 80px rgba(0,0,0,0.8), 0 0 30px rgba(212, 168, 83, 0.15);
+        animation: overlayFadeIn 0.2s ease;
+    }
+    
+    @keyframes overlayFadeIn {
+        from { opacity: 0; transform: translate(-50%, -48%); }
+        to { opacity: 1; transform: translate(-50%, -50%); }
+    }
+    
+    .pd-overlay-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        z-index: 2999;
+    }
+    
+    .pd-overlay-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .pd-overlay-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--accent-gold);
+    }
+    
+    .pd-overlay-close {
+        background: rgba(255,255,255,0.1);
+        border: none;
+        color: var(--text-secondary);
+        font-size: 1.2rem;
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .pd-overlay-close:hover {
+        background: rgba(239, 68, 68, 0.3);
+        color: #EF4444;
+    }
+    
+    /* Compact APY reasons inline tags */
+    .pd-apy-reasons-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .pd-reason-tag {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 0.65rem;
+        color: var(--text-muted);
+    }
+    
+    /* Full APY Reasons List */
+    .pd-apy-change-full {
+        padding: 0;
+    }
+    
+    .pd-apy-reasons-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .pd-reason-item {
+        background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px;
+        padding: 12px;
+    }
+    
+    .pd-reason-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+    
+    .pd-reason-icon {
+        font-size: 1.2rem;
+    }
+    
+    .pd-reason-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        flex: 1;
+    }
+    
+    .pd-reason-impact {
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.6rem;
+        font-weight: 600;
+    }
+    
+    .pd-reason-desc {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+    }
+    
+    .pd-apy-summary {
+        margin-top: 16px;
+        padding: 12px;
+        background: rgba(212, 168, 83, 0.08);
+        border: 1px solid rgba(212, 168, 83, 0.2);
+        border-radius: 8px;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+    
+    .pd-apy-summary strong {
+        color: var(--accent-gold);
+    }
+    
+    /* Full-width sections (span all columns) */
+    .pd-section-full {
+        grid-column: 1 / -1;
+    }
+    
+    /* Slim Action Footer */
+    .pd-action-footer {
+        display: flex;
+        gap: 8px;
+        padding: 8px 0 4px 0;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        margin-top: 8px;
+    }
+    
+    .pd-action-footer .pd-btn-primary,
+    .pd-action-footer .pd-btn-secondary {
+        flex: 1;
+        padding: 8px 12px;
+        font-size: 0.75rem;
     }
     
     /* Matrix Verdict Banner - Greek Gold Gaming Style */
@@ -2431,34 +3096,34 @@ detailStyles.textContent = `
         height: 18px;
     }
     
-    /* Header Section */
+    /* Header Section - ultra compact */
     .pd-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding-bottom: 14px;
-        margin-bottom: 14px;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
         border-bottom: 1px solid rgba(212, 168, 83, 0.2);
     }
     
     .pd-header-main {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
     }
     
     .pd-logo img {
-        width: 44px;
-        height: 44px;
-        border-radius: 10px;
-        border: 2px solid rgba(212, 168, 83, 0.3);
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid rgba(212, 168, 83, 0.3);
     }
     
     .pd-protocol {
-        font-size: 1.1rem;
+        font-size: 0.9rem;
         font-weight: 700;
         color: var(--text);
-        margin: 0 0 4px 0;
+        margin: 0 0 2px 0;
     }
     
     .pd-pair {
@@ -2495,7 +3160,7 @@ detailStyles.textContent = `
     
     .pd-apy-value {
         display: block;
-        font-size: 1.6rem;
+        font-size: 1.2rem;
         font-weight: 800;
         background: linear-gradient(135deg, #D4A853, #F5D78E);
         -webkit-background-clip: text;
@@ -2505,25 +3170,25 @@ detailStyles.textContent = `
     }
     
     .pd-apy-label {
-        font-size: 0.65rem;
+        font-size: 0.6rem;
         color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.3px;
     }
     
-    /* Metrics Row - compact style */
+    /* Metrics Row - ultra compact inline */
     .pd-metrics-row {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-        margin-bottom: 14px;
+        gap: 4px;
+        margin-bottom: 8px;
     }
     
     .pd-metric-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 8px;
-        padding: 10px 8px;
+        border-radius: 6px;
+        padding: 6px 4px;
         text-align: center;
         transition: all 0.2s;
     }
@@ -2685,59 +3350,86 @@ detailStyles.textContent = `
     }
 
     
-    /* Section Container */
+    /* Section Container - ultra compact tiles */
     .pd-section {
         background: rgba(255, 255, 255, 0.02);
         border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 12px;
+        border-radius: 4px;
+        padding: 3px 5px;
+        margin-bottom: 3px;
+        font-size: 0.6rem;
+        line-height: 1.15;
+    }
+    
+    /* MICRO-COMPACT: All tile internal content */
+    .pd-section p,
+    .pd-section span,
+    .pd-section div,
+    .pd-section li,
+    .pd-section td,
+    .pd-section th {
+        font-size: 0.6rem !important;
+        line-height: 1.15 !important;
+    }
+    
+    .pd-section strong,
+    .pd-section b {
+        font-size: 0.65rem !important;
+    }
+    
+    .pd-section ul, .pd-section ol {
+        margin: 2px 0;
+        padding-left: 10px;
+    }
+    
+    .pd-section li {
+        margin: 1px 0;
     }
     
     .pd-section-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 16px;
+        margin-bottom: 2px;
     }
     
     .pd-section-header h3 {
-        font-size: 0.95rem;
+        font-size: 0.6rem;
         font-weight: 600;
         color: var(--text);
         margin: 0;
     }
     
     .pd-epoch-badge {
-        font-size: 0.75rem;
+        font-size: 0.55rem;
         color: #FBBF24;
         background: rgba(251, 191, 36, 0.12);
-        padding: 4px 12px;
-        border-radius: 20px;
+        padding: 1px 5px;
+        border-radius: 8px;
         border: 1px solid rgba(251, 191, 36, 0.3);
     }
     
-    /* Insights Box */
+    /* Insights Box - micro */
     .pd-insights-box {
         background: rgba(212, 168, 83, 0.05);
-        border-left: 3px solid var(--gold);
-        padding: 12px 16px;
-        margin-bottom: 16px;
-        border-radius: 0 8px 8px 0;
+        border-left: 2px solid var(--gold);
+        padding: 3px 6px;
+        margin-bottom: 4px;
+        border-radius: 0 4px 4px 0;
     }
     
     .pd-insight {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 6px 0;
-        font-size: 0.85rem;
+        gap: 8px;
+        padding: 3px 0;
+        font-size: 0.7rem;
         color: var(--text-secondary);
     }
     
     .pd-insight-bar {
-        width: 4px;
-        height: 16px;
+        width: 3px;
+        height: 12px;
         background: var(--gold);
         border-radius: 2px;
     }
