@@ -415,12 +415,16 @@ class HolderAnalysis:
         UNIVERSAL: Uses class-level protocol exclusion for accurate whale detection.
         """
         if not holders:
+            # Empty result - could be CL pool (NFT positions) or token not indexed
             return {
                 "holder_count": 0,
-                "top_10_percent": 0,
+                "top_10_percent": None,
+                "top_1_holder_percent": None,
                 "concentration_risk": "unknown",
                 "holders": [],
-                "source": "moralis"
+                "holder_trend_7d": None,
+                "source": "unavailable",
+                "note": "No holder data available. For Uniswap V3 / concentrated liquidity pools, LP positions are NFTs (not ERC20) and require different analysis."
             }
         
         # Moralis returns percentage_relative_to_total_supply directly
