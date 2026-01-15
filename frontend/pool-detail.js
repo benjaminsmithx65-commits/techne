@@ -1883,6 +1883,7 @@ const PoolDetailModal = {
         const top1Percent = analysis.top_1_holder_percent || 0;
         const holderCount = analysis.holder_count || 0;
         const risk = analysis.concentration_risk || 'unknown';
+        const source = analysis.source || lpAnalysis.source || '';
 
         // Risk level colors
         const riskColors = {

@@ -187,6 +187,7 @@ PROTOCOL_ALIASES = {
     "aerodrome-v1": "aerodrome",
     "aerodrome-v2": "aerodrome",
     "aerodrome-v3": "aerodrome",
+    "aerodrome-slipstream": "aerodrome",
     "velodrome-optimism": "velodrome",
     "velodrome-v2": "velodrome",
     "uniswap-v3-base": "uniswap-v3",
