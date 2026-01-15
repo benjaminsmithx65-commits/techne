@@ -666,7 +666,7 @@ const VerifyPools = {
         try {
             // Call backend API for pair search
             const response = await fetch(
-                `http://localhost:8081/api/scout/pool-pair?token0=${encodeURIComponent(token0)}&token1=${encodeURIComponent(token1)}&protocol=${encodeURIComponent(protocol || '')}&chain=${encodeURIComponent(chain || '')}&stable=${stable ? 'true' : 'false'}`
+                `/api/scout/pool-pair?token0=${encodeURIComponent(token0)}&token1=${encodeURIComponent(token1)}&protocol=${encodeURIComponent(protocol || '')}&chain=${encodeURIComponent(chain || '')}&stable=${stable ? 'true' : 'false'}`
             );
 
             if (response.ok) {
@@ -774,7 +774,7 @@ const VerifyPools = {
                     Toast?.show('🧠 Resolving input...', 'info');
 
                     const resolveResponse = await fetch(
-                        `http://localhost:8081/api/scout/resolve?input=${encodeURIComponent(rawInput)}&chain=base`
+                        `/api/scout/resolve?input=${encodeURIComponent(rawInput)}&chain=base`
                     );
 
                     if (resolveResponse.ok) {
@@ -789,8 +789,10 @@ const VerifyPools = {
                 // Use resolved address or original poolId
                 const addressToVerify = poolAddress || poolId;
 
-                // STEP 2: Verify the pool with full data enrichment
-                const searchUrl = `http://localhost:8081/api/scout/verify-any?pool_address=${encodeURIComponent(addressToVerify)}&chain=base`;
+                // STEP 2: Verify the pool using RPC-FIRST approach
+                // Use /verify-rpc for direct address verification (RPC-first)
+                // This endpoint prioritizes on-chain RPC data over API aggregators
+                const searchUrl = `/api/scout/verify-rpc?pool_address=${encodeURIComponent(addressToVerify)}&chain=base`;
 
                 const response = await fetch(searchUrl);
                 if (response.ok) {

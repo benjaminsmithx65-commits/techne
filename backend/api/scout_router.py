@@ -876,6 +876,205 @@ async def get_chains_status():
 
 
 # ============================================
+# VERIFY-RPC (RPC-First Pool Verification)
+# ============================================
+
+@router.get("/verify-rpc")
+async def verify_pool_rpc_first(
+    pool_address: str = Query(..., description="Pool contract address"),
+    chain: str = Query("base", description="Chain name")
+):
+    """
+    🔗 RPC-First Pool Verification.
+    
+    Unlike verify-any which uses SmartRouter (GeckoTerminal→DefiLlama→RPC),
+    this endpoint goes DIRECTLY to on-chain RPC for pool data.
+    
+    Priority order:
+    1. On-chain RPC (get pool reserves, tokens, factory)
+    2. Enrich with GeckoTerminal for volume/APY (optional)
+    3. Security checks (GoPlus, audit, whale analysis)
+    
+    Use this for:
+    - Direct pool address verification
+    - When GeckoTerminal/DefiLlama don't have the pool
+    - Real-time on-chain data
+    """
+    from data_sources.geckoterminal import gecko_client
+    import httpx
+    
+    chain = chain.lower()
+    pool_address = pool_address.lower() if chain != "solana" else pool_address
+    
+    logger.info(f"🔗 RPC-First verify for {pool_address} on {chain}")
+    
+    pool_data = None
+    source = "unknown"
+    
+    # PRIORITY 1: On-chain RPC (FIRST - this is the key difference)
+    try:
+        if onchain_client.is_chain_available(chain):
+            rpc_data = await onchain_client.get_any_pool_data(chain, pool_address)
+            
+            if rpc_data:
+                symbol0 = rpc_data.get("symbol0", "???")
+                symbol1 = rpc_data.get("symbol1", "???")
+                pool_type = rpc_data.get("pool_type", "unknown")
+                
+                # Get token prices for TVL calculation
+                price0 = await get_token_price(symbol0, rpc_data.get("token0"))
+                price1 = await get_token_price(symbol1, rpc_data.get("token1"))
+                
+                reserve0 = rpc_data.get("reserve0", 0)
+                reserve1 = rpc_data.get("reserve1", 0)
+                tvl = (reserve0 * price0) + (reserve1 * price1)
+                
+                pool_data = {
+                    "symbol": f"{symbol0}/{symbol1}",
+                    "name": f"{symbol0}-{symbol1} Pool",
+                    "project": rpc_data.get("protocol", "Unknown"),
+                    "chain": chain.capitalize(),
+                    "pool_address": pool_address,
+                    "tvl": tvl,
+                    "tvlUsd": tvl,
+                    "apy": 0,  # Will be enriched
+                    "apy_base": 0,
+                    "apy_reward": 0,
+                    "pool_type": pool_type,
+                    "token0": rpc_data.get("token0", ""),
+                    "token1": rpc_data.get("token1", ""),
+                    "symbol0": symbol0,
+                    "symbol1": symbol1,
+                    "reserve0": reserve0,
+                    "reserve1": reserve1,
+                    "factory": rpc_data.get("factory", ""),
+                }
+                source = "rpc"
+                logger.info(f"RPC found: {symbol0}/{symbol1}, TVL: ${tvl:,.0f}")
+        else:
+            logger.warning(f"Chain {chain} RPC not available")
+    except Exception as e:
+        logger.warning(f"RPC lookup failed: {e}")
+    
+    # PRIORITY 2: Enrich with GeckoTerminal (for APY and volume)
+    if pool_data:
+        try:
+            gecko_data = await gecko_client.get_pool_by_address(chain, pool_address)
+            if gecko_data:
+                # FIX: Update symbols if RPC returned ??? or empty
+                if pool_data.get("symbol0") in ["???", "", None] and gecko_data.get("symbol0"):
+                    pool_data["symbol0"] = gecko_data.get("symbol0")
+                if pool_data.get("symbol1") in ["???", "", None] and gecko_data.get("symbol1"):
+                    pool_data["symbol1"] = gecko_data.get("symbol1")
+                # Update main symbol/name if they contain ???
+                if "???" in pool_data.get("symbol", ""):
+                    gecko_symbol = gecko_data.get("symbol", "")
+                    if gecko_symbol and "???" not in gecko_symbol:
+                        pool_data["symbol"] = gecko_symbol
+                        pool_data["name"] = gecko_data.get("name", "") or f"{pool_data['symbol0']}-{pool_data['symbol1']} Pool"
+                
+                # Merge APY and volume data
+                if gecko_data.get("apy", 0) > 0:
+                    pool_data["apy"] = gecko_data.get("apy", 0)
+                    pool_data["apy_base"] = gecko_data.get("apy_base", 0)
+                    pool_data["apy_reward"] = gecko_data.get("apy_reward", 0)
+                if gecko_data.get("volume_24h", 0) > 0:
+                    pool_data["volume_24h"] = gecko_data.get("volume_24h", 0)
+                    pool_data["volume_24h_formatted"] = gecko_data.get("volume_24h_formatted", "N/A")
+                if gecko_data.get("project"):
+                    pool_data["project"] = gecko_data.get("project")
+                source = f"{source}+geckoterminal"
+                logger.info(f"Enriched with GeckoTerminal: {pool_data['symbol']}, APY={pool_data['apy']:.2f}%")
+        except Exception as e:
+            logger.debug(f"GeckoTerminal enrichment failed: {e}")
+    
+    # PRIORITY 3: If RPC failed, try GeckoTerminal as primary
+    if not pool_data:
+        try:
+            gecko_data = await gecko_client.get_pool_by_address(chain, pool_address)
+            if gecko_data and gecko_data.get("tvl", 0) > 0:
+                pool_data = {
+                    "symbol": gecko_data.get("symbol", ""),
+                    "name": gecko_data.get("name", ""),
+                    "project": gecko_data.get("project", "Unknown"),
+                    "chain": chain.capitalize(),
+                    "pool_address": pool_address,
+                    "tvl": gecko_data.get("tvl", 0),
+                    "tvlUsd": gecko_data.get("tvlUsd", 0),
+                    "apy": gecko_data.get("apy", 0),
+                    "apy_base": gecko_data.get("apy_base", 0),
+                    "apy_reward": gecko_data.get("apy_reward", 0),
+                    "volume_24h": gecko_data.get("volume_24h", 0),
+                    "volume_24h_formatted": gecko_data.get("volume_24h_formatted", "N/A"),
+                    "pool_type": gecko_data.get("pool_type", "volatile"),
+                    "token0": gecko_data.get("token0", ""),
+                    "token1": gecko_data.get("token1", ""),
+                    "symbol0": gecko_data.get("symbol0", ""),
+                    "symbol1": gecko_data.get("symbol1", ""),
+                }
+                source = "geckoterminal"
+                logger.info(f"GeckoTerminal found: {pool_data['symbol']}")
+        except Exception as e:
+            logger.debug(f"GeckoTerminal fallback failed: {e}")
+    
+    # If still no data, return error
+    if not pool_data:
+        logger.warning(f"Pool not found via RPC or GeckoTerminal: {pool_address}")
+        raise HTTPException(status_code=404, detail="Pool not found on chain RPC or GeckoTerminal")
+    
+    # SECURITY & RISK ANALYSIS
+    risk_analysis = {"risk_score": 50, "risk_level": "Medium", "risk_reasons": []}
+    
+    try:
+        from api.security_module import security_checker
+        
+        tokens = [t for t in [pool_data.get("token0"), pool_data.get("token1")] if t]
+        
+        # Run security checks
+        security_result = await security_checker.check_security(tokens, chain)
+        pool_data = await security_checker.clean_pool_symbols(pool_data, chain)
+        peg_status = await security_checker.check_stablecoin_peg(pool_data, chain)
+        
+        # Calculate risk score
+        risk_analysis = security_checker.calculate_risk_score(
+            pool_data=pool_data,
+            security_result=security_result,
+            peg_status=peg_status,
+            symbol_warnings=pool_data.get("symbol_warnings")
+        )
+        
+        pool_data["security"] = {
+            "checked": security_result.get("status") == "success",
+            "source": security_result.get("source", "goplus"),
+            "is_honeypot": risk_analysis.get("is_honeypot", False),
+            "peg_status": peg_status,
+            "tokens": security_result.get("tokens", {})
+        }
+        
+        pool_data["risk_score"] = risk_analysis.get("risk_score")
+        pool_data["risk_level"] = risk_analysis.get("risk_level")
+        pool_data["risk_reasons"] = risk_analysis.get("risk_reasons", [])
+        
+    except Exception as e:
+        logger.warning(f"Security check failed: {e}")
+        # Basic risk based on TVL
+        tvl = pool_data.get("tvl", 0)
+        if tvl < 100000:
+            risk_analysis["risk_score"] = 35
+            risk_analysis["risk_level"] = "High"
+            risk_analysis["risk_reasons"].append("Low TVL (<$100K)")
+    
+    return {
+        "success": True,
+        "pool": pool_data,
+        "risk_analysis": risk_analysis,
+        "source": source,
+        "data_quality": "rpc" if "rpc" in source else "api",
+        "chain": chain
+    }
+
+
+# ============================================
 # SMART VERIFY (Intelligent Factory-Based Routing)
 # ============================================
 
