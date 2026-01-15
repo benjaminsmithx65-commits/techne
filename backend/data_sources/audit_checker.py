@@ -184,6 +184,7 @@ PROTOCOL_ALIASES = {
     "rocketpool": "rocket-pool",
     # Chain-specific variants
     "aerodrome-base": "aerodrome",
+    "aerodrome-v1": "aerodrome",
     "aerodrome-v2": "aerodrome",
     "aerodrome-v3": "aerodrome",
     "velodrome-optimism": "velodrome",
