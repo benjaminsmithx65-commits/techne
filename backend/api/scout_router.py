@@ -722,6 +722,8 @@ async def get_token_price(symbol: str, address: str = None) -> float:
         "DAI": 1.0,
         "WBTC": 98000.0,
         "BTC": 98000.0,
+        "AERO": 1.2,  # Aerodrome token
+        "VIRTUAL": 1.5,  # Approx price
     }
     
     # Check cache first
@@ -983,6 +985,15 @@ async def verify_pool_rpc_first(
                     pool_data["volume_24h_formatted"] = gecko_data.get("volume_24h_formatted", "N/A")
                 if gecko_data.get("project"):
                     pool_data["project"] = gecko_data.get("project")
+                # TVL fallback from GeckoTerminal (critical for CL pools where RPC gives 0)
+                gecko_tvl = gecko_data.get("tvl", 0) or gecko_data.get("tvlUsd", 0)
+                if gecko_tvl > 0 and (pool_data.get("tvl", 0) == 0 or pool_data.get("tvlUsd", 0) == 0):
+                    pool_data["tvl"] = gecko_tvl
+                    pool_data["tvlUsd"] = gecko_tvl
+                    logger.info(f"TVL enriched from GeckoTerminal: ${gecko_tvl:,.0f}")
+                # Pool age from GeckoTerminal
+                if gecko_data.get("pool_created_at"):
+                    pool_data["pool_created_at"] = gecko_data.get("pool_created_at")
                 source = f"{source}+geckoterminal"
                 logger.info(f"Enriched with GeckoTerminal: {pool_data['symbol']}, APY={pool_data['apy']:.2f}%")
         except Exception as e:
