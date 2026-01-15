@@ -1862,8 +1862,22 @@ const PoolDetailModal = {
             `;
         }
 
-        // Use token0 data as primary, fallback to token1
-        const analysis = token0Analysis.top_10_percent ? token0Analysis : token1Analysis;
+        // Use LP data as primary (most relevant for pool risk), fallback to token0/token1
+        const isToken0Skipped = token0Analysis.skipped === true;
+        const isToken1Skipped = token1Analysis.skipped === true;
+
+        // Priority: LP token analysis > token0 (if not skipped) > token1 (if not skipped)
+        let analysis;
+        if (hasLpData) {
+            analysis = lpAnalysis;
+        } else if (token0Analysis.top_10_percent && !isToken0Skipped) {
+            analysis = token0Analysis;
+        } else if (token1Analysis.top_10_percent && !isToken1Skipped) {
+            analysis = token1Analysis;
+        } else {
+            analysis = lpAnalysis; // Fallback to LP even if empty
+        }
+
         const top10Percent = analysis.top_10_percent || 0;
         const top1Percent = analysis.top_1_holder_percent || 0;
         const holderCount = analysis.holder_count || 0;
