@@ -29,8 +29,8 @@ const DepositModal = {
         if (existing) existing.remove();
 
         const pool = this.selectedPool;
-        const protocolIcon = `https://icons.llama.fi/${pool?.project?.toLowerCase().replace(/\s+/g, '-')}.png`;
-        const chainIcon = `https://icons.llama.fi/${pool?.chain?.toLowerCase()}.png`;
+        const protocolIcon = window.getProtocolIconUrl ? getProtocolIconUrl(pool?.project) : `/icons/protocols/${pool?.project?.toLowerCase().replace(/\s+/g, '-')}.png`;
+        const chainIcon = window.getChainIconUrl ? getChainIconUrl(pool?.chain) : `/icons/protocols/${pool?.chain?.toLowerCase()}.png`;
 
         const modal = document.createElement('div');
         modal.id = 'depositModal';

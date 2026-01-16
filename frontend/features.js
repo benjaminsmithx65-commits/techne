@@ -269,7 +269,7 @@ const YieldComparison = {
                     ${this.pools.map(pool => `
                         <div class="compare-row">
                             <div class="compare-cell">
-                                <img src="https://icons.llama.fi/${pool.project?.toLowerCase().replace(/\\s+/g, '-')}.png" width="24" onerror="this.style.display='none'">
+                                <img src="${window.getProtocolIconUrl ? getProtocolIconUrl(pool.project) : '/icons/protocols/' + pool.project?.toLowerCase().replace(/\\s+/g, '-') + '.png'}" width="24" onerror="this.style.display='none'">
                                 <div>
                                     <strong>${pool.project}</strong>
                                     <small>${pool.symbol}</small>
