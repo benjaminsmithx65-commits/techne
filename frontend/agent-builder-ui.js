@@ -585,9 +585,47 @@ What would you like to configure?`;
                 await terminal.runDeploymentSequence(this.config, proConfig);
             }
 
-            // Simulate wallet creation
+            // Generate agent wallet address (in production, this would be from smart contract)
             const address = '0x' + Array.from({ length: 40 }, () =>
                 '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+
+            // Send deployment config to backend API
+            const API_BASE = window.API_BASE || '';
+            try {
+                const response = await fetch(`${API_BASE}/api/agent/deploy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_address: window.connectedWallet,
+                        agent_address: address,
+                        chain: this.config.chain,
+                        preset: this.config.preset,
+                        pool_type: this.config.poolType,
+                        risk_level: this.config.riskLevel,
+                        min_apy: this.config.minApy,
+                        max_apy: this.config.maxApy,
+                        max_drawdown: this.config.maxDrawdown,
+                        protocols: this.config.protocols,
+                        preferred_assets: this.config.preferredAssets,
+                        max_allocation: this.config.maxAllocation,
+                        vault_count: this.config.vaultCount,
+                        auto_rebalance: this.config.autoRebalance,
+                        only_audited: this.config.onlyAudited,
+                        is_pro_mode: isProMode,
+                        pro_config: proConfig
+                    })
+                });
+
+                const result = await response.json();
+                console.log('[AgentBuilder] Backend deployment result:', result);
+
+                if (!result.success) {
+                    throw new Error(result.detail || 'Backend deployment failed');
+                }
+            } catch (apiError) {
+                console.warn('[AgentBuilder] Backend API call failed (continuing with local):', apiError);
+                // Continue anyway - agent will work locally, just not synced with backend
+            }
 
             document.getElementById('agentAddress').textContent =
                 address.slice(0, 6) + '...' + address.slice(-4);

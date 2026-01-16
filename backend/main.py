@@ -112,6 +112,14 @@ except ImportError as e:
     print(f"[Warning] Meridian router not available: {e}")
     MERIDIAN_AVAILABLE = False
 
+# Import agent config router (Build UI → Backend)
+try:
+    from api.agent_config_router import router as agent_config_router
+    AGENT_CONFIG_AVAILABLE = True
+except ImportError as e:
+    print(f"[Warning] Agent config router not available: {e}")
+    AGENT_CONFIG_AVAILABLE = False
+
 app = FastAPI(
     title="Techne.finance API",
     description="AI-powered yield optimizer - Production Grade | Security + AI + Revenue",
@@ -163,6 +171,11 @@ if POSITION_TRACKING_AVAILABLE:
 if MERIDIAN_AVAILABLE:
     app.include_router(meridian_router)
     print("[Meridian] x402 payment router loaded")
+
+# Include agent config routes (Build UI → Backend deployment)
+if AGENT_CONFIG_AVAILABLE:
+    app.include_router(agent_config_router)
+    print("[AgentConfig] Agent deployment router loaded")
 
 # Include Telegram bot API routes
 try:
