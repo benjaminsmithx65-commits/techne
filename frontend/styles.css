@@ -2181,8 +2181,9 @@ body.section-verify .main-content {
 
 .footer-content {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
+    gap: var(--space-6);
 }
 
 .footer-brand {
