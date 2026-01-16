@@ -4675,6 +4675,11 @@ body.section-verify .main-content {
     }
 }
 
+/* Build section - increased horizontal padding */
+#section-build {
+    padding: 0 48px;
+}
+
 /* =============================================
    PORTFOLIO DASHBOARD STYLES
    ============================================= */
