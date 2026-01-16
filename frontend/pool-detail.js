@@ -1820,21 +1820,8 @@ const PoolDetailModal = {
                         </div>
                     </div>
                     
-                    <!-- Volatility Panel -->
-                    <div class="pd-risk-panel">
-                        <div class="pd-risk-panel-header">
-                            <span class="pd-risk-icon">📈</span>
-                            <span class="pd-risk-title">Token Volatility</span>
-                        </div>
-                        <div class="pd-risk-value" style="color: ${getVolColor(volLevel)}">
-                            ${volLevel.toUpperCase()}
-                            ${volPenalty > 0 ? `<span class="pd-penalty">-${volPenalty} pts</span>` : ''}
-                        </div>
-                        <div class="pd-risk-detail">
-                            24h Price Change: <span class="${priceChange24h >= 0 ? 'up' : 'down'}">${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%</span>
-                        </div>
-                        ${isExtreme ? '<div class="pd-risk-warning">⚠️ Extreme volatility detected!</div>' : ''}
-                    </div>
+                    <!-- LP Whale Concentration Panel (was Token Volatility) -->
+                    ${this.renderLPWhaleConcentration(pool)}
                     
                     <!-- Pool Age Panel -->
                     ${poolAgeDays !== undefined ? `
@@ -1909,63 +1896,15 @@ const PoolDetailModal = {
     },
 
     // =========================================
-    // WHALE CONCENTRATION - Holder Distribution
+    // LP WHALE CONCENTRATION - Pool Position Holders
     // =========================================
-    renderWhaleConcentration(pool) {
+    renderLPWhaleConcentration(pool) {
         const whale = pool.whale_analysis || pool.whaleAnalysis || {};
-
-        // Priority: lp_token (from SmartRouter Moralis call) > token0 > token1
         const lpAnalysis = whale.lp_token || whale.lpToken || {};
-        const token0Analysis = whale.token0 || {};
-        const token1Analysis = whale.token1 || {};
 
-        // Check if we have any data (lp_token is primary now)
-        const hasLpData = lpAnalysis.top_10_percent !== undefined;
-        const hasTokenData = token0Analysis.top_10_percent || token1Analysis.top_10_percent;
-        const source = whale.source || lpAnalysis.source || token0Analysis.source || token1Analysis.source || 'not_available';
+        const hasLpData = lpAnalysis.top_10_percent !== undefined && lpAnalysis.top_10_percent !== null;
+        const source = lpAnalysis.source || 'not_available';
 
-        if (!hasLpData && !hasTokenData && source === 'not_available') {
-            return `
-                <div class="pd-risk-panel">
-                    <div class="pd-risk-panel-header">
-                        <span class="pd-risk-icon">🐋</span>
-                        <span class="pd-risk-title">Whale Concentration</span>
-                    </div>
-                    <div class="pd-risk-value" style="color: #6B7280">
-                        N/A
-                    </div>
-                    <div class="pd-risk-detail">
-                        ${!window.MORALIS_API_KEY ?
-                    'Requires Moralis API key' :
-                    'Holder analysis not available'}
-                    </div>
-                </div>
-            `;
-        }
-
-        // Use LP data as primary (most relevant for pool risk), fallback to token0/token1
-        const isToken0Skipped = token0Analysis.skipped === true;
-        const isToken1Skipped = token1Analysis.skipped === true;
-
-        // Priority: LP token analysis > token0 (if not skipped) > token1 (if not skipped)
-        let analysis;
-        if (hasLpData) {
-            analysis = lpAnalysis;
-        } else if (token0Analysis.top_10_percent && !isToken0Skipped) {
-            analysis = token0Analysis;
-        } else if (token1Analysis.top_10_percent && !isToken1Skipped) {
-            analysis = token1Analysis;
-        } else {
-            analysis = lpAnalysis; // Fallback to LP even if empty
-        }
-
-        const top10Percent = analysis.top_10_percent || 0;
-        const top1Percent = analysis.top_1_holder_percent || 0;
-        const holderCount = analysis.holder_count || 0;
-        const risk = analysis.concentration_risk || 'unknown';
-        const analysisSource = analysis.source || lpAnalysis.source || '';
-
-        // Risk level colors
         const riskColors = {
             low: '#10B981',
             medium: '#FBBF24',
@@ -1973,17 +1912,6 @@ const PoolDetailModal = {
             unknown: '#6B7280'
         };
 
-        const riskLabels = {
-            low: 'LOW',
-            medium: 'MEDIUM',
-            high: 'HIGH',
-            unknown: 'N/A'
-        };
-
-        const color = riskColors[risk] || riskColors.unknown;
-        const label = riskLabels[risk] || 'N/A';
-
-        // Format holder count
         const formatHolders = (count) => {
             if (!count) return 'N/A';
             if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
@@ -1991,61 +1919,159 @@ const PoolDetailModal = {
             return count.toString();
         };
 
-        // Protocol staking (veTokens, etc. - excluded from whale risk)
-        const protocolStaked = token0Analysis.protocol_staked_percent || 0;
-        const rawTop10 = token0Analysis.top_10_percent_raw || top10Percent;
+        if (!hasLpData && source === 'not_available') {
+            return `
+                <div class="pd-risk-panel">
+                    <div class="pd-risk-panel-header">
+                        <span class="pd-risk-icon">🏊</span>
+                        <span class="pd-risk-title">LP Whale Concentration</span>
+                    </div>
+                    <div class="pd-risk-value" style="color: #6B7280">N/A</div>
+                    <div class="pd-risk-detail">LP holder data not available</div>
+                </div>
+            `;
+        }
 
-        // LP token holders (pool positions) - lpAnalysis already defined at top
-        const lpTop10 = lpAnalysis.top_10_percent || 0;
-        const lpHolders = lpAnalysis.holder_count || 0;
-        const lpRisk = lpAnalysis.concentration_risk || lpAnalysis.whale_risk || 'unknown';
-        const lpColor = riskColors[lpRisk] || riskColors.unknown;
+        const top10 = lpAnalysis.top_10_percent || 0;
+        const top1 = lpAnalysis.top_1_holder_percent || 0;
+        const holders = lpAnalysis.holder_count || 0;
+        const risk = lpAnalysis.concentration_risk || 'unknown';
+        const color = riskColors[risk] || riskColors.unknown;
+
+        const isEstimated = source === 'estimated';
 
         return `
-            <div class="pd-risk-panel pd-whale-panel">
+            <div class="pd-risk-panel">
                 <div class="pd-risk-panel-header">
-                    <span class="pd-risk-icon">🐋</span>
-                    <span class="pd-risk-title">Whale Concentration</span>
+                    <span class="pd-risk-icon">🏊</span>
+                    <span class="pd-risk-title">LP Whale Concentration</span>
                 </div>
-                
-                <!-- Real Whale Analysis (adjusted) -->
-                <div class="pd-whale-row">
-                    <span class="pd-whale-label">Real Whales:</span>
-                    <span class="pd-whale-value" style="color: ${color}">${label}</span>
-                    <span class="pd-whale-detail">
-                        ${top10Percent > 0 ? `Top 10: ${top10Percent.toFixed(1)}%` : 'N/A'}
-                        ${holderCount > 0 ? ` • ${formatHolders(holderCount)} holders` : ''}
+                <div class="pd-risk-value" style="color: ${color}">
+                    ${risk.toUpperCase()}
+                </div>
+                <div class="pd-risk-detail">
+                    ${top10 > 0 ? `Top 10 LPs: ${top10.toFixed(1)}%` : ''}
+                    ${holders > 0 ? ` • ${formatHolders(holders)} positions` : ''}
+                </div>
+                ${isEstimated ? '<div class="pd-risk-note">*Estimated data</div>' : ''}
+            </div>
+        `;
+    },
+
+    // =========================================
+    // TOKEN WHALE CONCENTRATION - Individual Token Holder Distribution
+    // =========================================
+    renderWhaleConcentration(pool) {
+        const whale = pool.whale_analysis || pool.whaleAnalysis || {};
+        const token0Analysis = whale.token0 || {};
+        const token1Analysis = whale.token1 || {};
+
+        // Get token symbols
+        const symbol0 = pool.symbol0 || 'Token0';
+        const symbol1 = pool.symbol1 || 'Token1';
+
+        // Check if tokens are skipped (whitelisted major tokens)
+        const isToken0Skipped = token0Analysis.skipped === true;
+        const isToken1Skipped = token1Analysis.skipped === true;
+
+        // Check if we have any real data
+        const hasToken0Data = !isToken0Skipped && token0Analysis.top_10_percent !== undefined;
+        const hasToken1Data = !isToken1Skipped && token1Analysis.top_10_percent !== undefined;
+
+        const riskColors = {
+            low: '#10B981',
+            medium: '#FBBF24',
+            high: '#EF4444',
+            unknown: '#6B7280'
+        };
+
+        const formatHolders = (count) => {
+            if (!count) return 'N/A';
+            if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+            if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+            return count.toString();
+        };
+
+        // If both skipped (major tokens), show simple safe message
+        if (isToken0Skipped && isToken1Skipped) {
+            return `
+                <div class="pd-risk-panel">
+                    <div class="pd-risk-panel-header">
+                        <span class="pd-risk-icon">🐋</span>
+                        <span class="pd-risk-title">Token Whale Concentration</span>
+                    </div>
+                    <div class="pd-risk-value" style="color: #10B981">LOW</div>
+                    <div class="pd-risk-detail">
+                        Major tokens - highly distributed
+                    </div>
+                    <div class="pd-risk-note" style="font-size: 0.6rem; color: var(--text-muted); margin-top: 4px;">
+                        ${symbol0} & ${symbol1} are whitelisted
+                    </div>
+                </div>
+            `;
+        }
+
+        // Build token rows - only show non-skipped tokens
+        const renderTokenRow = (analysis, symbol, isSkipped) => {
+            if (isSkipped) {
+                return `
+                    <div class="pd-whale-row" style="margin-bottom: 4px;">
+                        <span style="color: var(--text-muted); font-size: 0.65rem;">${symbol}:</span>
+                        <span style="color: #10B981; font-size: 0.65rem; margin-left: 6px;">✓ Whitelisted</span>
+                    </div>
+                `;
+            }
+
+            const top10 = analysis.top_10_percent || 0;
+            const top1 = analysis.top_1_holder_percent || 0;
+            const holders = analysis.holder_count || 0;
+            const risk = analysis.concentration_risk || 'unknown';
+            const color = riskColors[risk] || riskColors.unknown;
+
+            if (top10 === 0 && holders === 0) {
+                return `
+                    <div class="pd-whale-row" style="margin-bottom: 4px;">
+                        <span style="color: var(--text-muted); font-size: 0.65rem;">${symbol}:</span>
+                        <span style="color: #6B7280; font-size: 0.65rem; margin-left: 6px;">N/A</span>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="pd-whale-row" style="margin-bottom: 4px;">
+                    <span style="color: var(--text-muted); font-size: 0.65rem;">${symbol}:</span>
+                    <span style="color: ${color}; font-size: 0.65rem; font-weight: 500; margin-left: 6px;">${risk.toUpperCase()}</span>
+                    <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 8px;">
+                        ${top10 > 0 ? `Top10: ${top10.toFixed(1)}%` : ''}
+                        ${top1 > 0 ? ` • Top1: ${top1.toFixed(1)}%` : ''}
+                        ${holders > 0 ? ` • ${formatHolders(holders)} holders` : ''}
                     </span>
                 </div>
-                
-                <!-- Protocol Staking (veTokens - healthy, excluded from risk) -->
-                ${protocolStaked > 0 ? `
-                    <div class="pd-whale-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span class="pd-whale-label">🔒 Protocol Staked:</span>
-                        <span class="pd-whale-value" style="color: #10B981">${protocolStaked.toFixed(1)}%</span>
-                        <span class="pd-whale-detail" style="color: var(--text-muted)">
-                            veTokens/staking (healthy)
-                        </span>
-                    </div>
-                ` : ''}
-                
-                <!-- LP Token Analysis (Pool Positions) -->
-                ${lpTop10 > 0 || lpHolders > 0 ? `
-                    <div class="pd-whale-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span class="pd-whale-label">LP Positions:</span>
-                        <span class="pd-whale-value" style="color: ${lpColor}">${lpRisk.toUpperCase()}</span>
-                        <span class="pd-whale-detail">
-                            ${lpTop10 > 0 ? `Top 10: ${lpTop10.toFixed(1)}%` : 'N/A'}
-                            ${lpHolders > 0 ? ` • ${formatHolders(lpHolders)} LPs` : ''}
-                        </span>
-                    </div>
-                ` : ''}
-                
-                ${source === 'estimated' ? `
-                    <div class="pd-risk-note" style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px;">
-                        *Estimated data
-                    </div>
-                ` : ''}
+            `;
+        };
+
+        // Determine overall risk based on non-skipped tokens
+        let overallRisk = 'low';
+        if (!isToken0Skipped && token0Analysis.concentration_risk === 'high') overallRisk = 'high';
+        else if (!isToken1Skipped && token1Analysis.concentration_risk === 'high') overallRisk = 'high';
+        else if (!isToken0Skipped && token0Analysis.concentration_risk === 'medium') overallRisk = 'medium';
+        else if (!isToken1Skipped && token1Analysis.concentration_risk === 'medium') overallRisk = 'medium';
+
+        const overallColor = riskColors[overallRisk] || riskColors.unknown;
+        const source = token0Analysis.source || token1Analysis.source || 'unknown';
+
+        return `
+            <div class="pd-risk-panel">
+                <div class="pd-risk-panel-header">
+                    <span class="pd-risk-icon">🐋</span>
+                    <span class="pd-risk-title">Token Whale Concentration</span>
+                </div>
+                <div class="pd-risk-value" style="color: ${overallColor}">${overallRisk.toUpperCase()}</div>
+                <div style="margin-top: 6px;">
+                    ${renderTokenRow(token0Analysis, symbol0, isToken0Skipped)}
+                    ${renderTokenRow(token1Analysis, symbol1, isToken1Skipped)}
+                </div>
+                ${source === 'estimated' ? '<div class="pd-risk-note" style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">*Estimated data</div>' : ''}
             </div>
         `;
     },

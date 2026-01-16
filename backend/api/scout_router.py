@@ -968,6 +968,15 @@ async def verify_pool_rpc_first(
                     pool_data["symbol0"] = gecko_data.get("symbol0")
                 if pool_data.get("symbol1") in ["???", "", None] and gecko_data.get("symbol1"):
                     pool_data["symbol1"] = gecko_data.get("symbol1")
+                    
+                # FIX: Populate token addresses if missing (critical for whale analysis)
+                if not pool_data.get("token0") and gecko_data.get("token0"):
+                    pool_data["token0"] = gecko_data.get("token0")
+                    logger.info(f"Token0 address enriched from GeckoTerminal: {pool_data['token0'][:10]}...")
+                if not pool_data.get("token1") and gecko_data.get("token1"):
+                    pool_data["token1"] = gecko_data.get("token1")
+                    logger.info(f"Token1 address enriched from GeckoTerminal: {pool_data['token1'][:10]}...")
+                    
                 # Update main symbol/name if they contain ???
                 if "???" in pool_data.get("symbol", ""):
                     gecko_symbol = gecko_data.get("symbol", "")
