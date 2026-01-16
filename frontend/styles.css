@@ -4779,7 +4779,7 @@ body.section-verify .main-content {
 /* Portfolio Content Layout */
 .portfolio-content {
     display: grid;
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: 1fr 320px;
     gap: 24px;
 }
 
