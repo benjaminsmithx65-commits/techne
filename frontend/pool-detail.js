@@ -923,8 +923,11 @@ const PoolDetailModal = {
         const honeypotCount = tokenList.filter(t => t.is_honeypot).length;
         const riskyCount = tokenList.filter(t => t.is_honeypot || t.can_take_back_ownership || t.hidden_owner).length;
 
-        // Get clean token symbols - try pool.symbol0/symbol1 first, then security token data
-        const poolSymbols = [pool.symbol0, pool.symbol1].filter(Boolean);
+        // Get token symbols - try symbol0/symbol1, fallback to parsing pool.symbol
+        let poolSymbols = [pool.symbol0, pool.symbol1].filter(s => s && s.trim());
+        if (poolSymbols.length < 2 && pool.symbol) {
+            poolSymbols = pool.symbol.split(/[\/\-]/).map(s => s.trim()).filter(Boolean).slice(0, 2);
+        }
         const cleanTokens = tokenEntries
             .filter(([addr, t]) => !t.is_honeypot && !t.can_take_back_ownership && !t.hidden_owner)
             .map(([addr, t]) => t.symbol || poolSymbols.shift() || 'Token');
