@@ -817,27 +817,66 @@ const PoolDetailModal = {
         // Volatility from volatility_analysis or top-level fields
         const volAnalysis = pool.volatility_analysis || {};
         const volatilityValue = volAnalysis.price_change_24h || pool.volatility_24h || pool.token_volatility || 0;
-        const volatilityLevel = volAnalysis.volatility_level || 'unknown';
+        // Per-token volatility from DexScreener (preferred)
+        const token0Vol = pool.token0_volatility || {};
+        const token1Vol = pool.token1_volatility || {};
 
-        // Determine volatility type label
-        const volLabel = 'Volatility';
+        console.log('🔥 Volatility Debug:', { token0Vol, token1Vol, lpVol24h: pool.token_volatility_24h, lpVol7d: pool.token_volatility_7d });
 
-        const ilColors = { low: '#10B981', medium: '#FBBF24', high: '#EF4444' };
-        const ilColor = ilColors[il.toLowerCase()] || '#6B7280';
+        // Get token symbols
+        const symbol0 = token0Vol.symbol || pool.symbol0 || 'Token0';
+        const symbol1 = token1Vol.symbol || pool.symbol1 || 'Token1';
+
+        // Get 24h price changes
+        const vol0_24h = token0Vol.price_change_24h || pool.token0_volatility_24h || 0;
+        const vol1_24h = token1Vol.price_change_24h || pool.token1_volatility_24h || 0;
+
+        // Get 1h price changes for short-term view
+        const vol0_1h = token0Vol.price_change_1h || pool.token0_volatility_1h || 0;
+        const vol1_1h = token1Vol.price_change_1h || pool.token1_volatility_1h || 0;
+
+        // LP/Pool volatility from GeckoTerminal OHLCV
+        const lpVol24h = pool.token_volatility_24h || pool.pair_price_change_24h || 0;
+        const lpVol7d = pool.token_volatility_7d || 0;
+
+        // Color coding for volatility
+        const getVolColor = (vol) => {
+            const absVol = Math.abs(vol || 0);
+            if (absVol > 10) return '#EF4444'; // High volatility - red
+            if (absVol > 5) return '#FBBF24';  // Medium - yellow
+            return '#10B981'; // Low - green
+        };
+
+        const formatVol = (vol) => {
+            if (vol === 0 || vol === null || vol === undefined) return 'N/A';
+            const sign = vol > 0 ? '+' : '';
+            return `${sign}${vol.toFixed(1)}%`;
+        };
 
         return `
             <div class="pd-section pd-section-compact">
-                <div class="pd-section-header"><h3>📊 Risk</h3></div>
+                <div class="pd-section-header"><h3>📈 Volatility</h3></div>
                 <div style="font-size: 0.65rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                        <span style="color: var(--text-muted);">IL Risk:</span>
-                        <span style="color: ${ilColor}; font-weight: 500;">${il.toUpperCase()}</span>
+                    <div style="margin-bottom: 5px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">${symbol0}</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>1h: <span style="color: ${getVolColor(vol0_1h)}; font-weight: 500;">${formatVol(vol0_1h)}</span></span>
+                            <span>24h: <span style="color: ${getVolColor(vol0_24h)}; font-weight: 500;">${formatVol(vol0_24h)}</span></span>
+                        </div>
                     </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-muted);">${volLabel}:</span>
-                        <span style="color: ${volatilityLevel === 'high' ? '#EF4444' : volatilityLevel === 'medium' ? '#FBBF24' : '#10B981'};">
-                            ${volatilityValue > 0 ? volatilityValue.toFixed(1) + '%' : volatilityLevel.toUpperCase()}
-                        </span>
+                    <div style="margin-bottom: 5px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">${symbol1}</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>1h: <span style="color: ${getVolColor(vol1_1h)}; font-weight: 500;">${formatVol(vol1_1h)}</span></span>
+                            <span>24h: <span style="color: ${getVolColor(vol1_24h)}; font-weight: 500;">${formatVol(vol1_24h)}</span></span>
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 5px; margin-top: 3px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">LP/Pool</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>24h: <span style="color: ${getVolColor(lpVol24h)}; font-weight: 500;">${formatVol(lpVol24h)}</span></span>
+                            <span>7d: <span style="color: ${getVolColor(lpVol7d)}; font-weight: 500;">${formatVol(lpVol7d)}</span></span>
+                        </div>
                     </div>
                 </div>
             </div>

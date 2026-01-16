@@ -999,6 +999,47 @@ async def verify_pool_rpc_first(
         except Exception as e:
             logger.debug(f"GeckoTerminal enrichment failed: {e}")
     
+    # PRIORITY 2.3: Per-token volatility from DexScreener (real-time 1h, 24h for each token)
+    if pool_data:
+        try:
+            from data_sources.dexscreener import dexscreener_client
+            ds_volatility = await dexscreener_client.get_token_volatility(chain, pool_address)
+            
+            if ds_volatility:
+                # Per-token volatility objects (with symbol, 1h, 24h, etc.)
+                pool_data["token0_volatility"] = ds_volatility.get("token0", {})
+                pool_data["token1_volatility"] = ds_volatility.get("token1", {})
+                
+                # Also store flat fields for backward compatibility
+                t0 = ds_volatility.get("token0", {})
+                t1 = ds_volatility.get("token1", {})
+                pool_data["token0_volatility_1h"] = t0.get("price_change_1h", 0)
+                pool_data["token0_volatility_24h"] = t0.get("price_change_24h", 0)
+                pool_data["token1_volatility_1h"] = t1.get("price_change_1h", 0)
+                pool_data["token1_volatility_24h"] = t1.get("price_change_24h", 0)
+                
+                # Pair-level price changes
+                pool_data["pair_price_change_24h"] = ds_volatility.get("pair_price_change_24h", 0)
+                pool_data["pair_price_change_1h"] = ds_volatility.get("pair_price_change_1h", 0)
+                
+                logger.info(f"DexScreener volatility: {t0.get('symbol', 'T0')} 24h={t0.get('price_change_24h', 0):.2f}%")
+                source = f"{source}+dexscreener"
+        except Exception as e:
+            logger.debug(f"DexScreener volatility fetch failed: {e}")
+    
+    # PRIORITY 2.4: LP/Pool volatility from GeckoTerminal OHLCV (24h, 7d)
+    if pool_data:
+        try:
+            ohlcv_data = await gecko_client.get_pool_ohlcv(chain, pool_address, timeframe="day", limit=7)
+            if ohlcv_data:
+                pool_data["token_volatility_24h"] = ohlcv_data.get("price_change_24h", 0)
+                pool_data["token_volatility_7d"] = ohlcv_data.get("price_change_7d", 0)
+                pool_data["price_high_7d"] = ohlcv_data.get("price_high_7d", 0)
+                pool_data["price_low_7d"] = ohlcv_data.get("price_low_7d", 0)
+                logger.info(f"LP Volatility: 24h={pool_data['token_volatility_24h']:.2f}%, 7d={pool_data['token_volatility_7d']:.2f}%")
+        except Exception as e:
+            logger.debug(f"OHLCV fetch failed: {e}")
+    
     # PRIORITY 2.5: AERODROME ON-CHAIN APY (Base only - REAL-TIME from gauge)
     # This calculates APY from actual on-chain gauge emissions
     if chain == "base" and pool_data:
