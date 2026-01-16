@@ -1,11 +1,13 @@
 /**
  * Techne Agent Wallet UI
- * Inspired by NeoX Agent Vaults - elegant deposit/withdraw interface
+ * V2 - Institutional Grade Security
  */
 
 const AgentWalletUI = {
-    // Contract address - DEPLOYED ON BASE MAINNET
-    contractAddress: '0x567D1Fc55459224132aB5148c6140E8900f9a607',
+    // Contract address - V2 DEPLOYED ON BASE MAINNET
+    // TODO: Update after deploy-v2.js execution
+    contractAddress: '0x567D1Fc55459224132aB5148c6140E8900f9a607', // Will be updated after V2 deploy
+    contractVersion: 'V2',
 
     // Supported tokens on Base
     TOKENS: {
@@ -37,16 +39,34 @@ const AgentWalletUI = {
         'function symbol() view returns (string)'
     ],
 
-    // Vault ABI for read/write
+    // Vault V2 ABI - Institutional Grade
     WALLET_ABI: [
+        // Core functions
         'function deposit(uint256 amount)',
         'function depositToken(address token, uint256 amount)',
         'function withdraw(uint256 shares)',
+
+        // View functions
         'function totalValue() view returns (uint256)',
         'function totalShares() view returns (uint256)',
         'function getUserValue(address user) view returns (uint256)',
         'function getUserShares(address user) view returns (uint256)',
-        'function estimatedAPY() view returns (uint256)'
+
+        // V2 Security - Withdraw limits
+        'function dailyWithdrawLimit() view returns (uint256)',
+        'function maxSingleWithdraw() view returns (uint256)',
+        'function getWithdrawLimitStatus() view returns (uint256 remaining, uint256 dailyLimit)',
+
+        // V2 Security - De-peg check
+        'function checkUSDCPeg() view returns (bool pegged, int256 price)',
+        'function depegProtectionEnabled() view returns (bool)',
+
+        // V2 Security - Circuit breaker
+        'function circuitBreakerTriggered() view returns (bool)',
+
+        // V2 Security - Emergency
+        'function emergencyMode() view returns (bool)',
+        'function paused() view returns (bool)'
     ],
 
     USDC_ABI: [
