@@ -153,3 +153,45 @@ async def list_agents():
         "count": len(DEPLOYED_AGENTS),
         "agents": list(DEPLOYED_AGENTS.values())
     }
+
+
+@router.get("/recommendations/{user_address}")
+async def get_recommendations(user_address: str):
+    """
+    Get recommended pools for a deployed agent
+    Triggers a scan if not done recently
+    """
+    agent = DEPLOYED_AGENTS.get(user_address)
+    
+    if not agent:
+        return {
+            "success": False,
+            "message": "No agent found"
+        }
+    
+    if not agent.get("is_active"):
+        return {
+            "success": False,
+            "message": "Agent is not active"
+        }
+    
+    # Try to run executor scan
+    try:
+        from agents.strategy_executor import strategy_executor
+        await strategy_executor.execute_agent_strategy(agent)
+    except Exception as e:
+        print(f"[AgentConfig] Scan error: {e}")
+    
+    return {
+        "success": True,
+        "agent_address": agent.get("agent_address"),
+        "recommended_pools": agent.get("recommended_pools", []),
+        "last_scan": agent.get("last_scan"),
+        "config": {
+            "preset": agent.get("preset"),
+            "risk_level": agent.get("risk_level"),
+            "protocols": agent.get("protocols"),
+            "apy_range": [agent.get("min_apy"), agent.get("max_apy")]
+        }
+    }
+
