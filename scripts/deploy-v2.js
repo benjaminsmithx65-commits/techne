@@ -32,11 +32,11 @@ async function main() {
         // Agent address (backend executor)
         AGENT: deployer.address, // Change to dedicated agent wallet
 
-        // Multi-sig signers (CHANGE THESE!)
+        // Multi-sig signers (Team wallets)
         SIGNERS: [
-            deployer.address,                                    // Signer 1 - You
-            "0x1234567890123456789012345678901234567890",        // Signer 2 - Team member
-            "0x0987654321098765432109876543210987654321"         // Signer 3 - Team member
+            "0xa30a689ec0f9d717c5ba1098455b031b868b720f",  // Signer 1
+            "0x58e66a7a6883ef761e6adb0f08b0d94f70343eb6",  // Signer 2
+            "0x9cf94969639d0905a6cb617925f06052643cce04"   // Signer 3
         ]
     };
 
