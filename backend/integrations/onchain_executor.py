@@ -132,7 +132,7 @@ class OnChainExecutor:
     def __init__(self):
         self.rpc_url = os.getenv(
             "ALCHEMY_RPC_URL",
-            "https://base-mainnet.g.alchemy.com/v2/demo"
+            "https://base-mainnet.g.alchemy.com/v2/AqxI9okL6ZYv38MBFDHhb"
         )
         self.wallet_address = os.getenv(
             "AGENT_WALLET_ADDRESS",
