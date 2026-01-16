@@ -996,8 +996,54 @@ async def verify_pool_rpc_first(
                     pool_data["pool_created_at"] = gecko_data.get("pool_created_at")
                 source = f"{source}+geckoterminal"
                 logger.info(f"Enriched with GeckoTerminal: {pool_data['symbol']}, APY={pool_data['apy']:.2f}%")
+                
+                # =========================================================
+                # VOLATILITY DATA: Fetch OHLCV for price change history
+                # =========================================================
+                try:
+                    ohlcv_data = await gecko_client.get_pool_ohlcv(chain, pool_address, timeframe="day", limit=7)
+                    if ohlcv_data:
+                        pool_data["token_volatility_24h"] = ohlcv_data.get("price_change_24h", 0)
+                        pool_data["token_volatility_7d"] = ohlcv_data.get("price_change_7d", 0)
+                        pool_data["price_high_7d"] = ohlcv_data.get("price_high_7d", 0)
+                        pool_data["price_low_7d"] = ohlcv_data.get("price_low_7d", 0)
+                        logger.info(f"Pool volatility: 24h={pool_data['token_volatility_24h']:.2f}%, 7d={pool_data['token_volatility_7d']:.2f}%")
+                except Exception as e:
+                    logger.debug(f"OHLCV fetch failed: {e}")
+                    
         except Exception as e:
             logger.debug(f"GeckoTerminal enrichment failed: {e}")
+    
+    # =========================================================
+    # PER-TOKEN VOLATILITY: DexScreener (5m, 1h, 6h, 24h for each token)
+    # =========================================================
+    if pool_data:
+        try:
+            from data_sources.dexscreener import dexscreener_client
+            volatility_data = await dexscreener_client.get_token_volatility(chain, pool_address)
+            
+            if volatility_data:
+                # Token0 volatility (base token)
+                token0_vol = volatility_data.get("token0", {})
+                pool_data["token0_volatility"] = token0_vol
+                pool_data["token0_volatility_24h"] = token0_vol.get("price_change_24h", 0)
+                pool_data["token0_volatility_1h"] = token0_vol.get("price_change_1h", 0)
+                
+                # Token1 volatility (quote token)
+                token1_vol = volatility_data.get("token1", {})
+                pool_data["token1_volatility"] = token1_vol
+                pool_data["token1_volatility_24h"] = token1_vol.get("price_change_24h", 0)
+                pool_data["token1_volatility_1h"] = token1_vol.get("price_change_1h", 0)
+                
+                # Pair-level changes
+                pool_data["pair_price_change_24h"] = volatility_data.get("pair_price_change_24h", 0)
+                pool_data["pair_price_change_6h"] = volatility_data.get("pair_price_change_6h", 0)
+                pool_data["pair_price_change_1h"] = volatility_data.get("pair_price_change_1h", 0)
+                
+                source = f"{source}+dexscreener"
+                logger.info(f"DexScreener volatility: {token0_vol.get('symbol', 'T0')}={token0_vol.get('price_change_24h', 0):.2f}%/24h, {token1_vol.get('symbol', 'T1')}={token1_vol.get('price_change_24h', 0):.2f}%/24h")
+        except Exception as e:
+            logger.debug(f"DexScreener volatility fetch failed: {e}")
     
     # PRIORITY 2.5: AERODROME ON-CHAIN APY (Base only - REAL-TIME from gauge)
     # This calculates APY from actual on-chain gauge emissions
@@ -1006,6 +1052,7 @@ async def verify_pool_rpc_first(
             from data_sources.aerodrome import aerodrome_client
             onchain_apy_data = await aerodrome_client.get_real_time_apy(pool_address)
             
+            # Case 1: On-chain APY is directly available (V2 pools)
             if onchain_apy_data and onchain_apy_data.get("apy", 0) > 0:
                 onchain_apy = onchain_apy_data.get("apy", 0)
                 current_apy = pool_data.get("apy", 0) or 0
@@ -1027,6 +1074,37 @@ async def verify_pool_rpc_first(
                     pool_data["aero_price"] = onchain_apy_data.get("aero_price")
                     pool_data["epoch_remaining"] = onchain_apy_data.get("epoch_remaining") or aerodrome_client.get_epoch_time_remaining()
                     source = f"{source}+aero_onchain"
+            
+            # Case 2: CL/Slipstream pools - need to calculate APY from yearly_rewards + external TVL
+            elif onchain_apy_data and onchain_apy_data.get("apy_status") == "requires_external_tvl":
+                yearly_rewards_usd = onchain_apy_data.get("yearly_rewards_usd", 0)
+                tvl = pool_data.get("tvl") or pool_data.get("tvlUsd") or 0
+                
+                if yearly_rewards_usd > 0 and tvl > 0:
+                    # Calculate APY: (yearly rewards / TVL) * 100
+                    # Adjust for staked ratio if available
+                    staked_ratio = onchain_apy_data.get("staked_ratio", 1.0)
+                    effective_tvl = tvl * staked_ratio if staked_ratio > 0 else tvl
+                    
+                    calculated_apy = (yearly_rewards_usd / effective_tvl) * 100 if effective_tvl > 0 else 0
+                    
+                    logger.info(f"[verify-rpc] CL APY Calculated: {calculated_apy:.2f}% (${yearly_rewards_usd:,.0f}/yr / ${effective_tvl:,.0f} TVL)")
+                    pool_data["apy"] = calculated_apy
+                    pool_data["apy_reward"] = calculated_apy
+                    pool_data["apy_base"] = 0
+                    pool_data["apy_source"] = "aerodrome_cl_onchain"
+                    pool_data["gauge_address"] = onchain_apy_data.get("gauge_address")
+                    pool_data["aero_price"] = onchain_apy_data.get("aero_price")
+                    pool_data["yearly_rewards_usd"] = yearly_rewards_usd
+                    pool_data["staked_ratio"] = staked_ratio
+                    pool_data["epoch_remaining"] = aerodrome_client.get_epoch_time_remaining()
+                    pool_data["pool_type_detail"] = onchain_apy_data.get("pool_type", "cl")
+                    source = f"{source}+aero_cl_onchain"
+                else:
+                    logger.debug(f"CL pool: yearly_rewards={yearly_rewards_usd}, tvl={tvl} - cannot calculate APY")
+                    pool_data["has_gauge"] = onchain_apy_data.get("has_gauge", False)
+                    pool_data["gauge_address"] = onchain_apy_data.get("gauge_address")
+                    
         except Exception as e:
             logger.debug(f"Aerodrome on-chain APY failed: {e}")
     

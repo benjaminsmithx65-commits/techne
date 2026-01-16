@@ -3,7 +3,7 @@
  * Handles subscription tiers, upgrades, and billing integration
  */
 
-const API_BASE = 'http://localhost:8000';
+const SUB_API_BASE = window.API_BASE || 'http://localhost:8000';
 
 // Subscription state
 let currentSubscription = null;
@@ -26,7 +26,7 @@ const SubscriptionUI = {
      */
     async loadTiers() {
         try {
-            const response = await fetch(`${API_BASE}/api/revenue/tiers`);
+            const response = await fetch(`${SUB_API_BASE}/api/revenue/tiers`);
             const data = await response.json();
             if (data.success) {
                 availableTiers = data.tiers;
@@ -50,7 +50,7 @@ const SubscriptionUI = {
     async loadCurrentSubscription() {
         const userId = this.getUserId();
         try {
-            const response = await fetch(`${API_BASE}/api/revenue/subscriptions/${userId}`);
+            const response = await fetch(`${SUB_API_BASE}/api/revenue/subscriptions/${userId}`);
             const data = await response.json();
             if (data.success) {
                 currentSubscription = data.subscription;
@@ -323,7 +323,7 @@ const SubscriptionUI = {
             // 3. Create Subscription on Backend
             this.showNotification('Payment confirmed! Activating plan...', 'success');
 
-            const response = await fetch(`${API_BASE}/api/revenue/subscriptions/create`, {
+            const response = await fetch(`${SUB_API_BASE}/api/revenue/subscriptions/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -704,18 +704,34 @@ const PoolDetailModal = {
 
     renderYieldBreakdownCompact(pool) {
         const apy = pool.apy || 0;
-        const apyBase = parseFloat(pool.apy_base || pool.apyBase || 0);
-        const apyReward = parseFloat(pool.apy_reward || pool.apyReward || 0);
+        let apyBase = parseFloat(pool.apy_base || pool.apyBase || 0);
+        let apyReward = parseFloat(pool.apy_reward || pool.apyReward || 0);
 
         if (apy <= 0) return '<div class="pd-no-data">No yield data</div>';
 
+        // FALLBACK: If no breakdown available but APY exists, assume fee-based (vault yield)
+        const hasBreakdown = apyBase > 0 || apyReward > 0;
+        if (!hasBreakdown && apy > 0) {
+            apyBase = apy; // Treat as 100% base yield (vaults, lending, etc.)
+        }
+
         const totalApy = apyBase + apyReward;
-        const feePercent = totalApy > 0 ? (apyBase / totalApy * 100) : 0;
+        const feePercent = totalApy > 0 ? (apyBase / totalApy * 100) : (hasBreakdown ? 0 : 100);
         const emissionPercent = totalApy > 0 ? (apyReward / totalApy * 100) : 0;
 
         let sustainColor = '#10B981';
-        if (emissionPercent > 80) sustainColor = '#EF4444';
-        else if (emissionPercent > 50) sustainColor = '#FBBF24';
+        let sustainText = '✅ Sustainable';
+        if (emissionPercent > 80) {
+            sustainColor = '#EF4444';
+            sustainText = '⚠️ High emission dependency';
+        } else if (emissionPercent > 50) {
+            sustainColor = '#FBBF24';
+            sustainText = 'Moderate reliance';
+        }
+
+        // Label based on source
+        const feeLabel = hasBreakdown ? 'Base:' : 'Yield:';
+        const emissionLabel = 'Reward (TOKEN):';
 
         return `
             <div class="pd-compact-yield">
@@ -729,9 +745,9 @@ const PoolDetailModal = {
                         <text x="50" y="52" text-anchor="middle" fill="white" font-size="14" font-weight="bold">${apy.toFixed(1)}%</text>
                     </svg>
                     <div style="font-size: 0.65rem;">
-                        <div style="margin-bottom: 4px;"><span style="color: #10B981;">●</span> Fees: ${apyBase.toFixed(2)}% (${feePercent.toFixed(0)}%)</div>
-                        <div style="margin-bottom: 4px;"><span style="color: #F59E0B;">●</span> Emissions: ${apyReward.toFixed(2)}% (${emissionPercent.toFixed(0)}%)</div>
-                        <div style="color: ${sustainColor}; font-weight: 500;">${emissionPercent > 80 ? '⚠️ High emission dependency' : emissionPercent > 50 ? 'Moderate reliance' : '✅ Sustainable'}</div>
+                        <div style="margin-bottom: 4px;"><span style="color: #10B981;">●</span> ${feeLabel} ${apyBase.toFixed(2)}% (${feePercent.toFixed(0)}%)</div>
+                        <div style="margin-bottom: 4px;"><span style="color: #F59E0B;">●</span> ${emissionLabel} ${apyReward.toFixed(2)}% (${emissionPercent.toFixed(0)}%)</div>
+                        <div style="color: ${sustainColor}; font-weight: 500;">${sustainText}</div>
                     </div>
                 </div>
             </div>
@@ -810,33 +826,66 @@ const PoolDetailModal = {
     },
 
     renderAdvancedRiskCompact(pool) {
-        // IL Risk from il_analysis object (backend returns pool.il_analysis.il_risk)
-        const ilAnalysis = pool.il_analysis || {};
-        const il = ilAnalysis.il_risk || pool.il_risk || 'medium';
+        // Per-token volatility from DexScreener (preferred)
+        const token0Vol = pool.token0_volatility || {};
+        const token1Vol = pool.token1_volatility || {};
 
-        // Volatility from volatility_analysis or top-level fields
-        const volAnalysis = pool.volatility_analysis || {};
-        const volatility = volAnalysis.price_change_24h || pool.volatility_24h || pool.token_volatility || 0;
+        console.log('🔥 Volatility Debug:', { token0Vol, token1Vol, lpVol24h: pool.token_volatility_24h, lpVol7d: pool.token_volatility_7d });
 
-        // Determine volatility type label
-        const volLabel = volAnalysis.price_change_24h ? 'Token Volatility' : (pool.token_volatility ? 'Token Volatility' : 'Volatility');
+        // Get token symbols
+        const symbol0 = token0Vol.symbol || pool.symbol0 || 'Token0';
+        const symbol1 = token1Vol.symbol || pool.symbol1 || 'Token1';
 
-        const ilColors = { low: '#10B981', medium: '#FBBF24', high: '#EF4444' };
-        const ilColor = ilColors[il.toLowerCase()] || '#6B7280';
+        // Get 24h price changes
+        const vol0_24h = token0Vol.price_change_24h || pool.token0_volatility_24h || 0;
+        const vol1_24h = token1Vol.price_change_24h || pool.token1_volatility_24h || 0;
+
+        // Get 1h price changes for short-term view
+        const vol0_1h = token0Vol.price_change_1h || pool.token0_volatility_1h || 0;
+        const vol1_1h = token1Vol.price_change_1h || pool.token1_volatility_1h || 0;
+
+        // LP/Pool volatility from GeckoTerminal OHLCV
+        const lpVol24h = pool.token_volatility_24h || pool.pair_price_change_24h || 0;
+        const lpVol7d = pool.token_volatility_7d || 0;
+
+        // Color coding for volatility
+        const getVolColor = (vol) => {
+            const absVol = Math.abs(vol || 0);
+            if (absVol > 10) return '#EF4444'; // High volatility - red
+            if (absVol > 5) return '#FBBF24';  // Medium - yellow
+            return '#10B981'; // Low - green
+        };
+
+        const formatVol = (vol) => {
+            if (vol === 0 || vol === null || vol === undefined) return 'N/A';
+            const sign = vol > 0 ? '+' : '';
+            return `${sign}${vol.toFixed(1)}%`;
+        };
 
         return `
             <div class="pd-section pd-section-compact">
-                <div class="pd-section-header"><h3>📊 Risk</h3></div>
+                <div class="pd-section-header"><h3>📈 Volatility</h3></div>
                 <div style="font-size: 0.65rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                        <span style="color: var(--text-muted);">IL Risk:</span>
-                        <span style="color: ${ilColor}; font-weight: 500;">${il.toUpperCase()}</span>
+                    <div style="margin-bottom: 5px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">${symbol0}</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>1h: <span style="color: ${getVolColor(vol0_1h)}; font-weight: 500;">${formatVol(vol0_1h)}</span></span>
+                            <span>24h: <span style="color: ${getVolColor(vol0_24h)}; font-weight: 500;">${formatVol(vol0_24h)}</span></span>
+                        </div>
                     </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-muted);">${volLabel}:</span>
-                        <span style="color: ${volatility > 5 ? '#EF4444' : volatility > 2 ? '#FBBF24' : '#10B981'};">
-                            ${volatility > 0 ? volatility.toFixed(1) + '%' : 'N/A'}
-                        </span>
+                    <div style="margin-bottom: 5px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">${symbol1}</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>1h: <span style="color: ${getVolColor(vol1_1h)}; font-weight: 500;">${formatVol(vol1_1h)}</span></span>
+                            <span>24h: <span style="color: ${getVolColor(vol1_24h)}; font-weight: 500;">${formatVol(vol1_24h)}</span></span>
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 5px; margin-top: 3px;">
+                        <div style="color: var(--text-muted); margin-bottom: 2px; font-size: 0.6rem;">LP/Pool</div>
+                        <div style="display: flex; gap: 10px;">
+                            <span>24h: <span style="color: ${getVolColor(lpVol24h)}; font-weight: 500;">${formatVol(lpVol24h)}</span></span>
+                            <span>7d: <span style="color: ${getVolColor(lpVol7d)}; font-weight: 500;">${formatVol(lpVol7d)}</span></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1750,8 +1799,20 @@ const PoolDetailModal = {
                             ${volPenalty > 0 ? `<span class="pd-penalty">-${volPenalty} pts</span>` : ''}
                         </div>
                         <div class="pd-risk-detail">
-                            24h Price Change: <span class="${priceChange24h >= 0 ? 'up' : 'down'}">${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%</span>
+                            ${volLevel === 'unknown' || volLevel === 'N/A' ?
+                'Price volatility data not available' :
+                volLevel === 'low' ?
+                    'Stable price action - lower IL risk from price swings' :
+                    volLevel === 'medium' ?
+                        'Moderate price movement - watch for IL during swings' :
+                        'High price swings - increased IL risk and exit slippage'
+            }
                         </div>
+                        ${priceChange24h !== 0 ? `
+                            <div class="pd-risk-stat">
+                                24h Change: <span class="${priceChange24h >= 0 ? 'up' : 'down'}">${priceChange24h >= 0 ? '+' : ''}${priceChange24h.toFixed(2)}%</span>
+                            </div>
+                        ` : ''}
                         ${isExtreme ? '<div class="pd-risk-warning">⚠️ Extreme volatility detected!</div>' : ''}
                     </div>
                     
@@ -1781,45 +1842,45 @@ const PoolDetailModal = {
                         <div class="pd-breakdown-title">Risk Score Breakdown</div>
                         <div class="pd-breakdown-items">
                             ${Object.entries(riskBreakdown).map(([key, value]) => {
-            // Determine value display based on type
-            const isNumeric = typeof value === 'number';
-            const label = key.replace(/_/g, ' ');
+                // Determine value display based on type
+                const isNumeric = typeof value === 'number';
+                const label = key.replace(/_/g, ' ');
 
-            // Color coding with inline styles
-            let valueStyle = '';
-            let displayValue = value;
+                // Color coding with inline styles
+                let valueStyle = '';
+                let displayValue = value;
 
-            if (isNumeric) {
-                if (value < 0) {
-                    valueStyle = 'color: #EF4444;';  // red for penalty
-                } else if (value > 0) {
-                    valueStyle = 'color: #10B981;';  // green for bonus
-                    displayValue = '+' + value;
+                if (isNumeric) {
+                    if (value < 0) {
+                        valueStyle = 'color: #EF4444;';  // red for penalty
+                    } else if (value > 0) {
+                        valueStyle = 'color: #10B981;';  // green for bonus
+                        displayValue = '+' + value;
+                    } else {
+                        valueStyle = 'color: #9CA3AF;';  // gray for zero
+                    }
                 } else {
-                    valueStyle = 'color: #9CA3AF;';  // gray for zero
-                }
-            } else {
-                // String values: color code based on meaning
-                const goodValues = ['verified', 'locked', 'low', 'strong', 'stable'];
-                const badValues = ['unverified', 'unlocked', 'high', 'weak', 'critical', 'extreme'];
+                    // String values: color code based on meaning
+                    const goodValues = ['verified', 'locked', 'low', 'strong', 'stable'];
+                    const badValues = ['unverified', 'unlocked', 'high', 'weak', 'critical', 'extreme'];
 
-                const valueLower = String(value).toLowerCase();
-                if (goodValues.some(v => valueLower.includes(v))) {
-                    valueStyle = 'color: #10B981;';  // green
-                } else if (badValues.some(v => valueLower.includes(v))) {
-                    valueStyle = 'color: #EF4444;';  // red
-                } else {
-                    valueStyle = 'color: #FBBF24;';  // yellow for neutral
+                    const valueLower = String(value).toLowerCase();
+                    if (goodValues.some(v => valueLower.includes(v))) {
+                        valueStyle = 'color: #10B981;';  // green
+                    } else if (badValues.some(v => valueLower.includes(v))) {
+                        valueStyle = 'color: #EF4444;';  // red
+                    } else {
+                        valueStyle = 'color: #FBBF24;';  // yellow for neutral
+                    }
                 }
-            }
 
-            return `
+                return `
                                     <div class="pd-breakdown-item">
                                         <span class="pd-breakdown-label">${label}</span>
                                         <span class="pd-breakdown-value" style="${valueStyle}">${displayValue}</span>
                                     </div>
                                 `;
-        }).join('')}
+            }).join('')}
                         </div>
                     </div>
                 ` : ''}
@@ -1926,36 +1987,57 @@ const PoolDetailModal = {
                     <span class="pd-risk-title">Whale Concentration</span>
                 </div>
                 
-                <!-- Real Whale Analysis (adjusted) -->
-                <div class="pd-whale-row">
-                    <span class="pd-whale-label">Real Whales:</span>
-                    <span class="pd-whale-value" style="color: ${color}">${label}</span>
-                    <span class="pd-whale-detail">
-                        ${top10Percent > 0 ? `Top 10: ${top10Percent.toFixed(1)}%` : 'N/A'}
-                        ${holderCount > 0 ? ` • ${formatHolders(holderCount)} holders` : ''}
-                    </span>
-                </div>
-                
-                <!-- Protocol Staking (veTokens - healthy, excluded from risk) -->
-                ${protocolStaked > 0 ? `
-                    <div class="pd-whale-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span class="pd-whale-label">🔒 Protocol Staked:</span>
-                        <span class="pd-whale-value" style="color: #10B981">${protocolStaked.toFixed(1)}%</span>
-                        <span class="pd-whale-detail" style="color: var(--text-muted)">
-                            veTokens/staking (healthy)
-                        </span>
-                    </div>
-                ` : ''}
-                
-                <!-- LP Token Analysis (Pool Positions) -->
-                ${lpTop10 > 0 || lpHolders > 0 ? `
-                    <div class="pd-whale-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span class="pd-whale-label">LP Positions:</span>
-                        <span class="pd-whale-value" style="color: ${lpColor}">${lpRisk.toUpperCase()}</span>
+                <!-- LP Whales (Pool Position Holders) -->
+                <div class="pd-whale-section">
+                    <div class="pd-whale-row">
+                        <span class="pd-whale-label">🔷 LP Whales:</span>
+                        <span class="pd-whale-value" style="color: ${lpColor}">${riskLabels[lpRisk] || 'N/A'}</span>
                         <span class="pd-whale-detail">
                             ${lpTop10 > 0 ? `Top 10: ${lpTop10.toFixed(1)}%` : 'N/A'}
                             ${lpHolders > 0 ? ` • ${formatHolders(lpHolders)} LPs` : ''}
                         </span>
+                    </div>
+                    <div class="pd-whale-desc">Concentration of liquidity providers in the pool</div>
+                </div>
+                
+                <!-- Token Whales (token0) -->
+                ${token0Analysis.top_10_percent !== undefined && !isToken0Skipped ? `
+                    <div class="pd-whale-section" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div class="pd-whale-row">
+                            <span class="pd-whale-label">🪙 ${pool.symbol0 || 'Token0'} Whales:</span>
+                            <span class="pd-whale-value" style="color: ${riskColors[token0Analysis.concentration_risk] || '#6B7280'}">${riskLabels[token0Analysis.concentration_risk] || 'N/A'}</span>
+                            <span class="pd-whale-detail">
+                                ${token0Analysis.top_10_percent > 0 ? `Top 10: ${token0Analysis.top_10_percent.toFixed(1)}%` : 'N/A'}
+                                ${token0Analysis.holder_count > 0 ? ` • ${formatHolders(token0Analysis.holder_count)} holders` : ''}
+                            </span>
+                        </div>
+                        <div class="pd-whale-desc">Token holder concentration (excludes protocol staking)</div>
+                    </div>
+                ` : ''}
+                
+                <!-- Token Whales (token1) -->
+                ${token1Analysis.top_10_percent !== undefined && !isToken1Skipped ? `
+                    <div class="pd-whale-section" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div class="pd-whale-row">
+                            <span class="pd-whale-label">🪙 ${pool.symbol1 || 'Token1'} Whales:</span>
+                            <span class="pd-whale-value" style="color: ${riskColors[token1Analysis.concentration_risk] || '#6B7280'}">${riskLabels[token1Analysis.concentration_risk] || 'N/A'}</span>
+                            <span class="pd-whale-detail">
+                                ${token1Analysis.top_10_percent > 0 ? `Top 10: ${token1Analysis.top_10_percent.toFixed(1)}%` : 'N/A'}
+                                ${token1Analysis.holder_count > 0 ? ` • ${formatHolders(token1Analysis.holder_count)} holders` : ''}
+                            </span>
+                        </div>
+                        <div class="pd-whale-desc">Token holder concentration (excludes protocol staking)</div>
+                    </div>
+                ` : ''}
+                
+                <!-- Protocol Staking (veTokens - healthy, excluded from risk) -->
+                ${protocolStaked > 0 ? `
+                    <div class="pd-whale-section" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div class="pd-whale-row">
+                            <span class="pd-whale-label">🔒 Protocol Staked:</span>
+                            <span class="pd-whale-value" style="color: #10B981">${protocolStaked.toFixed(1)}%</span>
+                            <span class="pd-whale-detail">veTokens/staking (healthy - excluded from risk)</span>
+                        </div>
                     </div>
                 ` : ''}
                 
@@ -2855,7 +2937,7 @@ detailStyles.textContent = `
         backdrop-filter: blur(12px);
         z-index: 2000;
         justify-content: center;
-        align-items: flex-end;
+        align-items: center;
         padding: var(--space-4);
         animation: fadeIn 0.3s ease-out;
     }
@@ -2864,7 +2946,7 @@ detailStyles.textContent = `
     .pool-detail-modal {
         background: linear-gradient(180deg, rgba(20, 20, 20, 0.98), rgba(10, 10, 10, 0.98));
         border: 1px solid rgba(212, 168, 83, 0.3);
-        border-radius: 12px 12px 0 0;
+        border-radius: 12px;
         max-width: 1100px;
         width: 95vw;
         max-height: 94vh;

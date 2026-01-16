@@ -3,7 +3,7 @@
  * Ensures every button on the page leads to proper functionality
  */
 
-const API_BASE = 'http://localhost:8000';
+const BTN_API_BASE = window.API_BASE || 'http://localhost:8000';
 
 const ButtonHandler = {
     /**
@@ -207,7 +207,7 @@ const ButtonHandler = {
         document.body.appendChild(modal);
 
         try {
-            const response = await fetch(`${API_BASE}/api/scout/risk/${encodeURIComponent(poolId)}`);
+            const response = await fetch(`${BTN_API_BASE}/api/scout/risk/${encodeURIComponent(poolId)}`);
             const data = await response.json();
 
             modal.querySelector('.modal-content').innerHTML = `

@@ -197,6 +197,59 @@ class GeckoTerminalClient:
             logger.error(f"GeckoTerminal search failed: {e}")
             return None
     
+    async def get_token_prices(self, chain: str, token_addresses: list) -> Optional[Dict[str, Any]]:
+        """
+        Fetch token prices with 24h price change for multiple tokens.
+        Uses the simple token price endpoint with include_24hr_price_change.
+        
+        Args:
+            chain: Chain name (e.g., 'base', 'ethereum')
+            token_addresses: List of token contract addresses
+            
+        Returns:
+            Dict mapping token address to {usd: price, price_change_24h: percent}
+        """
+        if not token_addresses:
+            return {}
+            
+        network = NETWORK_MAP.get(chain.lower(), chain.lower())
+        
+        # Join addresses with comma (max 30 for public API)
+        addresses_str = ",".join([addr.lower() for addr in token_addresses[:30]])
+        url = f"{self.BASE_URL}/simple/networks/{network}/token_price/{addresses_str}"
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, params={"include_24hr_price_change": "true"})
+                
+                if response.status_code != 200:
+                    logger.debug(f"Token price fetch failed: {response.status_code}")
+                    return {}
+                
+                data = response.json()
+                token_data = data.get("data", {}).get("attributes", {}).get("token_prices", {})
+                
+                result = {}
+                for addr, info in token_data.items():
+                    if isinstance(info, dict):
+                        result[addr.lower()] = {
+                            "usd": float(info.get("usd", 0) or 0),
+                            "price_change_24h": float(info.get("price_change_24h", 0) or 0)
+                        }
+                    elif isinstance(info, (int, float, str)):
+                        # Simple price without change
+                        result[addr.lower()] = {
+                            "usd": float(info or 0),
+                            "price_change_24h": 0
+                        }
+                
+                logger.info(f"Token prices fetched for {len(result)} tokens on {chain}")
+                return result
+                
+        except Exception as e:
+            logger.debug(f"Token price request failed: {e}")
+            return {}
+    
     def _normalize_pool_data(self, pool_data: Dict, chain: str) -> Dict[str, Any]:
         """Convert GeckoTerminal format to our standard format"""
         attrs = pool_data.get("attributes", {})

@@ -531,6 +531,21 @@ const VerifyPools = {
             symbol0: pool.symbol0 || '',
             symbol1: pool.symbol1 || '',
 
+            // Per-token volatility from DexScreener (NEW)
+            token0_volatility: pool.token0_volatility || {},
+            token1_volatility: pool.token1_volatility || {},
+            token0_volatility_24h: pool.token0_volatility_24h || 0,
+            token1_volatility_24h: pool.token1_volatility_24h || 0,
+            token0_volatility_1h: pool.token0_volatility_1h || 0,
+            token1_volatility_1h: pool.token1_volatility_1h || 0,
+
+            // LP/Pool volatility from GeckoTerminal OHLCV (NEW)
+            token_volatility_24h: pool.token_volatility_24h || 0,
+            token_volatility_7d: pool.token_volatility_7d || 0,
+            pair_price_change_24h: pool.pair_price_change_24h || 0,
+            pair_price_change_6h: pool.pair_price_change_6h || 0,
+            pair_price_change_1h: pool.pair_price_change_1h || 0,
+
             // Audit and lock status (Phase 2)
             audit_status: pool.audit_status || {},
             liquidity_lock: pool.liquidity_lock || {},
