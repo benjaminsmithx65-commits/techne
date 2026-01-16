@@ -221,7 +221,7 @@ async function connectWithWallet(wallet) {
                 ethersSigner = await ethersProvider.getSigner();
 
                 // Update UI
-                updateWalletUI(accounts[0], wallet);
+                updateWalletConnectUI(accounts[0], wallet);
                 closeWalletModal();
 
                 console.log(`✅ Connected with ${wallet.name}: ${accounts[0]}`);
@@ -253,8 +253,8 @@ async function connectWithWalletConnect() {
     }
 }
 
-// Update UI after connection
-function updateWalletUI(address, wallet) {
+// Update UI after connection (renamed to avoid conflict with app.js updateWalletUI)
+function updateWalletConnectUI(address, wallet) {
     // Update header if there's a connect button
     const connectBtn = document.querySelector('[data-wallet-connect]');
     if (connectBtn) {
