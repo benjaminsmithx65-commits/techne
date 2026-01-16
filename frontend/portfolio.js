@@ -16,10 +16,13 @@ class PortfolioDashboard {
         };
 
         this.notifications = [];
+        this.selectedAgentId = null;
+        this.agents = [];
     }
 
     init() {
         this.bindEvents();
+        this.loadAgents();
         this.loadPortfolioData();
         this.syncAgentStatus();
         console.log('[Portfolio] Dashboard initialized');
@@ -46,12 +49,139 @@ class PortfolioDashboard {
             this.confirmWithdrawAll();
         });
 
+        // Agent selector
+        document.getElementById('agentSelector')?.addEventListener('change', (e) => {
+            this.selectAgent(e.target.value);
+        });
+
+        // Delete agent button
+        document.getElementById('btnDeleteAgent')?.addEventListener('click', () => {
+            this.confirmDeleteAgent();
+        });
+
         // Quick actions
         document.querySelectorAll('.quick-action').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.handleQuickAction(btn.dataset.action);
             });
         });
+    }
+
+    loadAgents() {
+        // Load all agents from localStorage
+        try {
+            const saved = localStorage.getItem('techne_deployed_agents');
+            this.agents = saved ? JSON.parse(saved) : [];
+
+            // Fallback to old format
+            if (this.agents.length === 0) {
+                const oldFormat = localStorage.getItem('techne_deployed_agent');
+                if (oldFormat) {
+                    const agent = JSON.parse(oldFormat);
+                    agent.id = agent.id || `agent_${Date.now()}`;
+                    this.agents = [agent];
+                }
+            }
+
+            this.updateAgentSelector();
+
+            // Auto-select first active agent
+            const activeAgent = this.agents.find(a => a.isActive);
+            if (activeAgent) {
+                this.selectedAgentId = activeAgent.id;
+                document.getElementById('agentSelector').value = activeAgent.id;
+            }
+        } catch (e) {
+            console.error('[Portfolio] Failed to load agents:', e);
+            this.agents = [];
+        }
+    }
+
+    updateAgentSelector() {
+        const selector = document.getElementById('agentSelector');
+        const countEl = document.getElementById('agentCount');
+
+        if (!selector) return;
+
+        // Clear options
+        selector.innerHTML = '<option value="">Select Agent...</option>';
+
+        // Add agents
+        this.agents.forEach(agent => {
+            const option = document.createElement('option');
+            option.value = agent.id;
+            option.textContent = `${agent.name || 'Agent'} ${agent.isActive ? '🟢' : '⚫'}`;
+            if (agent.id === this.selectedAgentId) {
+                option.selected = true;
+            }
+            selector.appendChild(option);
+        });
+
+        // Update count
+        if (countEl) {
+            const activeCount = this.agents.filter(a => a.isActive).length;
+            countEl.textContent = `${this.agents.length}/5 agents (${activeCount} active)`;
+        }
+    }
+
+    selectAgent(agentId) {
+        this.selectedAgentId = agentId;
+        const agent = this.agents.find(a => a.id === agentId);
+
+        if (agent) {
+            this.updateAgentSidebarFromDeployed(agent);
+            this.populateFromDeployedAgent(agent);
+            this.updateUI();
+        } else {
+            this.showEmptyState();
+        }
+    }
+
+    async confirmDeleteAgent() {
+        const agent = this.agents.find(a => a.id === this.selectedAgentId);
+
+        if (!agent) {
+            alert('Please select an agent first');
+            return;
+        }
+
+        const confirmed = confirm(
+            `Are you sure you want to delete "${agent.name || 'Agent'}"?\n\n` +
+            `Address: ${agent.address?.slice(0, 10)}...\n` +
+            `Strategy: ${agent.preset}\n\n` +
+            `This action cannot be undone.`
+        );
+
+        if (!confirmed) return;
+
+        // Call backend to delete
+        const API_BASE = window.API_BASE || '';
+        try {
+            const response = await fetch(
+                `${API_BASE}/api/agent/delete/${window.connectedWallet}/${agent.id}`,
+                { method: 'DELETE' }
+            );
+            const result = await response.json();
+            console.log('[Portfolio] Delete result:', result);
+        } catch (e) {
+            console.warn('[Portfolio] Backend delete failed:', e);
+        }
+
+        // Remove from local storage
+        this.agents = this.agents.filter(a => a.id !== agent.id);
+        localStorage.setItem('techne_deployed_agents', JSON.stringify(this.agents));
+
+        // Update UI
+        this.selectedAgentId = null;
+        this.updateAgentSelector();
+
+        if (this.agents.length > 0) {
+            this.selectAgent(this.agents[0].id);
+        } else {
+            this.showEmptyState();
+        }
+
+        console.log('[Portfolio] Agent deleted:', agent.id);
     }
 
     async loadPortfolioData() {

@@ -69,38 +69,45 @@ class StrategyExecutor:
     
     async def execute_all_agents(self):
         """Execute strategies for all active agents"""
-        active_agents = [
-            agent for agent in DEPLOYED_AGENTS.values()
-            if agent.get("is_active", False)
-        ]
+        # DEPLOYED_AGENTS now stores: user_address -> [list of agents]
+        all_agents = []
+        for user_agents in DEPLOYED_AGENTS.values():
+            if isinstance(user_agents, list):
+                all_agents.extend([a for a in user_agents if a.get("is_active", False)])
+            elif isinstance(user_agents, dict) and user_agents.get("is_active", False):
+                all_agents.append(user_agents)
         
-        if not active_agents:
+        if not all_agents:
             return
         
-        print(f"[StrategyExecutor] Processing {len(active_agents)} active agents")
+        print(f"[StrategyExecutor] Processing {len(all_agents)} active agents")
         
-        for agent in active_agents:
+        for agent in all_agents:
             try:
                 await self.execute_agent_strategy(agent)
+                
+                # Check if rebalancing needed
+                if agent.get("auto_rebalance", True):
+                    await self.check_rebalance_needed(agent)
             except Exception as e:
-                print(f"[StrategyExecutor] Error for {agent.get('user_address')}: {e}")
+                print(f"[StrategyExecutor] Error for {agent.get('id', 'unknown')}: {e}")
     
     async def execute_agent_strategy(self, agent: dict):
         """Execute strategy for a single agent"""
-        user = agent.get("user_address", "unknown")
+        agent_id = agent.get("id", "unknown")
         
         # Check if we should execute (rate limit)
-        last = self.last_execution.get(user)
+        last = self.last_execution.get(agent_id)
         if last and datetime.utcnow() - last < timedelta(minutes=5):
             return
         
-        print(f"[StrategyExecutor] Executing for {user[:10]}...")
+        print(f"[StrategyExecutor] Executing for agent {agent_id[:15]}...")
         
         # 1. Find matching pools
         pools = await self.find_matching_pools(agent)
         
         if not pools:
-            print(f"[StrategyExecutor] No matching pools found for {user[:10]}")
+            print(f"[StrategyExecutor] No matching pools found for {agent_id[:15]}")
             return
         
         print(f"[StrategyExecutor] Found {len(pools)} matching pools")
@@ -108,13 +115,55 @@ class StrategyExecutor:
         # 2. Rank and select top pools
         selected_pools = self.rank_and_select(pools, agent)
         
-        # 3. Update agent with recommendations (for now, don't execute on-chain)
+        # 3. Update agent with recommendations
         agent["recommended_pools"] = selected_pools
         agent["last_scan"] = datetime.utcnow().isoformat()
         
-        self.last_execution[user] = datetime.utcnow()
+        self.last_execution[agent_id] = datetime.utcnow()
         
-        print(f"[StrategyExecutor] Recommended {len(selected_pools)} pools for {user[:10]}")
+        print(f"[StrategyExecutor] Recommended {len(selected_pools)} pools for {agent_id[:15]}")
+    
+    async def check_rebalance_needed(self, agent: dict):
+        """Check if agent positions need rebalancing"""
+        allocations = agent.get("allocations", [])
+        recommended = agent.get("recommended_pools", [])
+        
+        if not allocations or not recommended:
+            return
+        
+        # Get current allocation symbols
+        current_symbols = set(a.get("pool") for a in allocations)
+        recommended_symbols = set(p.get("symbol") for p in recommended)
+        
+        # Check for changes
+        new_pools = recommended_symbols - current_symbols
+        removed_pools = current_symbols - recommended_symbols
+        
+        if new_pools or removed_pools:
+            print(f"[StrategyExecutor] Rebalance needed for {agent.get('id')}")
+            print(f"  New pools: {new_pools}")
+            print(f"  Removed pools: {removed_pools}")
+            
+            # Mark for rebalancing
+            agent["needs_rebalance"] = True
+            agent["rebalance_reason"] = {
+                "new_pools": list(new_pools),
+                "removed_pools": list(removed_pools),
+                "detected_at": datetime.utcnow().isoformat()
+            }
+        
+        # Check for APY drift (>20% change)
+        for alloc in allocations:
+            pool_symbol = alloc.get("pool")
+            old_apy = alloc.get("apy", 0)
+            
+            # Find current APY from recommended
+            current = next((p for p in recommended if p.get("symbol") == pool_symbol), None)
+            if current:
+                new_apy = current.get("apy", 0)
+                if old_apy > 0 and abs(new_apy - old_apy) / old_apy > 0.2:
+                    print(f"[StrategyExecutor] APY drift detected: {pool_symbol} {old_apy:.1f}% → {new_apy:.1f}%")
+                    agent["needs_rebalance"] = True
     
     async def find_matching_pools(self, agent: dict) -> List[dict]:
         """Find pools matching agent's configuration"""

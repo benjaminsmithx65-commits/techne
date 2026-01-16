@@ -3017,6 +3017,29 @@
                                     </svg> Agent Status</h3>
                                 <span class="status-badge inactive" id="agentStatusBadge">Inactive</span>
                             </div>
+
+                            <!-- Agent Selector -->
+                            <div class="agent-selector-wrapper" style="margin-bottom: 12px;">
+                                <select id="agentSelector" class="agent-selector" style="
+                                    width: 100%;
+                                    padding: 8px 12px;
+                                    background: var(--bg-elevated);
+                                    border: 1px solid var(--border);
+                                    border-radius: 8px;
+                                    color: var(--text);
+                                    font-size: 0.85rem;
+                                    cursor: pointer;
+                                ">
+                                    <option value="">Select Agent...</option>
+                                </select>
+                                <div class="agent-count" id="agentCount" style="
+                                    font-size: 0.75rem;
+                                    color: var(--text-muted);
+                                    margin-top: 4px;
+                                    text-align: right;
+                                ">0/5 agents</div>
+                            </div>
+
                             <div class="agent-info">
                                 <div class="agent-row">
                                     <span class="label">Address</span>
@@ -3053,6 +3076,27 @@
                                             stroke-linecap="round" stroke-linejoin="round" />
                                     </svg> Withdraw All</button>
                             </div>
+
+                            <!-- Delete Agent Button -->
+                            <button class="btn-delete-agent" id="btnDeleteAgent" style="
+                                width: 100%;
+                                margin-top: 12px;
+                                padding: 10px;
+                                background: rgba(239, 68, 68, 0.1);
+                                border: 1px solid rgba(239, 68, 68, 0.3);
+                                border-radius: 8px;
+                                color: #ef4444;
+                                font-size: 0.85rem;
+                                cursor: pointer;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                gap: 6px;
+                                transition: all 0.2s;
+                            " onmouseover="this.style.background='rgba(239,68,68,0.2)'"
+                                onmouseout="this.style.background='rgba(239,68,68,0.1)'">
+                                🗑️ Delete Agent
+                            </button>
                         </div>
 
                         <!-- Allocation Chart -->
