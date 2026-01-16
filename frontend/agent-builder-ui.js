@@ -736,9 +736,15 @@ What would you like to configure?`;
         }
     }
 
-    saveDeployedAgent(address, isProMode, proConfig) {
+    saveDeployedAgent(address, isProMode, proConfig, backendResult = null) {
         // Save agent configuration to localStorage for Portfolio integration
-        const deployedAgent = {
+        // Supports multiple agents (max 5) per wallet
+
+        const agentId = backendResult?.agent_id || `agent_${Date.now()}`;
+
+        const newAgent = {
+            id: agentId,
+            name: `Agent #${this.getDeployedAgents().length + 1}`,
             address: address,
             chain: this.config.chain,
             preset: this.config.preset,
@@ -755,23 +761,92 @@ What would you like to configure?`;
             isActive: true
         };
 
+        // Get existing agents
+        let agents = this.getDeployedAgents();
+
+        // Check max limit
+        const MAX_AGENTS = 5;
+        if (agents.length >= MAX_AGENTS) {
+            console.warn('[AgentBuilder] Max agents reached, replacing oldest inactive');
+            // Find oldest inactive agent to replace
+            const inactiveIndex = agents.findIndex(a => !a.isActive);
+            if (inactiveIndex >= 0) {
+                agents.splice(inactiveIndex, 1);
+            } else {
+                console.error('[AgentBuilder] Cannot deploy: max 5 active agents');
+                return;
+            }
+        }
+
+        // Add new agent
+        agents.push(newAgent);
+
         // Save to localStorage
-        localStorage.setItem('techne_deployed_agent', JSON.stringify(deployedAgent));
+        localStorage.setItem('techne_deployed_agents', JSON.stringify(agents));
+
+        // Also keep single agent reference for backward compatibility
+        localStorage.setItem('techne_deployed_agent', JSON.stringify(newAgent));
 
         // Also update global state
-        window.deployedAgent = deployedAgent;
+        window.deployedAgent = newAgent;
+        window.deployedAgents = agents;
 
-        console.log('[AgentBuilder] Agent saved to localStorage:', deployedAgent);
+        console.log('[AgentBuilder] Agent saved. Total agents:', agents.length);
+    }
+
+    getDeployedAgents() {
+        // Get all agents from localStorage
+        try {
+            const saved = localStorage.getItem('techne_deployed_agents');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            return [];
+        }
     }
 
     static getDeployedAgent() {
-        // Static method to retrieve deployed agent from localStorage
+        // Static method to retrieve most recent active agent from localStorage
         try {
-            const saved = localStorage.getItem('techne_deployed_agent');
-            return saved ? JSON.parse(saved) : null;
+            const saved = localStorage.getItem('techne_deployed_agents');
+            if (saved) {
+                const agents = JSON.parse(saved);
+                // Return first active agent
+                return agents.find(a => a.isActive) || agents[agents.length - 1] || null;
+            }
+            // Fallback to old single agent format
+            const oldSaved = localStorage.getItem('techne_deployed_agent');
+            return oldSaved ? JSON.parse(oldSaved) : null;
         } catch (e) {
             console.error('[AgentBuilder] Failed to load deployed agent:', e);
             return null;
+        }
+    }
+
+    static getDeployedAgents() {
+        // Static method to retrieve all agents
+        try {
+            const saved = localStorage.getItem('techne_deployed_agents');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    static deleteAgent(agentId) {
+        // Delete an agent from localStorage
+        try {
+            let agents = AgentBuilderUI.getDeployedAgents();
+            const index = agents.findIndex(a => a.id === agentId);
+            if (index >= 0) {
+                agents.splice(index, 1);
+                localStorage.setItem('techne_deployed_agents', JSON.stringify(agents));
+                console.log('[AgentBuilder] Agent deleted:', agentId);
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error('[AgentBuilder] Failed to delete agent:', e);
+            return false;
         }
     }
 

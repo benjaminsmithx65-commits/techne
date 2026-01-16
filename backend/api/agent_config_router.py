@@ -12,8 +12,9 @@ import os
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-# In-memory storage (would use DB in production)
+# In-memory storage: user_address -> list of agents (max 5)
 DEPLOYED_AGENTS = {}
+MAX_AGENTS_PER_WALLET = 5
 
 
 class ProConfig(BaseModel):
@@ -33,6 +34,7 @@ class ProConfig(BaseModel):
 class AgentDeployRequest(BaseModel):
     user_address: str
     agent_address: str
+    agent_name: Optional[str] = None  # Optional custom name
     chain: str = "base"
     preset: str = "balanced-growth"
     pool_type: str = "single"
@@ -53,6 +55,7 @@ class AgentDeployRequest(BaseModel):
 class AgentStatusResponse(BaseModel):
     success: bool
     agent: Optional[dict] = None
+    agents: Optional[List[dict]] = None
     message: Optional[str] = None
 
 
@@ -60,9 +63,26 @@ class AgentStatusResponse(BaseModel):
 async def deploy_agent(request: AgentDeployRequest):
     """
     Deploy an agent with configuration from Build UI
+    Max 5 agents per wallet
     """
     try:
+        # Get existing agents for this wallet
+        user_agents = DEPLOYED_AGENTS.get(request.user_address, [])
+        
+        # Check max limit
+        active_agents = [a for a in user_agents if a.get("is_active", False)]
+        if len(active_agents) >= MAX_AGENTS_PER_WALLET:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Maximum {MAX_AGENTS_PER_WALLET} agents per wallet"
+            )
+        
+        # Generate agent ID
+        agent_id = f"agent_{len(user_agents) + 1}_{int(datetime.utcnow().timestamp())}"
+        
         agent_data = {
+            "id": agent_id,
+            "name": request.agent_name or f"Agent #{len(user_agents) + 1}",
             "user_address": request.user_address,
             "agent_address": request.agent_address,
             "chain": request.chain,
@@ -87,49 +107,66 @@ async def deploy_agent(request: AgentDeployRequest):
             "total_value": 0
         }
         
-        # Store agent
-        DEPLOYED_AGENTS[request.user_address] = agent_data
+        # Add to user's agents list
+        user_agents.append(agent_data)
+        DEPLOYED_AGENTS[request.user_address] = user_agents
         
-        print(f"[AgentConfig] Agent deployed for {request.user_address}")
-        print(f"[AgentConfig] Config: {json.dumps(agent_data, indent=2, default=str)}")
+        print(f"[AgentConfig] Agent {agent_id} deployed for {request.user_address}")
+        print(f"[AgentConfig] Total agents for user: {len(user_agents)}")
         
         return {
             "success": True,
+            "agent_id": agent_id,
             "agent_address": request.agent_address,
             "message": "Agent deployed successfully",
-            "config": agent_data
+            "config": agent_data,
+            "total_agents": len(user_agents)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[AgentConfig] Deploy error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/status/{user_address}")
-async def get_agent_status(user_address: str):
+async def get_agent_status(user_address: str, agent_id: Optional[str] = None):
     """
-    Get status of deployed agent for a user
+    Get status of deployed agents for a user
+    If agent_id provided, returns single agent
     """
-    agent = DEPLOYED_AGENTS.get(user_address)
+    user_agents = DEPLOYED_AGENTS.get(user_address, [])
     
-    if not agent:
+    if not user_agents:
         return AgentStatusResponse(
             success=False,
-            message="No agent found for this user"
+            message="No agents found for this user"
         )
     
-    return AgentStatusResponse(
-        success=True,
-        agent=agent
-    )
+    if agent_id:
+        # Return specific agent
+        agent = next((a for a in user_agents if a.get("id") == agent_id), None)
+        if not agent:
+            return AgentStatusResponse(success=False, message="Agent not found")
+        return AgentStatusResponse(success=True, agent=agent)
+    
+    # Return all agents
+    return {
+        "success": True,
+        "agents": user_agents,
+        "count": len(user_agents),
+        "active_count": len([a for a in user_agents if a.get("is_active")])
+    }
 
 
-@router.post("/stop/{user_address}")
-async def stop_agent(user_address: str):
+@router.post("/stop/{user_address}/{agent_id}")
+async def stop_agent(user_address: str, agent_id: str):
     """
-    Stop a deployed agent
+    Stop a specific agent
     """
-    agent = DEPLOYED_AGENTS.get(user_address)
+    user_agents = DEPLOYED_AGENTS.get(user_address, [])
+    agent = next((a for a in user_agents if a.get("id") == agent_id), None)
     
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -139,7 +176,38 @@ async def stop_agent(user_address: str):
     
     return {
         "success": True,
-        "message": "Agent stopped"
+        "message": f"Agent {agent_id} stopped"
+    }
+
+
+@router.delete("/delete/{user_address}/{agent_id}")
+async def delete_agent(user_address: str, agent_id: str):
+    """
+    Delete an agent permanently
+    """
+    user_agents = DEPLOYED_AGENTS.get(user_address, [])
+    agent = next((a for a in user_agents if a.get("id") == agent_id), None)
+    
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    # Check if agent has active positions (in production, would need to withdraw first)
+    if agent.get("total_value", 0) > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot delete agent with active positions. Withdraw funds first."
+        )
+    
+    # Remove agent
+    user_agents.remove(agent)
+    DEPLOYED_AGENTS[user_address] = user_agents
+    
+    print(f"[AgentConfig] Agent {agent_id} deleted for {user_address}")
+    
+    return {
+        "success": True,
+        "message": f"Agent {agent_id} deleted",
+        "remaining_agents": len(user_agents)
     }
 
 
@@ -148,31 +216,42 @@ async def list_agents():
     """
     List all deployed agents (admin endpoint)
     """
+    all_agents = []
+    for user_agents in DEPLOYED_AGENTS.values():
+        all_agents.extend(user_agents)
+    
     return {
         "success": True,
-        "count": len(DEPLOYED_AGENTS),
-        "agents": list(DEPLOYED_AGENTS.values())
+        "total_users": len(DEPLOYED_AGENTS),
+        "total_agents": len(all_agents),
+        "agents": all_agents
     }
 
 
 @router.get("/recommendations/{user_address}")
-async def get_recommendations(user_address: str):
+async def get_recommendations(user_address: str, agent_id: Optional[str] = None):
     """
     Get recommended pools for a deployed agent
     Triggers a scan if not done recently
     """
-    agent = DEPLOYED_AGENTS.get(user_address)
+    user_agents = DEPLOYED_AGENTS.get(user_address, [])
+    
+    if not user_agents:
+        return {
+            "success": False,
+            "message": "No agents found"
+        }
+    
+    # Get specific agent or first active one
+    if agent_id:
+        agent = next((a for a in user_agents if a.get("id") == agent_id), None)
+    else:
+        agent = next((a for a in user_agents if a.get("is_active")), None)
     
     if not agent:
         return {
             "success": False,
-            "message": "No agent found"
-        }
-    
-    if not agent.get("is_active"):
-        return {
-            "success": False,
-            "message": "Agent is not active"
+            "message": "No active agent found"
         }
     
     # Try to run executor scan
@@ -184,6 +263,7 @@ async def get_recommendations(user_address: str):
     
     return {
         "success": True,
+        "agent_id": agent.get("id"),
         "agent_address": agent.get("agent_address"),
         "recommended_pools": agent.get("recommended_pools", []),
         "last_scan": agent.get("last_scan"),
@@ -194,4 +274,3 @@ async def get_recommendations(user_address: str):
             "apy_range": [agent.get("min_apy"), agent.get("max_apy")]
         }
     }
-
