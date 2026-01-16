@@ -95,9 +95,9 @@ const CreditsManager = {
         modal.id = 'buyCreditsModal';
         modal.className = 'credits-modal';
         modal.innerHTML = `
-            <div class="modal-overlay" onclick="document.getElementById('buyCreditsModal').remove()"></div>
-            <div class="modal-content">
-                <button class="modal-close-btn" onclick="document.getElementById('buyCreditsModal').remove()">✕</button>
+            <div class="modal-overlay"></div>
+            <div class="modal-content" onclick="event.stopPropagation()">
+                <button class="modal-close-btn" id="modalCloseBtn">✕</button>
                 
                 <div class="modal-header">
                     <svg width="32" height="32" viewBox="0 0 16 16" fill="none" class="modal-icon">
@@ -133,7 +133,7 @@ const CreditsManager = {
                             <strong>Go Premium</strong>
                             <p>Get 3000 free credits every day!</p>
                         </div>
-                        <a href="#premium" class="premium-link" onclick="document.getElementById('buyCreditsModal').remove()">Learn more →</a>
+                        <a href="#premium" class="premium-link" id="premiumLink">Learn more →</a>
                     </div>
                 </div>
             </div>
@@ -142,11 +142,24 @@ const CreditsManager = {
         document.body.appendChild(modal);
         setTimeout(() => modal.classList.add('show'), 10);
 
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) modal.remove();
+        // Close on overlay click (not content)
+        const overlay = modal.querySelector('.modal-overlay');
+        overlay.addEventListener('click', () => modal.remove());
+
+        // Close button
+        document.getElementById('modalCloseBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            modal.remove();
         });
 
-        document.getElementById('confirmBuyCreditsBtn').addEventListener('click', () => {
+        // Premium link
+        document.getElementById('premiumLink').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // Pay button
+        document.getElementById('confirmBuyCreditsBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
             this.processPurchase();
         });
     },
