@@ -922,8 +922,18 @@ const PoolDetailModal = {
         const honeypotCount = tokenList.filter(t => t.is_honeypot).length;
         const riskyCount = tokenList.filter(t => t.is_honeypot || t.can_take_back_ownership || t.hidden_owner).length;
 
-        // Get clean token symbols - try pool.symbol0/symbol1 first, then security token data
-        const poolSymbols = [pool.symbol0, pool.symbol1].filter(Boolean);
+        // Get token symbols - multiple fallback sources
+        // Priority: pool.symbol0/symbol1 > security token data > parse from pool.symbol
+        let poolSymbols = [pool.symbol0, pool.symbol1].filter(s => s && s.trim());
+
+        // Fallback: parse from pool.symbol (e.g., "VVV/WETH" -> ["VVV", "WETH"])
+        if (poolSymbols.length < 2 && pool.symbol) {
+            const symbolParts = pool.symbol.split(/[\/\-]/).map(s => s.trim()).filter(Boolean);
+            if (symbolParts.length >= 2) {
+                poolSymbols = symbolParts.slice(0, 2);
+            }
+        }
+
         const cleanTokens = tokenEntries
             .filter(([addr, t]) => !t.is_honeypot && !t.can_take_back_ownership && !t.hidden_owner)
             .map(([addr, t]) => t.symbol || poolSymbols.shift() || 'Token');
@@ -935,20 +945,25 @@ const PoolDetailModal = {
         const statusColor = isClean ? '#10B981' : honeypotCount > 0 ? '#EF4444' : '#FBBF24';
         const statusIcon = isClean ? '✅' : honeypotCount > 0 ? '🚨' : '⚠️';
 
+        // Display both tokens always
+        const tokenDisplay = poolSymbols.length > 0
+            ? poolSymbols.map(s => s + ' ✓').join(', ')
+            : (tokenList.length > 0 ? `${tokenList.length} tokens checked` : 'No data');
+
         return `
-            <div class="pd-section pd-section-compact">
-                <div class="pd-section-header"><h3>🔍 Tokens</h3></div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: 1rem;">${statusIcon}</span>
-                    <span style="font-size: 0.7rem; color: ${statusColor};">
-                        ${isClean ? 'All clean' : honeypotCount > 0 ? `${honeypotCount} honeypot!` : `${riskyCount} warning(s)`}
-                    </span>
-                </div>
-                <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">
-                    ${poolSymbols.length > 0 ? poolSymbols.map(s => s + ' ✓').join(', ') : `${tokenList.length} tokens checked`}
-                </div>
+        <div class="pd-section pd-section-compact">
+            <div class="pd-section-header"><h3>🔍 Tokens</h3></div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 1rem;">${statusIcon}</span>
+                <span style="font-size: 0.7rem; color: ${statusColor};">
+                    ${isClean ? 'All clean' : honeypotCount > 0 ? `${honeypotCount} honeypot!` : `${riskyCount} warning(s)`}
+                </span>
             </div>
-        `;
+            <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">
+                ${tokenDisplay}
+            </div>
+        </div>
+    `;
     },
 
     // =========================================
@@ -1038,7 +1053,7 @@ const PoolDetailModal = {
         const coveragePercent = Math.round((availableCount / totalCount) * 100);
 
         return `
-            <div class="pd-data-coverage">
+    < div class="pd-data-coverage" >
                 <div class="pd-coverage-header">
                     <span class="pd-coverage-title">📋 Data Coverage</span>
                     <span class="pd-coverage-score">${availableCount}/${totalCount} (${coveragePercent}%)</span>
@@ -1052,8 +1067,8 @@ const PoolDetailModal = {
                         </div>
                     `).join('')}
                 </div>
-            </div>
-        `;
+            </div >
+    `;
     },
 
     // =========================================
@@ -1172,7 +1187,7 @@ const PoolDetailModal = {
         }
 
         return `
-            <div class="pd-confidence-section">
+    < div class="pd-confidence-section" >
                 <div class="pd-confidence-header">
                     <span class="pd-confidence-title">🔍 Data Confidence</span>
                     <span class="pd-confidence-badge" style="background: ${confidenceColor}20; color: ${confidenceColor}">
@@ -1191,8 +1206,8 @@ const PoolDetailModal = {
                         </div>
                     `).join('')}
                 </div>
-            </div>
-        `;
+            </div >
+    `;
     },
 
     // =========================================
@@ -1221,7 +1236,7 @@ const PoolDetailModal = {
         if (apy > 50) {
             warnings.push({
                 icon: '🔥',
-                text: `High APY (${apy.toFixed(0)}%) is likely temporary`,
+                text: `High APY(${apy.toFixed(0)} %) is likely temporary`,
                 detail: 'Based on current incentive rates'
             });
         }
@@ -1285,10 +1300,10 @@ const PoolDetailModal = {
         }
 
         return `
-            <div class="pd-decision-section">
-                <div class="pd-decision-header">
-                    <span class="pd-decision-title">💡 Decision Guidance</span>
-                </div>
+    < div class="pd-decision-section" >
+        <div class="pd-decision-header">
+            <span class="pd-decision-title">💡 Decision Guidance</span>
+        </div>
                 
                 ${warnings.length > 0 ? `
                     <div class="pd-decision-warnings">
@@ -1303,7 +1318,8 @@ const PoolDetailModal = {
                             </div>
                         `).join('')}
                     </div>
-                ` : ''}
+                ` : ''
+            }
                 
                 ${recommendations.length > 0 ? `
                     <div class="pd-decision-recs">
@@ -1318,16 +1334,18 @@ const PoolDetailModal = {
                             </div>
                         `).join('')}
                     </div>
-                ` : ''}
+                ` : ''
+            }
                 
                 ${goodFor.length > 0 ? `
                     <div class="pd-decision-goodfor">
                         <span class="pd-goodfor-label">Good for:</span>
                         ${goodFor.map(g => `<span class="pd-goodfor-tag">${g}</span>`).join('')}
                     </div>
-                ` : ''}
-            </div>
-        `;
+                ` : ''
+            }
+            </div >
+    `;
     },
 
     // =========================================
