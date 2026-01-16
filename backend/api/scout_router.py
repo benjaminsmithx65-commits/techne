@@ -6,6 +6,8 @@ Provides risk assessment, yield prediction, and conversational AI
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional, List
 import logging
+import time
+import asyncio
 
 from agents.risk_intelligence import risk_engine, get_pool_risk, get_bulk_risk
 from artisan.data_sources import get_aggregated_pools
@@ -17,6 +19,38 @@ router = APIRouter(prefix="/api/scout", tags=["Scout Intelligence"])
 
 # Token price cache (simple in-memory, expires on restart)
 _price_cache = {}
+
+# DefiLlama pools cache (5-minute TTL to avoid fetching 4000 pools on every verify)
+DEFILLAMA_CACHE = {"data": None, "timestamp": 0, "ttl": 300}  # 5 min
+
+
+async def get_cached_defillama_pools():
+    """Get DefiLlama pools with caching. Huge performance win!"""
+    import httpx
+    now = time.time()
+    
+    # Return cached data if still valid
+    if DEFILLAMA_CACHE["data"] and now - DEFILLAMA_CACHE["timestamp"] < DEFILLAMA_CACHE["ttl"]:
+        logger.debug(f"DefiLlama cache hit ({len(DEFILLAMA_CACHE['data'])} pools)")
+        return DEFILLAMA_CACHE["data"]
+    
+    # Fetch fresh data
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get("https://yields.llama.fi/pools")
+            if response.status_code == 200:
+                data = response.json()
+                pools = data.get("data", [])
+                DEFILLAMA_CACHE["data"] = pools
+                DEFILLAMA_CACHE["timestamp"] = now
+                logger.info(f"DefiLlama cache refreshed: {len(pools)} pools")
+                return pools
+    except Exception as e:
+        logger.warning(f"DefiLlama fetch failed: {e}")
+        # Return stale cache if available
+        if DEFILLAMA_CACHE["data"]:
+            return DEFILLAMA_CACHE["data"]
+    return []
 
 
 @router.get("/pool/{pool_id}")
@@ -1135,66 +1169,61 @@ async def verify_pool_rpc_first(
     # PRIORITY 4: DefiLlama enrichment (ALWAYS run for historical data like tvl_change, exposure)
     if pool_data:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get("https://yields.llama.fi/pools")
-                if response.status_code == 200:
-                    data = response.json()
-                    pools = data.get("data", [])
-                    
-                    # Filter to chain first
-                    chain_pools = [p for p in pools if chain in p.get("chain", "").lower()]
-                    
-                    # Strategy 1: Search by pool address
-                    for p in chain_pools:
-                        if pool_address in p.get("pool", "").lower():
-                            # APY only if not already set by on-chain
-                            if not pool_data.get("apy") or pool_data.get("apy", 0) == 0:
-                                pool_data["apy"] = p.get("apy", 0)
-                                pool_data["apy_base"] = p.get("apyBase", 0)
-                                pool_data["apy_reward"] = p.get("apyReward", 0)
-                            pool_data["project"] = p.get("project", pool_data.get("project", "Unknown"))
-                            pool_data["il_risk"] = p.get("ilRisk", "unknown")
-                            # Historical metrics from DefiLlama (ALWAYS add)
-                            pool_data["tvl_change_1d"] = p.get("apyPct1D", 0)
-                            pool_data["tvl_change_7d"] = p.get("apyPct7D", 0)
-                            pool_data["tvl_change_30d"] = p.get("apyPct30D", 0)
-                            pool_data["tvl_stability"] = "stable" if abs(p.get("apyPct7D", 0) or 0) < 10 else "volatile"
-                            pool_data["stablecoin"] = p.get("stablecoin", False)
-                            pool_data["exposure"] = p.get("exposure", "single")
-                            pool_data["pool_meta"] = p.get("poolMeta")
-                            pool_data["underlying_tokens"] = p.get("underlyingTokens", [])
-                            pool_data["reward_tokens"] = p.get("rewardTokens", [])
-                            source = f"{source}+defillama"
-                            logger.info(f"DefiLlama enrichment: APY={pool_data['apy']:.2f}%, stablecoin={pool_data.get('stablecoin')}")
-                            break
-                    
-                    # Strategy 2: Search by symbol if not found by address (check for missing historical data)
-                    if pool_data.get("tvl_change_1d") is None and pool_data.get("symbol"):
-                        symbol = pool_data["symbol"].upper().replace("/", "-")
-                        for p in chain_pools:
-                            p_symbol = (p.get("symbol", "") or "").upper().replace("/", "-")
-                            if symbol == p_symbol or set(symbol.split("-")) == set(p_symbol.split("-")):
-                                # APY only if not already set by on-chain
-                                if not pool_data.get("apy") or pool_data.get("apy", 0) == 0:
-                                    pool_data["apy"] = p.get("apy", 0)
-                                    pool_data["apy_base"] = p.get("apyBase", 0)
-                                    pool_data["apy_reward"] = p.get("apyReward", 0)
-                                pool_data["project"] = p.get("project", pool_data.get("project", "Unknown"))
-                                pool_data["il_risk"] = p.get("ilRisk", "unknown")
-                                # Historical metrics from DefiLlama
-                                pool_data["tvl_change_1d"] = p.get("apyPct1D", 0)
-                                pool_data["tvl_change_7d"] = p.get("apyPct7D", 0)
-                                pool_data["tvl_change_30d"] = p.get("apyPct30D", 0)
-                                pool_data["tvl_stability"] = "stable" if abs(p.get("apyPct7D", 0) or 0) < 10 else "volatile"
-                                pool_data["stablecoin"] = p.get("stablecoin", False)
-                                pool_data["exposure"] = p.get("exposure", "single")
-                                pool_data["pool_meta"] = p.get("poolMeta")
-                                pool_data["underlying_tokens"] = p.get("underlyingTokens", [])
-                                pool_data["reward_tokens"] = p.get("rewardTokens", [])
-                                source = f"{source}+defillama"
-                                logger.info(f"DefiLlama APY found by symbol: {pool_data['apy']:.2f}%")
-                                break
+            # Use cached DefiLlama pools (5-min TTL) - huge performance win!
+            pools = await get_cached_defillama_pools()
+            
+            # Filter to chain first
+            chain_pools = [p for p in pools if chain in p.get("chain", "").lower()]
+            
+            # Strategy 1: Search by pool address
+            for p in chain_pools:
+                if pool_address in p.get("pool", "").lower():
+                    # APY only if not already set by on-chain
+                    if not pool_data.get("apy") or pool_data.get("apy", 0) == 0:
+                        pool_data["apy"] = p.get("apy", 0)
+                        pool_data["apy_base"] = p.get("apyBase", 0)
+                        pool_data["apy_reward"] = p.get("apyReward", 0)
+                    pool_data["project"] = p.get("project", pool_data.get("project", "Unknown"))
+                    pool_data["il_risk"] = p.get("ilRisk", "unknown")
+                    # Historical metrics from DefiLlama (ALWAYS add)
+                    pool_data["tvl_change_1d"] = p.get("apyPct1D", 0)
+                    pool_data["tvl_change_7d"] = p.get("apyPct7D", 0)
+                    pool_data["tvl_change_30d"] = p.get("apyPct30D", 0)
+                    pool_data["tvl_stability"] = "stable" if abs(p.get("apyPct7D", 0) or 0) < 10 else "volatile"
+                    pool_data["stablecoin"] = p.get("stablecoin", False)
+                    pool_data["exposure"] = p.get("exposure", "single")
+                    pool_data["pool_meta"] = p.get("poolMeta")
+                    pool_data["underlying_tokens"] = p.get("underlyingTokens", [])
+                    pool_data["reward_tokens"] = p.get("rewardTokens", [])
+                    source = f"{source}+defillama"
+                    logger.info(f"DefiLlama enrichment: APY={pool_data['apy']:.2f}%, stablecoin={pool_data.get('stablecoin')}")
+                    break
+            
+            # Strategy 2: Search by symbol if not found by address
+            if pool_data.get("tvl_change_1d") is None and pool_data.get("symbol"):
+                symbol = pool_data["symbol"].upper().replace("/", "-")
+                for p in chain_pools:
+                    p_symbol = (p.get("symbol", "") or "").upper().replace("/", "-")
+                    if symbol == p_symbol or set(symbol.split("-")) == set(p_symbol.split("-")):
+                        # APY only if not already set by on-chain
+                        if not pool_data.get("apy") or pool_data.get("apy", 0) == 0:
+                            pool_data["apy"] = p.get("apy", 0)
+                            pool_data["apy_base"] = p.get("apyBase", 0)
+                            pool_data["apy_reward"] = p.get("apyReward", 0)
+                        pool_data["project"] = p.get("project", pool_data.get("project", "Unknown"))
+                        pool_data["il_risk"] = p.get("ilRisk", "unknown")
+                        pool_data["tvl_change_1d"] = p.get("apyPct1D", 0)
+                        pool_data["tvl_change_7d"] = p.get("apyPct7D", 0)
+                        pool_data["tvl_change_30d"] = p.get("apyPct30D", 0)
+                        pool_data["tvl_stability"] = "stable" if abs(p.get("apyPct7D", 0) or 0) < 10 else "volatile"
+                        pool_data["stablecoin"] = p.get("stablecoin", False)
+                        pool_data["exposure"] = p.get("exposure", "single")
+                        pool_data["pool_meta"] = p.get("poolMeta")
+                        pool_data["underlying_tokens"] = p.get("underlyingTokens", [])
+                        pool_data["reward_tokens"] = p.get("rewardTokens", [])
+                        source = f"{source}+defillama"
+                        logger.info(f"DefiLlama APY found by symbol: {pool_data['apy']:.2f}%")
+                        break
         except Exception as e:
             logger.debug(f"DefiLlama APY enrichment failed: {e}")
     
@@ -1266,29 +1295,38 @@ async def verify_pool_rpc_first(
             symbol0 = (pool_data.get("symbol0") or "").lower()
             symbol1 = (pool_data.get("symbol1") or "").lower()
             
-            # Only analyze exotic tokens (not stablecoins/majors)
+            # Build parallel tasks for whale analysis (big performance win!)
+            whale_tasks = []
+            task_keys = []  # Track which task corresponds to which result
+            
+            # Token0 analysis (if exotic)
             if token0_addr and symbol0 not in SKIP_WHALE_TOKENS:
-                whale_analysis["token0"] = await holder_analyzer.get_holder_analysis(
-                    token_address=token0_addr,
-                    chain=chain
-                )
+                whale_tasks.append(holder_analyzer.get_holder_analysis(token0_addr, chain))
+                task_keys.append("token0")
             else:
                 whale_analysis["token0"] = {"skipped": True, "reason": "major/stable token", "concentration_risk": "low"}
             
+            # Token1 analysis (if exotic)
             if token1_addr and symbol1 not in SKIP_WHALE_TOKENS:
-                whale_analysis["token1"] = await holder_analyzer.get_holder_analysis(
-                    token_address=token1_addr,
-                    chain=chain
-                )
+                whale_tasks.append(holder_analyzer.get_holder_analysis(token1_addr, chain))
+                task_keys.append("token1")
             else:
                 whale_analysis["token1"] = {"skipped": True, "reason": "major/stable token", "concentration_risk": "low"}
             
-            # LP token analysis - shows who holds positions in this pool
+            # LP token analysis
             if pool_address:
-                whale_analysis["lp_token"] = await holder_analyzer.get_holder_analysis(
-                    token_address=pool_address,
-                    chain=chain
-                )
+                whale_tasks.append(holder_analyzer.get_holder_analysis(pool_address, chain))
+                task_keys.append("lp_token")
+            
+            # Execute all whale analysis in parallel!
+            if whale_tasks:
+                results = await asyncio.gather(*whale_tasks, return_exceptions=True)
+                for key, result in zip(task_keys, results):
+                    if isinstance(result, Exception):
+                        logger.debug(f"Whale analysis for {key} failed: {result}")
+                        whale_analysis[key] = None
+                    else:
+                        whale_analysis[key] = result
             
             pool_data["whale_analysis"] = whale_analysis
         except Exception as e:
