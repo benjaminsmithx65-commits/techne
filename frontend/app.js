@@ -927,9 +927,9 @@ function loadUserPoolHistory() {
 }
 
 function updateWalletGatedSections() {
-    // Only Portfolio requires wallet - Build/Vaults/Strategies are viewable
-    // Deploy Agent button in Build checks wallet separately
-    const gatedSections = ['section-portfolio'];
+    // Portfolio no longer requires wallet connection (for testing/demo)
+    // Deploy Agent button in Build still checks wallet separately
+    const gatedSections = [];  // Empty - no sections gated
 
     gatedSections.forEach(sectionId => {
         const section = document.getElementById(sectionId);

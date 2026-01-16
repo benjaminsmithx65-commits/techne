@@ -8966,3 +8966,88 @@ body.builder-pro .basic-mode-only {
 .risk-value.danger {
     color: #ef4444;
 }
+
+/* ===========================================
+   PERFORMANCE CHART
+   =========================================== */
+.time-selector {
+    display: flex;
+    gap: 4px;
+}
+
+.time-btn {
+    padding: 4px 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.time-btn:hover {
+    border-color: rgba(212, 168, 83, 0.3);
+    color: var(--text);
+}
+
+.time-btn.active {
+    background: rgba(212, 168, 83, 0.15);
+    border-color: var(--gold);
+    color: var(--gold);
+}
+
+.performance-chart {
+    padding: var(--space-2);
+}
+
+.chart-empty {
+    text-align: center;
+    padding: var(--space-6);
+}
+
+.chart-empty p {
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+/* ===========================================
+   EARNINGS SUMMARY
+   =========================================== */
+.earnings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-3);
+}
+
+.earnings-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.earnings-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.earnings-value {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.earnings-value.positive {
+    color: #22c55e;
+}
+
+.earnings-value.negative {
+    color: #ef4444;
+}

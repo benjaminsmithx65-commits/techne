@@ -3065,6 +3065,71 @@
                                 <!-- Transaction rows loaded dynamically -->
                             </div>
                         </div>
+
+                        <!-- Performance Chart -->
+                        <div class="portfolio-card">
+                            <div class="card-header">
+                                <h3><svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                                        style="vertical-align: middle; margin-right: 6px;">
+                                        <path d="M2 14L6 8L9 11L14 4" stroke="#d4a853" stroke-width="1.5"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                        <path d="M10 4H14V8" stroke="#d4a853" stroke-width="1.5" stroke-linecap="round"
+                                            stroke-linejoin="round" />
+                                    </svg>Performance</h3>
+                                <div class="card-actions">
+                                    <div class="time-selector">
+                                        <button class="time-btn active" data-period="7d">7D</button>
+                                        <button class="time-btn" data-period="30d">30D</button>
+                                        <button class="time-btn" data-period="90d">90D</button>
+                                        <button class="time-btn" data-period="all">All</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="performance-chart" id="performanceChart">
+                                <div class="chart-container"
+                                    style="height: 200px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                                    <div class="chart-empty">
+                                        <svg width="48" height="48" viewBox="0 0 16 16" fill="none"
+                                            style="opacity: 0.5; margin-bottom: 8px;">
+                                            <path d="M2 14L6 8L9 11L14 4" stroke="#d4a853" stroke-width="1.5"
+                                                stroke-linecap="round" />
+                                        </svg>
+                                        <p>Performance data will appear here</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Earnings Summary -->
+                        <div class="portfolio-card earnings-card">
+                            <div class="card-header">
+                                <h3><svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                                        style="vertical-align: middle; margin-right: 6px;">
+                                        <circle cx="8" cy="8" r="6" stroke="#22c55e" stroke-width="1.3"
+                                            fill="rgba(34,197,94,0.1)" />
+                                        <path d="M8 5V11M5 8L8 5L11 8" stroke="#22c55e" stroke-width="1.3"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>Earnings Summary</h3>
+                            </div>
+                            <div class="earnings-grid">
+                                <div class="earnings-item">
+                                    <span class="earnings-label">Today</span>
+                                    <span class="earnings-value positive" id="earningsToday">+$0.00</span>
+                                </div>
+                                <div class="earnings-item">
+                                    <span class="earnings-label">This Week</span>
+                                    <span class="earnings-value positive" id="earningsWeek">+$0.00</span>
+                                </div>
+                                <div class="earnings-item">
+                                    <span class="earnings-label">This Month</span>
+                                    <span class="earnings-value positive" id="earningsMonth">+$0.00</span>
+                                </div>
+                                <div class="earnings-item">
+                                    <span class="earnings-label">All Time</span>
+                                    <span class="earnings-value positive" id="earningsAllTime">+$0.00</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Right: Sidebar -->
