@@ -324,22 +324,49 @@ function getChainIcon(chainId, size = 20) {
 // Get protocol icon URL (used by pool-detail.js)
 function getProtocolIconUrl(protocolName) {
     if (!protocolName) return '/icons/default.svg';
-    // Normalize: lowercase, remove common suffixes, clean up
-    let key = protocolName.toLowerCase()
-        .replace(/slipstream/gi, '')
-        .replace(/finance/gi, '')
+
+    // Known mappings for common variations
+    const EXPLICIT_MAPPINGS = {
+        'aerodrome slipstream': 'aerodrome',
+        'aerodrome-slipstream': 'aerodrome',
+        'aave v3': 'aave',
+        'aave-v3': 'aave',
+        'compound v3': 'compound',
+        'compound-v3': 'compound',
+        'uniswap v3': 'uniswap',
+        'uniswap-v3': 'uniswap',
+        'morpho blue': 'morpho',
+        'morpho-blue': 'morpho',
+    };
+
+    const lowerName = protocolName.toLowerCase().trim();
+
+    // Check explicit mappings first
+    if (EXPLICIT_MAPPINGS[lowerName]) {
+        const key = EXPLICIT_MAPPINGS[lowerName];
+        const protocol = PROTOCOL_ICONS[key];
+        if (protocol && protocol.icon) return protocol.icon;
+        return `/icons/protocols/${key}.png`;
+    }
+
+    // Normalize: remove common suffixes FIRST (before replacing spaces)
+    let key = lowerName
+        .replace(/\s+slipstream/gi, '')
+        .replace(/\s+finance/gi, '')
+        .replace(/\s+protocol/gi, '')
+        .replace(/\s+v[234]/gi, '')
         .replace(/-v[234]/gi, '')
-        .replace(/\s*v[234]/gi, '')
         .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')  // Multiple hyphens to single
-        .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
         .trim();
-    // Check known protocols first
+
+    // Check known protocols
     const protocol = PROTOCOL_ICONS[key];
     if (protocol && protocol.icon) return protocol.icon;
+
     // Check for local icon file
-    const localPath = `/icons/protocols/${key}.png`;
-    return localPath;
+    return `/icons/protocols/${key}.png`;
 }
 
 // Get chain icon URL
