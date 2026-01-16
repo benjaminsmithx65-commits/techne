@@ -20,7 +20,7 @@ except ImportError:
     ActionType = None
 
 # RPC Configuration
-RPC_URL = os.environ.get("ALCHEMY_RPC_URL", "https://base-mainnet.g.alchemy.com/v2/demo")
+RPC_URL = os.environ.get("ALCHEMY_RPC_URL", "https://base-mainnet.g.alchemy.com/v2/AqxI9okL6ZYv38MBFDHhb")
 
 # ============================================
 # PROTOCOL CONFIGURATIONS (Base Mainnet)
