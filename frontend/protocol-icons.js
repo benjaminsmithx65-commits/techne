@@ -329,12 +329,23 @@ function getProtocolIconUrl(protocolName) {
     const EXPLICIT_MAPPINGS = {
         'aerodrome slipstream': 'aerodrome',
         'aerodrome-slipstream': 'aerodrome',
+        'aerodrome-slipstream-2': 'aerodrome',
         'aave v3': 'aave',
         'aave-v3': 'aave',
         'compound v3': 'compound',
         'compound-v3': 'compound',
+        'uniswap v2': 'uniswap',
         'uniswap v3': 'uniswap',
+        'uniswap v4': 'uniswap',
+        'uniswap-v2': 'uniswap',
         'uniswap-v3': 'uniswap',
+        'uniswap-v4': 'uniswap',
+        'uniswap-v2-base': 'uniswap',
+        'uniswap-v3-base': 'uniswap',
+        'uniswap-v4-base': 'uniswap',
+        'beefy-base': 'beefy',
+        'beefy-arbitrum': 'beefy',
+        'beefy-optimism': 'beefy',
         'morpho blue': 'morpho',
         'morpho-blue': 'morpho',
     };
@@ -349,8 +360,9 @@ function getProtocolIconUrl(protocolName) {
         return `/icons/protocols/${key}.png`;
     }
 
-    // Normalize: remove common suffixes FIRST (before replacing spaces)
+    // Normalize: remove chain suffixes and common protocol suffixes
     let key = lowerName
+        .replace(/-(?:base|arbitrum|optimism|polygon|ethereum|mainnet)$/gi, '')  // Remove chain suffix FIRST
         .replace(/\s+slipstream/gi, '')
         .replace(/\s+finance/gi, '')
         .replace(/\s+protocol/gi, '')
