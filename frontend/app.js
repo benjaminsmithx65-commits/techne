@@ -757,10 +757,10 @@ function updateWalletUI() {
 }
 
 function showWalletMenu() {
+    // If menu already exists, don't toggle - let outside click or Disconnect close it
     const existing = document.querySelector('.wallet-menu-popup');
     if (existing) {
-        existing.remove();
-        return;
+        return; // Menu is already open, do nothing
     }
 
     const popup = document.createElement('div');
