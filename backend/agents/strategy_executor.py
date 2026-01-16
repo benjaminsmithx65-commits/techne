@@ -29,6 +29,13 @@ except ImportError:
     onchain_executor = None
     execute_lp_entry = None
 
+# Import risk manager for stop-loss, take-profit, volatility guard
+try:
+    from agents.risk_manager import risk_manager, check_position_risk
+except ImportError:
+    risk_manager = None
+    check_position_risk = None
+
 
 class StrategyExecutor:
     """
@@ -91,6 +98,10 @@ class StrategyExecutor:
         
         for agent in all_agents:
             try:
+                # Check existing positions for risk (stop-loss, take-profit)
+                await self.check_position_risks(agent)
+                
+                # Execute strategy
                 await self.execute_agent_strategy(agent)
                 
                 # Check if rebalancing needed
@@ -171,6 +182,44 @@ class StrategyExecutor:
                 if old_apy > 0 and abs(new_apy - old_apy) / old_apy > 0.2:
                     print(f"[StrategyExecutor] APY drift detected: {pool_symbol} {old_apy:.1f}% → {new_apy:.1f}%")
                     agent["needs_rebalance"] = True
+    
+    async def check_position_risks(self, agent: dict):
+        """
+        Check all positions for risk triggers using Pro Mode settings
+        
+        Uses risk_manager to check:
+        - Stop-loss: exit if loss >= threshold
+        - Take-profit: exit if profit >= target
+        - Volatility guard: pause if market too volatile
+        """
+        if not check_position_risk:
+            return
+        
+        allocations = agent.get("allocations", [])
+        pro_config = agent.get("pro_config", {})
+        
+        if not allocations:
+            return
+        
+        agent_id = agent.get("id", "unknown")
+        
+        for position in allocations:
+            result = await check_position_risk(agent, position)
+            
+            if result.get("should_exit"):
+                print(f"[StrategyExecutor] 🚨 Risk trigger for {agent_id}: {result.get('alerts', [])}")
+                # Mark position for exit
+                position["needs_exit"] = True
+                position["exit_reason"] = result.get("alerts", [{"message": "Risk limit reached"}])[0].get("message")
+                
+                # TODO: Execute exit via onchain_executor
+                # await self.execute_exit(agent, position)
+                
+            if result.get("should_pause"):
+                print(f"[StrategyExecutor] ⏸️ Pausing {agent_id} due to volatility")
+                agent["paused"] = True
+                agent["pause_reason"] = "High market volatility"
+                agent["pause_until"] = (datetime.utcnow() + timedelta(hours=1)).isoformat()
     
     async def find_matching_pools(self, agent: dict) -> List[dict]:
         """Find pools matching agent's configuration"""
