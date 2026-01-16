@@ -22,6 +22,13 @@ try:
 except ImportError:
     get_scout_pools = None
 
+# Import on-chain executor for real execution
+try:
+    from integrations.onchain_executor import onchain_executor, execute_lp_entry
+except ImportError:
+    onchain_executor = None
+    execute_lp_entry = None
+
 
 class StrategyExecutor:
     """
@@ -298,6 +305,81 @@ class StrategyExecutor:
             pool["_allocation"] = min(max_allocation, 100 // vault_count)
         
         return selected
+    
+    async def execute_allocation(self, agent: dict, amount_usdc: float) -> Dict:
+        """
+        Execute real on-chain allocation to recommended pools
+        
+        Args:
+            agent: Agent config with recommended_pools
+            amount_usdc: Total USDC amount to allocate
+            
+        Returns:
+            Execution result with tx hashes
+        """
+        if not onchain_executor or not execute_lp_entry:
+            return {"success": False, "error": "On-chain executor not available"}
+        
+        recommended = agent.get("recommended_pools", [])
+        if not recommended:
+            return {"success": False, "error": "No recommended pools"}
+        
+        # Get agent private key (SECURITY: In production, use secure vault)
+        private_key = agent.get("_private_key")
+        if not private_key:
+            # For now, mark as needing key
+            agent["needs_execution"] = True
+            agent["pending_amount"] = amount_usdc
+            return {"success": False, "error": "Agent private key not configured"}
+        
+        results = []
+        allocation_per_pool = amount_usdc / len(recommended)
+        
+        for pool in recommended:
+            symbol = pool.get("symbol", "")
+            is_lp = any(sep in symbol for sep in ["-", "/"])
+            
+            if is_lp:
+                # Extract second token from LP pair
+                tokens = symbol.replace(" / ", "/").replace("-", "/").split("/")
+                if len(tokens) >= 2:
+                    token_b = tokens[1].strip().upper()
+                    stable = pool.get("stablecoin", False)
+                    
+                    print(f"[StrategyExecutor] Allocating ${allocation_per_pool:.2f} to {symbol}")
+                    
+                    result = await execute_lp_entry(
+                        token_b=token_b,
+                        usdc_amount=allocation_per_pool,
+                        stable=stable,
+                        private_key=private_key
+                    )
+                    results.append({
+                        "pool": symbol,
+                        "amount": allocation_per_pool,
+                        "result": result
+                    })
+            else:
+                # Single-sided pool - just track, don't execute yet
+                # (Would need protocol-specific integration)
+                results.append({
+                    "pool": symbol,
+                    "amount": allocation_per_pool,
+                    "result": {"success": False, "error": "Single-sided not yet implemented"}
+                })
+        
+        # Update agent with execution results
+        agent["last_execution"] = datetime.utcnow().isoformat()
+        agent["execution_results"] = results
+        
+        successful = sum(1 for r in results if r.get("result", {}).get("success", False))
+        
+        return {
+            "success": successful > 0,
+            "total_pools": len(recommended),
+            "successful": successful,
+            "results": results
+        }
 
 
 # Global executor instance
