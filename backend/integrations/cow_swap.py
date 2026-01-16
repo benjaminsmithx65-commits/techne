@@ -214,10 +214,11 @@ class CowSwapClient:
         buy_token: str,
         sell_amount: int,
         from_address: str,
-        private_key: str
+        private_key: str,
+        max_slippage_percent: float = 1.0  # Default 1% slippage tolerance
     ) -> Optional[str]:
         """
-        Execute a complete swap
+        Execute a complete swap with slippage protection
         
         Args:
             sell_token: Token to sell (address or symbol)
@@ -225,9 +226,10 @@ class CowSwapClient:
             sell_amount: Amount in wei
             from_address: Wallet address
             private_key: Wallet private key
+            max_slippage_percent: Maximum allowed slippage (default 1%)
             
         Returns:
-            Order UID if successful
+            Order UID if successful, None if slippage exceeded or error
         """
         # Resolve token symbols to addresses
         if not sell_token.startswith("0x"):
@@ -245,6 +247,34 @@ class CowSwapClient:
         
         if not quote:
             return None
+        
+        # SLIPPAGE PROTECTION: Calculate and validate price impact
+        q = quote.get("quote", {})
+        buy_amount = int(q.get("buyAmount", 0))
+        sell_amount_after_fee = int(q.get("sellAmount", sell_amount))
+        fee_amount = int(q.get("feeAmount", 0))
+        
+        # Calculate effective price impact
+        # For same-decimal stablecoins, we can approximate
+        if sell_amount > 0 and buy_amount > 0:
+            # Approximate price impact (assumes similar decimals for simplicity)
+            expected_ratio = 1.0  # Stablecoin swap should be ~1:1
+            actual_ratio = buy_amount / sell_amount_after_fee if sell_amount_after_fee > 0 else 0
+            
+            # Price impact = how much worse than expected
+            price_impact = (1 - actual_ratio / expected_ratio) * 100 if expected_ratio > 0 else 0
+            
+            # Include fee impact
+            total_impact = price_impact + (fee_amount / sell_amount * 100) if sell_amount > 0 else 0
+            
+            print(f"[CowSwap] Price impact: {price_impact:.2f}%, Fee: {fee_amount}, Total impact: {total_impact:.2f}%")
+            
+            # Reject if slippage exceeds threshold
+            if total_impact > max_slippage_percent:
+                print(f"[CowSwap] ❌ REJECTED: Slippage {total_impact:.2f}% exceeds max {max_slippage_percent}%")
+                return None
+            
+            print(f"[CowSwap] ✓ Slippage OK: {total_impact:.2f}% ≤ {max_slippage_percent}%")
         
         # Create order
         order_uid = await self.create_order(quote, private_key)

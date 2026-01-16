@@ -6,7 +6,7 @@ Skanuje wszystkie protokoły DeFi i znajduje najlepsze yield opportunities
 import asyncio
 import httpx
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Top DeFi Protocols by TVL (from DefiLlama research)
 TOP_PROTOCOLS = {
@@ -59,6 +59,10 @@ class ScoutAgent:
         self.cache = {}
         self.cache_ttl = 300  # 5 minutes
         
+        # APY history for 7-day validation
+        self.apy_history = {}  # pool_id -> [(timestamp, apy), ...]
+        self.apy_history_days = 7
+        
     async def scan_all_protocols(self, chain: str = "Base", min_tvl: float = 100000) -> List[Dict]:
         """Skanuje wszystkie protokoły na danym chainie"""
         pools = []
@@ -80,13 +84,61 @@ class ScoutAgent:
         # 3. Enrich with airdrop potential
         pools = self._add_airdrop_potential(pools)
         
-        # 4. Calculate risk scores
+        # 4. Calculate risk scores (including IL)
         pools = self._calculate_risk_scores(pools)
         
-        # 5. Sort by APY (descending)
+        # 5. Add APY validation (history, spike detection)
+        pools = self._validate_apy(pools)
+        
+        # 6. Sort by APY (descending)
         pools.sort(key=lambda x: x.get('apy', 0), reverse=True)
         
         self.last_scan = datetime.utcnow()
+        return pools
+    
+    def _validate_apy(self, pools: List[Dict]) -> List[Dict]:
+        """Validate APY with history tracking and spike detection"""
+        now = datetime.utcnow()
+        
+        for pool in pools:
+            pool_id = pool.get("id", pool.get("symbol"))
+            current_apy = pool.get("apy", 0)
+            
+            # Initialize history for new pools
+            if pool_id not in self.apy_history:
+                self.apy_history[pool_id] = []
+            
+            # Add current APY to history
+            self.apy_history[pool_id].append((now, current_apy))
+            
+            # Keep only last 7 days of history
+            cutoff = now - timedelta(days=self.apy_history_days)
+            self.apy_history[pool_id] = [
+                (ts, apy) for ts, apy in self.apy_history[pool_id] 
+                if ts > cutoff
+            ]
+            
+            history = self.apy_history[pool_id]
+            
+            if len(history) >= 3:
+                # Calculate 7-day average
+                avg_apy = sum(apy for _, apy in history) / len(history)
+                pool["apy_7d_avg"] = round(avg_apy, 2)
+                
+                # Detect spikes (current > 2x average)
+                if avg_apy > 0 and current_apy > avg_apy * 2:
+                    pool["apy_spike"] = True
+                    pool["apy_warning"] = f"⚠️ APY spike: {current_apy:.1f}% vs {avg_apy:.1f}% avg"
+                    # Add to risk reasons
+                    if "risk_reasons" in pool:
+                        pool["risk_reasons"].append(pool["apy_warning"])
+                else:
+                    pool["apy_spike"] = False
+            else:
+                pool["apy_7d_avg"] = current_apy
+                pool["apy_spike"] = False
+                pool["apy_warning"] = "Insufficient history"
+        
         return pools
     
     def _get_whitelisted_projects(self) -> set:
@@ -238,7 +290,15 @@ class ScoutAgent:
         return pools
     
     def _calculate_risk_scores(self, pools: List[Dict]) -> List[Dict]:
-        """Calculate risk score for each pool"""
+        """Calculate risk score for each pool including IL risk"""
+        # Volatility indicators for common tokens (higher = more volatile)
+        VOLATILITY = {
+            "btc": 0.3, "wbtc": 0.3, "eth": 0.4, "weth": 0.4,
+            "usdc": 0.01, "usdt": 0.01, "dai": 0.02, "frax": 0.02,
+            "aero": 0.8, "crv": 0.6, "uni": 0.5, "aave": 0.5,
+            "link": 0.5, "op": 0.6, "arb": 0.6
+        }
+        
         for pool in pools:
             risk_score = "Medium"
             risk_reasons = []
@@ -246,6 +306,10 @@ class ScoutAgent:
             tvl = pool.get('tvl', 0)
             apy = pool.get('apy', 0)
             stablecoin = pool.get('stablecoin', False)
+            symbol = (pool.get('symbol') or '').lower()
+            
+            # Detect if LP pool
+            is_lp = any(sep in symbol for sep in ["-", "/", " / "])
             
             # TVL-based risk
             if tvl >= 10_000_000:
@@ -258,7 +322,7 @@ class ScoutAgent:
             
             # APY-based risk
             if apy > 100:
-                risk_reasons.append("Very high APY (>100%)")
+                risk_reasons.append("Very high APY (>100%) ⚠️")
                 risk_score = "High"
             elif apy > 50:
                 risk_reasons.append("High APY (50-100%)")
@@ -268,6 +332,39 @@ class ScoutAgent:
                 risk_reasons.append("Conservative APY (<20%)")
                 if risk_score != "High":
                     risk_score = "Low"
+            
+            # IMPERMANENT LOSS RISK for LP pools
+            if is_lp:
+                # Parse token pair
+                tokens = symbol.replace(" / ", "/").replace("-", "/").split("/")
+                if len(tokens) >= 2:
+                    t1 = tokens[0].strip().lower()
+                    t2 = tokens[1].strip().lower()
+                    
+                    v1 = VOLATILITY.get(t1, 0.5)
+                    v2 = VOLATILITY.get(t2, 0.5)
+                    
+                    # IL risk = difference in volatility
+                    il_risk = abs(v1 - v2)
+                    
+                    if v1 < 0.05 and v2 < 0.05:
+                        # Stablecoin pair - minimal IL
+                        pool["il_risk"] = "Minimal"
+                        risk_reasons.append("Stablecoin pair - minimal IL")
+                    elif il_risk < 0.2:
+                        pool["il_risk"] = "Low"
+                        risk_reasons.append(f"Low IL risk ({t1}/{t2})")
+                    elif il_risk < 0.5:
+                        pool["il_risk"] = "Medium"
+                        risk_reasons.append(f"Medium IL risk ({t1}/{t2})")
+                        if risk_score == "Low":
+                            risk_score = "Medium"
+                    else:
+                        pool["il_risk"] = "High"
+                        risk_reasons.append(f"⚠️ High IL risk ({t1}/{t2})")
+                        risk_score = "High"
+            else:
+                pool["il_risk"] = "None"
             
             # Stablecoin bonus
             if stablecoin:
@@ -279,7 +376,7 @@ class ScoutAgent:
             project = (pool.get('project') or '').lower()
             trusted = ['aave', 'compound', 'curve', 'uniswap', 'lido']
             if any(t in project for t in trusted):
-                risk_reasons.append("Trusted protocol")
+                risk_reasons.append("Trusted protocol ✓")
                 if risk_score == "High":
                     risk_score = "Medium"
             

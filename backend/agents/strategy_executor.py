@@ -168,14 +168,37 @@ class StrategyExecutor:
     async def find_matching_pools(self, agent: dict) -> List[dict]:
         """Find pools matching agent's configuration"""
         if not get_scout_pools:
+            print("[StrategyExecutor] Scout not available, using fallback")
             return []
         
         try:
-            # Get pools from Scout
-            pools = await get_scout_pools(
-                chain=agent.get("chain", "base"),
-                limit=50
+            # Get pools from Scout - returns {"pools": [...], "total": N, ...}
+            chain = agent.get("chain", "base")
+            # Normalize chain name for DefiLlama
+            chain_map = {"base": "Base", "ethereum": "Ethereum", "arbitrum": "Arbitrum"}
+            normalized_chain = chain_map.get(chain.lower(), chain.title())
+            
+            result = await get_scout_pools(
+                chain=normalized_chain,
+                min_tvl=100000,  # $100k minimum
+                min_apy=agent.get("min_apy", 5),
+                max_apy=agent.get("max_apy", 200),
+                protocols=agent.get("protocols", []),
+                stablecoin_only=agent.get("pool_type") == "stablecoin"
             )
+            
+            # CRITICAL: Extract pools from result dict
+            if isinstance(result, dict):
+                pools = result.get("pools", [])
+                print(f"[StrategyExecutor] Got {len(pools)} pools from Scout")
+            elif isinstance(result, list):
+                pools = result
+            else:
+                pools = []
+            
+            if not pools:
+                print(f"[StrategyExecutor] No pools returned from Scout for {normalized_chain}")
+                return []
             
             # Filter by agent preferences
             filtered = []
@@ -208,13 +231,22 @@ class StrategyExecutor:
                 if pool_type == "dual" and not is_lp:
                     continue
                 
+                # Check risk score (from Scout)
+                risk_score = pool.get("risk_score", "Medium")
+                risk_level = agent.get("risk_level", "medium")
+                if risk_level == "low" and risk_score == "High":
+                    continue
+                
                 # Check audit status if required
                 if agent.get("only_audited", False):
-                    # TODO: Check audit database
-                    pass
+                    # Trusted protocols are considered audited
+                    trusted = ['aave', 'compound', 'curve', 'uniswap', 'morpho', 'lido']
+                    if not any(t in project for t in trusted):
+                        continue
                 
                 filtered.append(pool)
             
+            print(f"[StrategyExecutor] Filtered to {len(filtered)} pools matching agent config")
             return filtered
             
         except Exception as e:
