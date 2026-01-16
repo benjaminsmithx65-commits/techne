@@ -18,6 +18,18 @@ class PortfolioDashboard {
         this.notifications = [];
         this.selectedAgentId = null;
         this.agents = [];
+
+        // WebSocket for real-time updates
+        this.ws = null;
+        this.wsReconnectAttempts = 0;
+
+        // Performance chart data
+        this.performanceData = {
+            '7d': [],
+            '30d': [],
+            '90d': [],
+            'all': []
+        };
     }
 
     init() {
@@ -25,8 +37,11 @@ class PortfolioDashboard {
         this.loadAgents();
         this.loadPortfolioData();
         this.syncAgentStatus();
+        this.connectWebSocket();
+        this.initPerformanceChart();
         console.log('[Portfolio] Dashboard initialized');
     }
+
 
     bindEvents() {
         // Refresh button
@@ -1141,8 +1156,202 @@ class PortfolioDashboard {
 
     loadPerformanceData(period) {
         console.log(`[Portfolio] Loading performance for period: ${period}`);
-        // Placeholder - would fetch from backend
-        this.showToast(`Loading ${period} performance...`, 'info');
+        this.drawPerformanceChart(period);
+    }
+
+    // ===========================================
+    // WEBSOCKET REAL-TIME UPDATES
+    // ===========================================
+
+    connectWebSocket() {
+        const wallet = window.connectedWallet;
+        if (!wallet) {
+            console.log('[Portfolio] No wallet connected, skipping WebSocket');
+            return;
+        }
+
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${location.host}/ws/portfolio/${wallet}`;
+
+        try {
+            this.ws = new WebSocket(wsUrl);
+
+            this.ws.onopen = () => {
+                console.log('[Portfolio] WebSocket connected');
+                this.wsReconnectAttempts = 0;
+
+                // Update badge
+                const badge = document.getElementById('autoRefreshBadge');
+                if (badge) {
+                    badge.textContent = '🔴 LIVE';
+                    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                    badge.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                    badge.style.color = '#ef4444';
+                }
+            };
+
+            this.ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                this.handleWebSocketMessage(data);
+            };
+
+            this.ws.onclose = () => {
+                console.log('[Portfolio] WebSocket disconnected');
+                this.scheduleReconnect();
+            };
+
+            this.ws.onerror = (error) => {
+                console.warn('[Portfolio] WebSocket error:', error);
+            };
+
+        } catch (e) {
+            console.warn('[Portfolio] WebSocket connection failed:', e);
+        }
+    }
+
+    scheduleReconnect() {
+        if (this.wsReconnectAttempts < 5) {
+            const delay = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts), 30000);
+            this.wsReconnectAttempts++;
+            console.log(`[Portfolio] Reconnecting in ${delay / 1000}s...`);
+            setTimeout(() => this.connectWebSocket(), delay);
+        }
+    }
+
+    handleWebSocketMessage(data) {
+        switch (data.type) {
+            case 'portfolio_update':
+                this.handlePortfolioUpdate(data.data);
+                break;
+            case 'transaction':
+                this.handleNewTransaction(data.data);
+                break;
+            case 'agent_status':
+                this.handleAgentStatusChange(data);
+                break;
+            case 'heartbeat':
+                // Keep-alive, no action needed
+                break;
+        }
+    }
+
+    handlePortfolioUpdate(data) {
+        if (data.totalValue !== undefined) {
+            this.portfolio.totalValue = data.totalValue;
+            this.updateUI();
+        }
+    }
+
+    handleNewTransaction(tx) {
+        this.portfolio.transactions.unshift(tx);
+        this.renderTransactions();
+        this.addNotification(`New ${tx.type}: $${tx.valueUsd}`, 'success');
+    }
+
+    handleAgentStatusChange(data) {
+        const badge = document.getElementById('agentStatusBadge');
+        if (badge) {
+            badge.textContent = data.status;
+            badge.className = `status-badge ${data.status.toLowerCase()}`;
+        }
+    }
+
+    // ===========================================
+    // PERFORMANCE CHART
+    // ===========================================
+
+    initPerformanceChart() {
+        // Generate mock historical data
+        this.generateMockPerformanceData();
+        this.drawPerformanceChart('7d');
+    }
+
+    generateMockPerformanceData() {
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+
+        // Generate data for different periods
+        const periods = { '7d': 7, '30d': 30, '90d': 90, 'all': 180 };
+
+        for (const [period, days] of Object.entries(periods)) {
+            const data = [];
+            let value = 1000; // Starting value
+
+            for (let i = days; i >= 0; i--) {
+                // Random walk with slight upward trend
+                const change = (Math.random() - 0.45) * 20;
+                value = Math.max(0, value + change);
+
+                data.push({
+                    timestamp: now - (i * day),
+                    value: value
+                });
+            }
+
+            this.performanceData[period] = data;
+        }
+    }
+
+    drawPerformanceChart(period) {
+        const container = document.getElementById('performanceChart');
+        if (!container) return;
+
+        const data = this.performanceData[period] || [];
+        if (data.length === 0) {
+            container.innerHTML = `<div class="chart-container" style="height: 200px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                <p>No data for ${period}</p>
+            </div>`;
+            return;
+        }
+
+        const width = container.offsetWidth || 400;
+        const height = 180;
+        const padding = 30;
+
+        const minValue = Math.min(...data.map(d => d.value));
+        const maxValue = Math.max(...data.map(d => d.value));
+        const valueRange = maxValue - minValue || 1;
+
+        // Generate SVG path
+        const points = data.map((d, i) => {
+            const x = padding + (i / (data.length - 1)) * (width - padding * 2);
+            const y = height - padding - ((d.value - minValue) / valueRange) * (height - padding * 2);
+            return `${x},${y}`;
+        });
+
+        const pathD = `M ${points.join(' L ')}`;
+
+        // Gradient fill
+        const areaD = `${pathD} L ${width - padding},${height - padding} L ${padding},${height - padding} Z`;
+
+        const startValue = data[0]?.value || 0;
+        const endValue = data[data.length - 1]?.value || 0;
+        const changePercent = startValue > 0 ? ((endValue - startValue) / startValue * 100).toFixed(2) : 0;
+        const isPositive = changePercent >= 0;
+        const color = isPositive ? '#22c55e' : '#ef4444';
+
+        container.innerHTML = `
+            <div style="padding: 12px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: var(--text-muted); font-size: 0.8rem;">Portfolio Value</span>
+                    <span style="color: ${color}; font-weight: 600;">${isPositive ? '+' : ''}${changePercent}%</span>
+                </div>
+                <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+                            <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                        </linearGradient>
+                    </defs>
+                    <path d="${areaD}" fill="url(#chartGradient)" />
+                    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">
+                    <span>$${startValue.toFixed(2)}</span>
+                    <span>$${endValue.toFixed(2)}</span>
+                </div>
+            </div>
+        `;
     }
 }
 

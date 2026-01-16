@@ -128,6 +128,14 @@ except ImportError as e:
     print(f"[Warning] Agent operations router not available: {e}")
     AGENT_OPS_AVAILABLE = False
 
+# Import WebSocket router (Real-Time Updates)
+try:
+    from api.websocket_router import router as websocket_router
+    WEBSOCKET_AVAILABLE = True
+except ImportError as e:
+    print(f"[Warning] WebSocket router not available: {e}")
+    WEBSOCKET_AVAILABLE = False
+
 app = FastAPI(
     title="Techne.finance API",
     description="AI-powered yield optimizer - Production Grade | Security + AI + Revenue",
@@ -213,6 +221,11 @@ if AGENT_OPS_AVAILABLE:
     app.include_router(agent_ops_router)
     app.include_router(audit_router)
     print("[AgentOps] Agent operations + Audit router loaded")
+
+# Include WebSocket routes (Real-Time Updates)
+if WEBSOCKET_AVAILABLE:
+    app.include_router(websocket_router)
+    print("[WebSocket] Real-time portfolio updates loaded")
 
 # Include Telegram bot API routes
 try:
