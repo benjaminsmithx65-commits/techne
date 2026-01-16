@@ -123,6 +123,7 @@ contract TechneAgentWallet is Ownable, ReentrancyGuard {
     // EVENTS
     // ============================================
     event Deposited(address indexed user, uint256 amount, uint256 shares);
+    event TokenDeposited(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event Withdrawn(address indexed user, uint256 amount, uint256 shares);
     event SwappedForLP(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
     event LPDeposited(address indexed pool, uint256 amountA, uint256 amountB, uint256 lpTokens);
@@ -183,6 +184,43 @@ contract TechneAgentWallet is Ownable, ReentrancyGuard {
         totalDeposited += amount;
         
         emit Deposited(msg.sender, amount, shares);
+    }
+    
+    /**
+     * @notice Deposit any supported token (USDC, WETH, etc.)
+     * @param token Token address to deposit
+     * @param amount Amount in token decimals
+     */
+    function depositToken(address token, uint256 amount) external nonReentrant notEmergency {
+        require(amount > 0, "Zero amount");
+        require(token != address(0), "Invalid token");
+        
+        // Transfer token in
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        
+        // Calculate USD value for shares
+        uint256 usdValue;
+        if (token == address(USDC)) {
+            usdValue = amount; // 1:1 for USDC
+        } else {
+            // For other tokens, use amount as-is for now
+            // In production: use price oracle
+            usdValue = amount;
+        }
+        
+        // Calculate shares
+        uint256 shares;
+        if (totalShares == 0) {
+            shares = usdValue;
+        } else {
+            shares = (usdValue * totalShares) / totalValue();
+        }
+        
+        userDeposits[msg.sender].shares += shares;
+        userDeposits[msg.sender].depositTime = block.timestamp;
+        totalShares += shares;
+        
+        emit TokenDeposited(msg.sender, token, amount, shares);
     }
     
     function withdraw(uint256 shares) external nonReentrant {
