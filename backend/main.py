@@ -104,6 +104,14 @@ except ImportError as e:
     print(f"[Warning] Position router not available: {e}")
     POSITION_TRACKING_AVAILABLE = False
 
+# Import meridian router (x402 Payments for Credits)
+try:
+    from api.meridian_router import router as meridian_router
+    MERIDIAN_AVAILABLE = True
+except ImportError as e:
+    print(f"[Warning] Meridian router not available: {e}")
+    MERIDIAN_AVAILABLE = False
+
 app = FastAPI(
     title="Techne.finance API",
     description="AI-powered yield optimizer - Production Grade | Security + AI + Revenue",
@@ -150,6 +158,11 @@ if REVENUE_AVAILABLE:
 if POSITION_TRACKING_AVAILABLE:
     app.include_router(position_router)
     print("[Positions] Position tracking router loaded")
+
+# Include meridian routes (x402 Payments for Credits)
+if MERIDIAN_AVAILABLE:
+    app.include_router(meridian_router)
+    print("[Meridian] x402 payment router loaded")
 
 # Include Telegram bot API routes
 try:

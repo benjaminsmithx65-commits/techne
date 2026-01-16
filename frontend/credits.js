@@ -128,7 +128,7 @@ const CreditsManager = {
                     </p>
 
                     <div class="premium-cta">
-                        <div class="premium-icon">👑</div>
+                        <div class="premium-icon">⚡</div>
                         <div class="premium-text">
                             <strong>Go Premium</strong>
                             <p>Get 3000 free credits every day!</p>
@@ -151,7 +151,7 @@ const CreditsManager = {
         });
     },
 
-    // Process purchase - Real x402 USDC payment
+    // Process purchase - Meridian x402 Payment
     async processPurchase() {
         const btn = document.getElementById('confirmBuyCreditsBtn');
         if (!btn) return;
@@ -163,73 +163,121 @@ const CreditsManager = {
             return;
         }
 
-        btn.innerHTML = '<span>⏳</span> Connecting...';
+        btn.innerHTML = '<span>⏳</span> Preparing...';
         btn.disabled = true;
 
         try {
-            // Get provider and signer
-            if (!window.ethereum) {
-                throw new Error('No wallet detected. Please install MetaMask.');
-            }
+            // Step 1: Get payment requirements from backend
+            const reqResponse = await fetch('/api/meridian/payment-requirements');
+            if (!reqResponse.ok) throw new Error('Failed to get payment requirements');
+            const paymentReq = await reqResponse.json();
+
+            console.log('[Credits] Payment requirements:', paymentReq);
+
+            // Step 2: Build EIP-712 typed data for TransferWithAuthorization
+            const USDC_ADDRESS = paymentReq.usdcAddress;
+            const recipient = paymentReq.recipientAddress;
+            const amount = paymentReq.amount; // "100000" = 0.10 USDC
+            const validAfter = 0;
+            const validBefore = Math.floor(Date.now() / 1000) + 3600; // 1 hour
+            const nonce = '0x' + [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('');
+
+            const domain = {
+                name: 'USD Coin',
+                version: '2',
+                chainId: 8453, // Base
+                verifyingContract: USDC_ADDRESS
+            };
+
+            const types = {
+                TransferWithAuthorization: [
+                    { name: 'from', type: 'address' },
+                    { name: 'to', type: 'address' },
+                    { name: 'value', type: 'uint256' },
+                    { name: 'validAfter', type: 'uint256' },
+                    { name: 'validBefore', type: 'uint256' },
+                    { name: 'nonce', type: 'bytes32' }
+                ]
+            };
+
+            const message = {
+                from: window.connectedWallet,
+                to: recipient,
+                value: amount,
+                validAfter: validAfter,
+                validBefore: validBefore,
+                nonce: nonce
+            };
+
+            // Step 3: Request signature from wallet
+            btn.innerHTML = '<span>✍️</span> Sign in wallet...';
 
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
 
-            // Payment details - 0.1 USDC for 100 credits
-            const RECIPIENT = '0x542c3b6cb5c93c4e4b4c20de48ee87dd79efdfec'; // Techne treasury
-            const AMOUNT = '100000'; // 0.10 USDC (6 decimals)
+            // Sign typed data using EIP-712
+            const signature = await signer.signTypedData(domain, types, message);
 
-            // USDC contract on Base
-            const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-            const USDC_ABI = [
-                'function transfer(address to, uint256 amount) returns (bool)',
-                'function balanceOf(address account) view returns (uint256)'
-            ];
+            console.log('[Credits] Signature obtained:', signature.substring(0, 20) + '...');
 
-            const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
+            // Step 4: Build payment payload for Meridian
+            const paymentPayload = {
+                authorization: {
+                    from: window.connectedWallet,
+                    to: recipient,
+                    value: amount,
+                    validAfter: validAfter.toString(),
+                    validBefore: validBefore.toString(),
+                    nonce: nonce
+                },
+                signature: signature,
+                asset: USDC_ADDRESS,
+                network: 'base'
+            };
 
-            // Check balance
-            btn.innerHTML = '<span>⏳</span> Checking balance...';
-            const balance = await usdcContract.balanceOf(window.connectedWallet);
+            // Step 5: Submit to backend for verification and settlement
+            btn.innerHTML = '<span>⏳</span> Processing...';
 
-            if (BigInt(balance) < BigInt(AMOUNT)) {
-                alert('Insufficient USDC balance. You need at least 0.1 USDC on Base.');
-                btn.innerHTML = '<span>💳</span> Pay with Wallet';
-                btn.disabled = false;
-                return;
+            const settleResponse = await fetch('/api/meridian/settle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paymentPayload })
+            });
+
+            const settleData = await settleResponse.json();
+            console.log('[Credits] Settle response:', settleData);
+
+            if (settleData.success) {
+                // Add credits
+                this.addCredits(settleData.credits || this.CREDITS_PER_PURCHASE);
+
+                btn.innerHTML = '<span>✓</span> 100 Credits Added!';
+                btn.style.background = 'var(--success)';
+
+                if (window.Toast) {
+                    Toast.show('✅ 100 Filter Credits added via Meridian!', 'success');
+                }
+
+                // Close modal after delay
+                setTimeout(() => {
+                    document.getElementById('buyCreditsModal')?.remove();
+                }, 2000);
+            } else {
+                throw new Error(settleData.error || 'Payment failed');
             }
-
-            // Execute transfer
-            btn.innerHTML = '<span>⏳</span> Confirm in wallet...';
-            const tx = await usdcContract.transfer(RECIPIENT, AMOUNT);
-
-            btn.innerHTML = '<span>⏳</span> Confirming...';
-
-            // Wait for confirmation
-            const receipt = await tx.wait();
-
-            console.log('[Credits] Payment successful, txHash:', receipt.hash);
-
-            // Add credits
-            this.addCredits(this.CREDITS_PER_PURCHASE);
-
-            btn.innerHTML = '<span>✓</span> 100 Credits Added!';
-            btn.style.background = 'var(--success)';
-
-            // Show toast if available
-            if (window.Toast) {
-                Toast.show('✅ 100 Filter Credits added!', 'success');
-            }
-
-            // Close modal after delay
-            setTimeout(() => {
-                document.getElementById('buyCreditsModal')?.remove();
-            }, 2000);
 
         } catch (e) {
             console.error('[Credits] Payment error:', e);
-            alert('Payment failed: ' + (e.reason || e.message));
 
+            // User-friendly error messages
+            let errorMsg = e.message;
+            if (e.code === 4001 || e.message.includes('rejected')) {
+                errorMsg = 'Transaction cancelled';
+            } else if (e.message.includes('insufficient')) {
+                errorMsg = 'Insufficient USDC balance (need 0.10 USDC on Base)';
+            }
+
+            alert('Payment failed: ' + errorMsg);
             btn.innerHTML = '<span>💳</span> Pay with Wallet';
             btn.disabled = false;
         }
