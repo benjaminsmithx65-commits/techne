@@ -40,10 +40,10 @@ const AgentWalletUI = {
         this.renderVaultCard();
         this.bindEvents();
 
-        // Auto-refresh stats every 30s
-        setInterval(() => this.refreshStats(), 30000);
+        // DISABLED: Contract not deployed yet - uncomment when ready
+        // setInterval(() => this.refreshStats(), 30000);
 
-        console.log('[AgentWallet] UI initialized');
+        console.log('[AgentWallet] UI initialized (contract refresh disabled)');
     },
 
     /**
@@ -433,9 +433,10 @@ const AgentWalletUI = {
      */
     bindEvents() {
         // Wallet connect callback
-        window.addEventListener('walletConnected', () => {
-            this.refreshStats();
-        });
+        // DISABLED: Contract not deployed yet
+        // window.addEventListener('walletConnected', () => {
+        //     this.refreshStats();
+        // });
     }
 };
 
