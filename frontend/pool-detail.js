@@ -1939,6 +1939,27 @@ const PoolDetailModal = {
         const color = riskColors[risk] || riskColors.unknown;
 
         const isEstimated = source === 'estimated';
+        const isCLPool = lpAnalysis.is_cl_pool || lpAnalysis.source === 'cl_pool' ||
+            pool.pool_type === 'cl' || pool.pool_type === 'concentrated';
+
+        // CL pools use NFT positions - can't analyze like ERC20 LP tokens
+        if (isCLPool || (isEstimated && !holders && !top10)) {
+            return `
+                <div class="pd-risk-panel">
+                    <div class="pd-risk-panel-header">
+                        <span class="pd-risk-icon">🏊</span>
+                        <span class="pd-risk-title">LP Whale Concentration</span>
+                    </div>
+                    <div class="pd-risk-value" style="color: #10B981">LOW</div>
+                    <div class="pd-risk-detail">
+                        CL Pool - NFT positions
+                    </div>
+                    <div class="pd-risk-note" style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">
+                        Concentrated liquidity = fragmented ownership
+                    </div>
+                </div>
+            `;
+        }
 
         return `
             <div class="pd-risk-panel">

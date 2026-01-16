@@ -236,7 +236,9 @@ class HolderAnalysis:
             return await self._analyze_solana_holders(token_address)
         
         # EVM chains - try Moralis first (better free tier: 40K req/month)
-        if get_moralis_key():
+        moralis_key = get_moralis_key()
+        logger.warning(f"[DEBUG] Holder analysis for {token_address[:10]}... - Moralis key present: {bool(moralis_key)}, first 10 chars: {moralis_key[:10] if moralis_key else 'NONE'}")
+        if moralis_key:
             try:
                 return await self._analyze_evm_holders_moralis(token_address, chain)
             except Exception as e:
@@ -275,10 +277,12 @@ class HolderAnalysis:
         
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.get(url, headers=headers, params=params)
+            logger.warning(f"[DEBUG] Moralis response for {token_address[:10]}...: status={response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
                 holders = data.get("result", [])
+                logger.warning(f"[DEBUG] Moralis returned {len(holders)} holders for {token_address[:10]}...")
                 
                 if holders:
                     return self._process_moralis_holder_data(holders)
