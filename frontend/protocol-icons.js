@@ -324,7 +324,16 @@ function getChainIcon(chainId, size = 20) {
 // Get protocol icon URL (used by pool-detail.js)
 function getProtocolIconUrl(protocolName) {
     if (!protocolName) return '/icons/default.svg';
-    const key = protocolName.toLowerCase().replace(/\s+/g, '-').replace('slipstream', '').replace('finance', '').trim();
+    // Normalize: lowercase, remove common suffixes, clean up
+    let key = protocolName.toLowerCase()
+        .replace(/slipstream/gi, '')
+        .replace(/finance/gi, '')
+        .replace(/-v[234]/gi, '')
+        .replace(/\s*v[234]/gi, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')  // Multiple hyphens to single
+        .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+        .trim();
     // Check known protocols first
     const protocol = PROTOCOL_ICONS[key];
     if (protocol && protocol.icon) return protocol.icon;

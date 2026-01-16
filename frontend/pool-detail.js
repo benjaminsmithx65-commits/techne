@@ -2831,7 +2831,6 @@ const PoolDetailModal = {
                 
                 <!-- Trust Links -->
                 <div class="pd-trust-row">
-                    ${getExplorerUrl(pool) ? `<a href="${getExplorerUrl(pool)}" target="_blank">${PoolIcons.fileText} Contract</a>` : ''}
                     ${getProtocolWebsite(pool.project) ? `<a href="${getProtocolWebsite(pool.project)}" target="_blank">${PoolIcons.externalLink} Protocol</a>` : ''}
                     ${pool.pool_link ? `<a href="${pool.pool_link}" target="_blank">🏊 Pool</a>` : ''}
                 </div>
@@ -2998,7 +2997,7 @@ detailStyles.textContent = `
         width: 95vw;
         max-height: 94vh;
         overflow-y: auto;
-        padding: 12px;
+        padding: 8px;
         position: relative;
         box-shadow: 0 0 60px rgba(212, 168, 83, 0.1), 0 0 1px rgba(212, 168, 83, 0.5);
         animation: slideUpIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3020,8 +3019,8 @@ detailStyles.textContent = `
     .pd-bento-main {
         display: grid;
         grid-template-columns: 58fr 42fr;
-        gap: 6px;
-        margin-bottom: 6px;
+        gap: 4px;
+        margin-bottom: 4px;
     }
     
     /* Tab Switcher */
@@ -3059,7 +3058,7 @@ detailStyles.textContent = `
     }
     
     .pd-tab-content {
-        min-height: 120px;
+        min-height: 90px;
     }
     
     .pd-tab-panel {
@@ -3103,8 +3102,8 @@ detailStyles.textContent = `
     /* Accordions as Overlay Triggers */
     .pd-accordions {
         display: flex;
-        gap: 6px;
-        margin-top: 8px;
+        gap: 4px;
+        margin-top: 4px;
         flex-wrap: wrap;
     }
     
