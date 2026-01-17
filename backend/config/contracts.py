@@ -10,10 +10,10 @@ import os
 # V2 CONTRACT (After deploy-v2.js)
 # ============================================
 
-# TODO: Update this after running: npx hardhat run scripts/deploy-v2.js --network base
+# V2 CONTRACT - DEPLOYED!
 AGENT_WALLET_V2_ADDRESS = os.environ.get(
     "AGENT_WALLET_V2_ADDRESS",
-    "0x567D1Fc55459224132aB5148c6140E8900f9a607"  # Placeholder - update after deploy
+    "0x8df33b5b58212f16519ce86e810be2e8232df305"
 )
 
 # V1 Legacy (keep for reference)

@@ -5,8 +5,7 @@
 
 const AgentWalletUI = {
     // Contract address - V2 DEPLOYED ON BASE MAINNET
-    // TODO: Update after deploy-v2.js execution
-    contractAddress: '0x567D1Fc55459224132aB5148c6140E8900f9a607', // Will be updated after V2 deploy
+    contractAddress: '0x8df33b5b58212f16519ce86e810be2e8232df305',
     contractVersion: 'V2',
 
     // Supported tokens on Base
