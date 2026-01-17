@@ -3,7 +3,7 @@
  * Handles subscription tiers, upgrades, and billing integration
  */
 
-const SUB_API_BASE = window.API_BASE || 'http://localhost:8000';
+const SUB_API_BASE = window.API_BASE || 'http://localhost:8080';
 
 // Subscription state
 let currentSubscription = null;
