@@ -88,19 +88,30 @@ class ApproveMultiSigRequest(BaseModel):
 async def create_agent_wallet(request: CreateWalletRequest):
     """
     Create a new agent wallet for user
-    Returns agent address and private key (save it!)
+    Returns agent address. Private key must be retrieved via /export-key with signature.
+    
+    C-02 FIX: Private key is NOT returned in this response for security.
+    User must call /export-key with their signature to retrieve it.
     """
     try:
-        agent_address, private_key = agent_wallet_manager.create_wallet(
+        agent_address, _ = agent_wallet_manager.create_wallet(
             user_address=request.user_address,
             encryption_key=request.signature
+        )
+        
+        # Log wallet creation for audit
+        contract_audit.log_interaction(
+            user_id=request.user_address,
+            contract_address="agent_wallet_manager",
+            function_name="create_wallet",
+            parameters={"agent_address": agent_address}
         )
         
         return {
             "success": True,
             "agent_address": agent_address,
-            "private_key": private_key,
-            "message": "⚠️ SAVE YOUR PRIVATE KEY! You will need it to access funds directly."
+            "key_retrieval": "Use POST /api/agent-wallet/export-key with your signature to get private key",
+            "message": "⚠️ Wallet created! Use /export-key endpoint to securely retrieve your private key."
         }
     except Exception as e:
         logger.error(f"Wallet creation error: {e}")

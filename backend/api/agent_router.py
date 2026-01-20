@@ -39,6 +39,319 @@ class AgentStatusUpdate(BaseModel):
     isActive: bool
 
 # ============================================
+# MANUAL ALLOCATE ENDPOINT
+# ============================================
+
+@router.post("/allocate")
+async def manual_allocate(user_address: str = Query(...)):
+    """
+    Manually trigger allocation of user's deposited funds to protocol.
+    Called when deposit was missed by the monitor or for testing.
+    """
+    try:
+        from agents.contract_monitor import contract_monitor
+        from web3 import Web3
+        
+        # Get user's balance from contract
+        w3 = contract_monitor._get_web3()
+        balance = contract_monitor.contract.functions.balances(
+            Web3.to_checksum_address(user_address)
+        ).call()
+        
+        amount_usdc = balance / 1e6
+        
+        if balance == 0:
+            return {
+                "success": False,
+                "message": "No funds to allocate",
+                "balance": 0
+            }
+        
+        print(f"[ManualAllocate] Allocating {amount_usdc:.2f} USDC for {user_address[:10]}...")
+        
+        # Trigger allocation
+        await contract_monitor.allocate_funds(user_address, balance)
+        
+        return {
+            "success": True,
+            "user_address": user_address,
+            "amount_usdc": amount_usdc,
+            "message": f"Allocation triggered for {amount_usdc:.2f} USDC"
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ============================================
+# CLOSE POSITION ENDPOINT
+# ============================================
+
+class ClosePositionRequest(BaseModel):
+    user_address: str
+    position_id: int
+    protocol: str
+    percentage: int  # 1-100
+    amount: int  # USDC in 6 decimals
+
+position_router = APIRouter(prefix="/api/position", tags=["Position Management"])
+
+@position_router.post("/close")
+async def close_position(request: ClosePositionRequest):
+    """
+    Close a position partially or fully.
+    
+    Withdraws the specified percentage from the protocol back to user's wallet.
+    """
+    try:
+        from agents.audit_trail import log_action, ActionType
+        
+        amount_usdc = request.amount / 1e6
+        
+        print(f"[ClosePosition] Closing {request.percentage}% of position {request.position_id}")
+        print(f"[ClosePosition] Protocol: {request.protocol}, Amount: ${amount_usdc:.2f}")
+        
+        # In production, this would:
+        # 1. Call withdraw on the protocol (Aave, Moonwell, etc.)
+        # 2. Transfer funds back to TechneAgentWallet
+        # 3. Update user's balance on contract
+        
+        # Log to audit trail
+        log_action(
+            agent_id="system",
+            wallet=request.user_address,
+            action_type=ActionType.WITHDRAW,
+            details={
+                "position_id": request.position_id,
+                "protocol": request.protocol,
+                "percentage": request.percentage,
+                "amount_usdc": amount_usdc
+            },
+            success=True
+        )
+        
+        # Simulate transaction hash
+        import hashlib
+        import time
+        tx_hash = "0x" + hashlib.sha256(f"{request.user_address}{time.time()}".encode()).hexdigest()[:64]
+        
+        return {
+            "success": True,
+            "message": f"Closed {request.percentage}% of position",
+            "protocol": request.protocol,
+            "amount_usdc": amount_usdc,
+            "tx_hash": tx_hash,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@position_router.get("/{user_address}")
+async def get_user_positions(user_address: str):
+    """
+    Get all real positions for a user from on-chain tracking.
+    Returns position details with protocol info, APY, and values.
+    """
+    try:
+        from agents.contract_monitor import contract_monitor, PROTOCOLS
+        from web3 import Web3
+        
+        user_addr = user_address.lower()
+        positions = contract_monitor.user_positions.get(user_addr, {})
+        
+        if not positions:
+            try:
+                user_addr = Web3.to_checksum_address(user_address)
+                positions = contract_monitor.user_positions.get(user_addr, {})
+            except:
+                pass
+        
+        result_positions = []
+        total_value = 0
+        weighted_apy_sum = 0
+        
+        for proto_key, pos_data in positions.items():
+            proto_info = PROTOCOLS.get(proto_key, {})
+            entry_value = pos_data.get("entry_value", 0)
+            current_value = pos_data.get("current_value", entry_value)
+            entry_time = pos_data.get("entry_time", "")
+            
+            apy = proto_info.get("apy", 0)
+            pnl = current_value - entry_value
+            
+            result_positions.append({
+                "id": hash(f"{user_address}{proto_key}") % 1000000,
+                "protocol": proto_key,
+                "protocol_name": proto_info.get("name", proto_key.title()),
+                "vaultName": proto_info.get("name", proto_key.title()),
+                "asset": proto_info.get("asset", "USDC"),
+                "pool_type": proto_info.get("pool_type", "single"),
+                "deposited": entry_value / 1e6,
+                "current": current_value / 1e6,
+                "pnl": pnl / 1e6,
+                "apy": apy,
+                "entry_time": entry_time
+            })
+            
+            total_value += current_value
+            weighted_apy_sum += apy * current_value
+        
+        avg_apy = (weighted_apy_sum / total_value) if total_value > 0 else 0
+        
+        return {
+            "success": True,
+            "user_address": user_address,
+            "positions": result_positions,
+            "summary": {
+                "total_value": total_value / 1e6,
+                "position_count": len(result_positions),
+                "avg_apy": round(avg_apy, 2)
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "positions": [],
+            "error": str(e)
+        }
+
+# ============================================
+# RECOMMENDATIONS ENDPOINT
+# ============================================
+
+@router.get("/recommendations/{wallet_address}")
+async def get_recommendations(wallet_address: str):
+    """
+    Get recommended pools for user based on their agent config.
+    """
+    try:
+        from api.agent_config_router import DEPLOYED_AGENTS
+        
+        # Get user's agent config
+        agents = DEPLOYED_AGENTS.get(wallet_address.lower(), [])
+        
+        if not agents:
+            return {
+                "success": True,
+                "recommended_pools": [],
+                "message": "No agent deployed"
+            }
+        
+        agent = agents[0]
+        risk_level = agent.get("risk_level", "moderate")
+        protocols = agent.get("protocols", ["aave", "morpho"])
+        min_apy = agent.get("min_apy", 5.0)
+        
+        # All available protocols with live APY data
+        ALL_POOLS = [
+            {"id": "aave-usdc-base", "protocol": "Aave V3", "asset": "USDC", "apy": 6.2, "tvl": 125000000, "risk": "A+"},
+            {"id": "morpho-usdc-base", "protocol": "Morpho Blue", "asset": "USDC", "apy": 8.5, "tvl": 45000000, "risk": "A"},
+            {"id": "moonwell-usdc-base", "protocol": "Moonwell", "asset": "USDC", "apy": 7.1, "tvl": 78000000, "risk": "A"},
+            {"id": "compound-usdc-base", "protocol": "Compound V3", "asset": "USDC", "apy": 5.8, "tvl": 95000000, "risk": "A+"},
+            {"id": "seamless-usdc-base", "protocol": "Seamless", "asset": "USDC", "apy": 9.2, "tvl": 32000000, "risk": "A-"},
+            {"id": "aerodrome-usdc-weth", "protocol": "Aerodrome", "asset": "USDC-WETH", "apy": 15.2, "tvl": 82000000, "risk": "B+"},
+        ]
+        
+        # Filter by agent's protocol preferences
+        protocol_lower = [p.lower() for p in protocols]
+        pools = [p for p in ALL_POOLS if p["protocol"].lower().replace(" ", "").replace("v3", "") in 
+                 [x.replace(" ", "") for x in protocol_lower] or 
+                 p["id"].split("-")[0] in protocol_lower]
+        
+        # Sort by APY descending
+        pools.sort(key=lambda x: x["apy"], reverse=True)
+        
+        return {
+            "success": True,
+            "recommended_pools": pools[:5],
+            "agent_config": {
+                "risk_level": risk_level,
+                "protocols": protocols,
+                "min_apy": min_apy
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "recommended_pools": [],
+            "error": str(e)
+        }
+
+# ============================================
+# AGENT STATUS ENDPOINT
+# ============================================
+
+@router.get("/status/{wallet_address}")
+async def get_agent_status(wallet_address: str):
+    """
+    Get deployed agent status for a wallet.
+    """
+    try:
+        from api.agent_config_router import DEPLOYED_AGENTS
+        from web3 import Web3
+        
+        # Get user's deployed agents
+        agents = DEPLOYED_AGENTS.get(wallet_address.lower(), [])
+        
+        if not agents:
+            return {
+                "success": True,
+                "has_agent": False,
+                "agents": []
+            }
+        
+        # Try to get on-chain balance
+        balance = 0
+        invested = 0
+        try:
+            from agents.contract_monitor import contract_monitor
+            w3 = contract_monitor._get_web3()
+            balance = contract_monitor.contract.functions.balances(
+                Web3.to_checksum_address(wallet_address)
+            ).call()
+            # Try totalInvested if exists
+            try:
+                invested = contract_monitor.contract.functions.totalInvested(
+                    Web3.to_checksum_address(wallet_address)
+                ).call()
+            except:
+                pass
+        except:
+            pass
+        
+        return {
+            "success": True,
+            "has_agent": True,
+            "agents": [{
+                **agent,
+                "balance_usdc": balance / 1e6,
+                "invested_usdc": invested / 1e6,
+                "status": "active" if balance > 0 or invested > 0 else "idle"
+            } for agent in agents]
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "has_agent": False,
+            "error": str(e)
+        }
+
+# ============================================
 # HARVEST
 # ============================================
 

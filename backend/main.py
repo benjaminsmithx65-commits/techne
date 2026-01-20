@@ -122,11 +122,12 @@ except ImportError as e:
 
 # Import agent operations router (Harvest, Rebalance, Pause)
 try:
-    from api.agent_router import router as agent_ops_router
+    from api.agent_router import router as agent_ops_router, position_router as agent_position_router
     AGENT_OPS_AVAILABLE = True
 except ImportError as e:
     print(f"[Warning] Agent operations router not available: {e}")
     AGENT_OPS_AVAILABLE = False
+    agent_position_router = None
 
 # Import audit router (Transaction history)
 try:
@@ -157,13 +158,20 @@ async def startup_event():
     """Start background services"""
     print("[Startup] Initializing background services...")
     
-    # Start deposit monitor
+    # Start CONTRACT monitor (V4.3.2 - watches Deposited events)
     try:
-        from agents.deposit_monitor import start_deposit_monitoring
-        await start_deposit_monitoring()
-        print("[Startup] Deposit monitor started")
+        from agents.contract_monitor import start_contract_monitoring
+        await start_contract_monitoring()
+        print("[Startup] ✅ Contract monitor started (watching V4.3.2 Deposited events)")
     except Exception as e:
-        print(f"[Startup] Deposit monitor failed: {e}")
+        print(f"[Startup] Contract monitor failed: {e}")
+        # Fallback to old deposit monitor
+        try:
+            from agents.deposit_monitor import start_deposit_monitoring
+            await start_deposit_monitoring()
+            print("[Startup] Deposit monitor started (fallback)")
+        except Exception as e2:
+            print(f"[Startup] Deposit monitor also failed: {e2}")
     
     # Start strategy executor
     try:
@@ -228,6 +236,10 @@ if AGENT_CONFIG_AVAILABLE:
 if AGENT_OPS_AVAILABLE:
     app.include_router(agent_ops_router)
     print("[AgentOps] Agent operations router loaded")
+    # Also include position close endpoint
+    if agent_position_router:
+        app.include_router(agent_position_router)
+        print("[AgentOps] Position close router loaded")
 
 # Include audit routes (Transaction History)
 if AUDIT_AVAILABLE:
@@ -246,6 +258,22 @@ try:
     print("[Telegram] API router loaded")
 except ImportError as e:
     print(f"[Telegram] Router not available: {e}")
+
+# Include Public Harvest API (Revert Finance pattern - executor rewards)
+try:
+    from api.harvest_router import router as harvest_router
+    app.include_router(harvest_router)
+    print("[Harvest] Public harvest API loaded - executors earn 1% reward")
+except ImportError as e:
+    print(f"[Harvest] Router not available: {e}")
+
+# Include Smart Loop Engine API (Leverage)
+try:
+    from api.leverage_router import router as leverage_router
+    app.include_router(leverage_router)
+    print("[Leverage] Smart Loop Engine API loaded - up to 3x leverage")
+except ImportError as e:
+    print(f"[Leverage] Router not available: {e}")
 
 # Security Middleware (Production-grade protection)
 try:
@@ -321,6 +349,124 @@ class VerifyPaymentRequest(BaseModel):
 async def root():
     # Serve the frontend app
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+
+# ============================================
+# PORTFOLIO API ENDPOINT
+# ============================================
+
+@app.get("/api/portfolio/{wallet_address}")
+async def get_portfolio(wallet_address: str):
+    """
+    Get portfolio summary for a wallet address.
+    Returns balances, positions, and value from V4.3.3 contract.
+    """
+    try:
+        from web3 import Web3
+        from agents.contract_monitor import contract_monitor
+        
+        w3 = contract_monitor._get_web3()
+        
+        # Get on-chain balances
+        balance = contract_monitor.contract.functions.balances(
+            Web3.to_checksum_address(wallet_address)
+        ).call()
+        
+        invested = 0
+        try:
+            invested = contract_monitor.contract.functions.totalInvested(
+                Web3.to_checksum_address(wallet_address)
+            ).call()
+        except:
+            pass
+        
+        total_value = balance + invested
+        
+        return {
+            "success": True,
+            "wallet": wallet_address,
+            "balances": {
+                "available": balance / 1e6,
+                "invested": invested / 1e6,
+                "total": total_value / 1e6
+            },
+            "positions": [],  # Would come from on-chain tracking
+            "holdings": [
+                {
+                    "symbol": "USDC",
+                    "balance": total_value / 1e6,
+                    "value": total_value / 1e6,
+                    "change24h": 0.0
+                }
+            ] if total_value > 0 else []
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "balances": {"available": 0, "invested": 0, "total": 0},
+            "positions": [],
+            "holdings": []
+        }
+
+
+# ============================================
+# AUTO-WHITELIST ENDPOINT (for deposit flow)
+# ============================================
+
+@app.post("/api/whitelist")
+async def whitelist_user_endpoint(user_address: str = Query(..., description="User wallet address to whitelist")):
+    """
+    Auto-whitelist a user on V4.3.2 contract before deposit.
+    This is called by frontend before attempting deposit to ensure user can deposit.
+    
+    Flow: Frontend → /api/whitelist → Contract.whitelistUser() → Frontend → Contract.deposit()
+    """
+    try:
+        from services.whitelist_service import get_whitelist_service
+        
+        whitelist_svc = get_whitelist_service()
+        result = whitelist_svc.whitelist_user(user_address)
+        
+        return {
+            "success": result["success"],
+            "user_address": user_address,
+            "tx_hash": result.get("tx_hash"),
+            "message": result.get("message"),
+            "already_whitelisted": "already whitelisted" in result.get("message", "").lower()
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "user_address": user_address,
+            "message": str(e)
+        }
+
+
+@app.get("/api/whitelist/check")
+async def check_whitelist_status(user_address: str = Query(..., description="User wallet address to check")):
+    """Check if a user is already whitelisted on V4.3.2 contract"""
+    try:
+        from services.whitelist_service import get_whitelist_service
+        
+        whitelist_svc = get_whitelist_service()
+        is_whitelisted = whitelist_svc.is_whitelisted(user_address)
+        
+        return {
+            "success": True,
+            "user_address": user_address,
+            "is_whitelisted": is_whitelisted
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "user_address": user_address,
+            "is_whitelisted": False,
+            "error": str(e)
+        }
 
 
 # Alias for /api/pools (frontend uses this)

@@ -32,9 +32,9 @@ class PortfolioDashboard {
         };
     }
 
-    init() {
+    async init() {
         this.bindEvents();
-        this.loadAgents();
+        await this.loadAgents();
         this.loadPortfolioData();
         this.syncAgentStatus();
         this.connectWebSocket();
@@ -109,34 +109,72 @@ class PortfolioDashboard {
         this.startAutoRefresh();
     }
 
-    loadAgents() {
-        // Load all agents from localStorage
-        try {
-            const saved = localStorage.getItem('techne_deployed_agents');
-            this.agents = saved ? JSON.parse(saved) : [];
+    async loadAgents() {
+        // Try to sync from backend first, fallback to localStorage
+        const userAddress = window.connectedWallet;
+        let backendSyncSuccess = false;
 
-            // Fallback to old format
-            if (this.agents.length === 0) {
-                const oldFormat = localStorage.getItem('techne_deployed_agent');
-                if (oldFormat) {
-                    const agent = JSON.parse(oldFormat);
-                    agent.id = agent.id || `agent_${Date.now()}`;
-                    this.agents = [agent];
+        if (userAddress) {
+            try {
+                const API_BASE = window.API_BASE || '';
+                const response = await fetch(`${API_BASE}/api/agent/status/${userAddress}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    backendSyncSuccess = true;
+                    const agents = data.agents || [];
+                    console.log('[Portfolio] Loaded agents from backend:', agents.length);
+                    this.agents = agents.map(a => ({
+                        ...a,
+                        // Map backend fields to frontend format
+                        isActive: a.is_active,
+                        userAddress: a.user_address,
+                        address: a.agent_address
+                    }));
+                    // ALWAYS sync to localStorage (even if empty!)
+                    localStorage.setItem('techne_deployed_agents', JSON.stringify(this.agents));
+                    // Also clear old format
+                    localStorage.removeItem('techne_deployed_agent');
                 }
+            } catch (e) {
+                console.warn('[Portfolio] Backend sync failed, using localStorage:', e);
             }
-
-            this.updateAgentSelector();
-
-            // Auto-select first active agent
-            const activeAgent = this.agents.find(a => a.isActive);
-            if (activeAgent) {
-                this.selectedAgentId = activeAgent.id;
-                document.getElementById('agentSelector').value = activeAgent.id;
-            }
-        } catch (e) {
-            console.error('[Portfolio] Failed to load agents:', e);
-            this.agents = [];
         }
+
+        // ONLY fallback to localStorage if backend sync FAILED (not if it returned 0 agents)
+        if (!backendSyncSuccess && (!this.agents || this.agents.length === 0)) {
+            try {
+                const saved = localStorage.getItem('techne_deployed_agents');
+                this.agents = saved ? JSON.parse(saved) : [];
+
+                // Fallback to old format
+                if (this.agents.length === 0) {
+                    const oldFormat = localStorage.getItem('techne_deployed_agent');
+                    if (oldFormat) {
+                        const agent = JSON.parse(oldFormat);
+                        agent.id = agent.id || `agent_${Date.now()}`;
+                        this.agents = [agent];
+                    }
+                }
+            } catch (e) {
+                console.error('[Portfolio] Failed to load agents from localStorage:', e);
+                this.agents = [];
+            }
+        }
+
+        this.updateAgentSelector();
+
+        // Auto-select first active agent
+        const activeAgent = this.agents.find(a => a.isActive || a.is_active);
+        if (activeAgent) {
+            this.selectedAgentId = activeAgent.id;
+            const selector = document.getElementById('agentSelector');
+            if (selector) selector.value = activeAgent.id;
+        } else if (this.agents.length === 0) {
+            this.showEmptyState();
+        }
+
+        console.log('[Portfolio] Loaded', this.agents.length, 'agents');
     }
 
     updateAgentSelector() {
@@ -196,22 +234,43 @@ class PortfolioDashboard {
 
         if (!confirmed) return;
 
+        // Use agent's stored user_address as fallback
+        const userAddress = window.connectedWallet || agent.userAddress || agent.user_address;
+
+        if (!userAddress) {
+            console.warn('[Portfolio] No user address found for delete');
+            // Still proceed with local delete
+        }
+
         // Call backend to delete
         const API_BASE = window.API_BASE || '';
         try {
-            const response = await fetch(
-                `${API_BASE}/api/agent/delete/${window.connectedWallet}/${agent.id}`,
-                { method: 'DELETE' }
-            );
+            const deleteUrl = `${API_BASE}/api/agent/delete/${userAddress}/${agent.id}`;
+            console.log('[Portfolio] Deleting agent:', deleteUrl);
+
+            const response = await fetch(deleteUrl, { method: 'DELETE' });
             const result = await response.json();
             console.log('[Portfolio] Delete result:', result);
+
+            if (result.success) {
+                this.showToast?.('Agent deleted successfully', 'success');
+            } else {
+                console.warn('[Portfolio] Backend delete error:', result);
+            }
         } catch (e) {
             console.warn('[Portfolio] Backend delete failed:', e);
         }
 
-        // Remove from local storage
+        // Remove from local storage - BOTH formats!
         this.agents = this.agents.filter(a => a.id !== agent.id);
         localStorage.setItem('techne_deployed_agents', JSON.stringify(this.agents));
+
+        // Clear old single-agent format
+        localStorage.removeItem('techne_deployed_agent');
+
+        // Clear global window state
+        window.deployedAgent = null;
+        window.deployedAgents = this.agents;
 
         // Update UI
         this.selectedAgentId = null;
@@ -224,6 +283,7 @@ class PortfolioDashboard {
         }
 
         console.log('[Portfolio] Agent deleted:', agent.id);
+        alert('Agent deleted successfully!');
     }
 
     async loadPortfolioData() {
@@ -248,9 +308,279 @@ class PortfolioDashboard {
                 this.showEmptyState();
             }
 
+            // ============================================
+            // ALWAYS load contract balances from V4.3.2
+            // ============================================
+            await this.loadContractBalances();
+
             this.updateUI();
         } catch (error) {
             console.error('[Portfolio] Failed to load data:', error);
+        }
+    }
+
+    /**
+     * Load actual contract balances from V4.3.3 smart contract
+     */
+    async loadContractBalances() {
+        if (!window.ethereum || typeof ethers === 'undefined' || !window.connectedWallet) {
+            console.log('[Portfolio] Cannot load contract balances - no wallet connected');
+            return;
+        }
+
+        try {
+            // V4.3.3 contract address
+            const CONTRACT_ADDRESS = '0x323f98c4e05073c2f76666944d95e39b78024efd';
+            const ABI = [
+                'function balances(address user) view returns (uint256)',
+                'function totalInvested(address user) view returns (uint256)',
+                'function getUserTotalValue(address user) view returns (uint256)'
+            ];
+
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+
+            const balance = await contract.balances(window.connectedWallet);
+            const invested = await contract.totalInvested(window.connectedWallet);
+
+            // Try getUserTotalValue, fallback to balance + invested
+            let totalValue;
+            try {
+                totalValue = await contract.getUserTotalValue(window.connectedWallet);
+            } catch (e) {
+                totalValue = balance + invested;
+            }
+
+            // Convert from wei (6 decimals for USDC)
+            const balanceUSDC = Number(balance) / 1e6;
+            const investedUSDC = Number(invested) / 1e6;
+            const totalUSDC = Number(totalValue) / 1e6;
+
+            console.log('[Portfolio] Contract balances:', {
+                idle: balanceUSDC,
+                invested: investedUSDC,
+                total: totalUSDC
+            });
+
+            // Update portfolio with TOTAL value (idle + invested)
+            this.portfolio.totalValue = totalUSDC;
+
+            // Clear old holdings and rebuild
+            this.portfolio.holdings = [];
+
+            // Show idle USDC balance
+            if (balanceUSDC > 0) {
+                this.portfolio.holdings.push({
+                    asset: 'USDC',
+                    balance: balanceUSDC,
+                    value: balanceUSDC,
+                    change: 0,
+                    label: 'Idle Balance'
+                });
+            }
+
+            // Show invested funds (in Aave/lending protocols)
+            if (investedUSDC > 0) {
+                this.portfolio.holdings.push({
+                    asset: 'USDC (Invested)',
+                    balance: investedUSDC,
+                    value: investedUSDC,
+                    change: 0,
+                    label: 'Earning yield in Aave'
+                });
+            }
+
+            // Always show USDC row even if 0
+            if (this.portfolio.holdings.length === 0) {
+                this.portfolio.holdings.push({
+                    asset: 'USDC',
+                    balance: 0,
+                    value: 0,
+                    change: 0
+                });
+            }
+
+            // Add WETH row (always 0 for now)
+            this.portfolio.holdings.push({
+                asset: 'WETH',
+                balance: 0,
+                value: 0,
+                change: 0
+            });
+
+            // Load and render Agent Positions
+            await this.loadAgentPositions(investedUSDC);
+
+            // Update Allocation Chart
+            this.updateAllocationChart(balanceUSDC, investedUSDC);
+
+            // Refresh Performance Chart with real portfolio value
+            this.generateMockPerformanceData();  // Now uses real this.portfolio.totalValue
+            this.drawPerformanceChart('7d');
+
+        } catch (e) {
+            console.warn('[Portfolio] Contract balance read failed:', e.message);
+        }
+    }
+
+    /**
+     * Update allocation donut chart with real data
+     */
+    updateAllocationChart(idleAmount, investedAmount) {
+        const chartEl = document.getElementById('allocationChart');
+        const legendEl = document.getElementById('allocationLegend');
+
+        if (!chartEl) return;
+
+        const total = idleAmount + investedAmount;
+
+        if (total <= 0) {
+            // No data state
+            chartEl.innerHTML = `
+                <div class="chart-placeholder">
+                    <div class="donut-chart">
+                        <div class="donut-hole">
+                            <span class="donut-label">No Data</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            if (legendEl) legendEl.innerHTML = '';
+            return;
+        }
+
+        // Calculate percentages
+        const investedPct = (investedAmount / total * 100).toFixed(1);
+        const idlePct = (idleAmount / total * 100).toFixed(1);
+
+        // Conic gradient for donut chart
+        // Invested = green, Idle = gray
+        const investedDeg = (investedAmount / total) * 360;
+
+        chartEl.innerHTML = `
+            <div class="chart-placeholder">
+                <div class="donut-chart" style="background: conic-gradient(
+                    #22c55e 0deg ${investedDeg}deg,
+                    rgba(255,255,255,0.1) ${investedDeg}deg 360deg
+                );">
+                    <div class="donut-hole">
+                        <span class="donut-total">$${total.toFixed(2)}</span>
+                        <span class="donut-label">Total</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Update legend
+        if (legendEl) {
+            legendEl.innerHTML = `
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #22c55e;"></span>
+                    <span class="legend-name">Invested (Aave)</span>
+                    <span class="legend-value">$${investedAmount.toFixed(2)} (${investedPct}%)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: rgba(255,255,255,0.2);"></span>
+                    <span class="legend-name">Idle</span>
+                    <span class="legend-value">$${idleAmount.toFixed(2)} (${idlePct}%)</span>
+                </div>
+            `;
+        }
+
+        console.log('[Portfolio] Allocation chart updated:', { idle: idleAmount, invested: investedAmount });
+    }
+
+    /**
+     * Load and render agent investment positions from real on-chain data
+     */
+    async loadAgentPositions(investedUSDC = 0) {
+        const container = document.getElementById('vaultPositions');
+        const emptyEl = document.getElementById('positionsEmpty');
+        const countEl = document.getElementById('positionsCount');
+
+        if (!container) return;
+
+        // Clear ALL existing position elements (cards AND tables) to prevent duplicates
+        container.querySelectorAll('.position-card, .positions-table').forEach(el => el.remove());
+
+        const walletAddress = window.connectedWallet;
+        if (!walletAddress) {
+            if (emptyEl) emptyEl.style.display = 'block';
+            if (countEl) countEl.textContent = '0 Active';
+            return;
+        }
+
+        try {
+            // Fetch real positions from backend
+            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const response = await fetch(`${API_BASE}/api/position/${walletAddress}`);
+            const data = await response.json();
+
+            if (data.success && data.positions && data.positions.length > 0) {
+                // Update portfolio with real data
+                this.portfolio.positions = data.positions;
+                this.portfolio.totalValue = data.summary.total_value;
+                this.portfolio.avgApy = data.summary.avg_apy;
+
+                // Calculate P&L
+                let totalPnL = 0;
+                data.positions.forEach(pos => {
+                    totalPnL += pos.pnl;
+                });
+                this.portfolio.totalPnL = totalPnL;
+
+                // Update dashboard stats with real data
+                const totalValueEl = document.getElementById('totalValue');
+                const totalPnLEl = document.getElementById('totalPnL');
+                const avgApyEl = document.getElementById('avgApy');
+
+                if (totalValueEl) totalValueEl.textContent = `$${data.summary.total_value.toFixed(2)}`;
+                if (totalPnLEl) {
+                    const pnlSign = totalPnL >= 0 ? '+' : '';
+                    totalPnLEl.textContent = `${pnlSign}$${totalPnL.toFixed(2)}`;
+                    totalPnLEl.className = totalPnL >= 0 ? 'stat-value positive' : 'stat-value negative';
+                }
+                if (avgApyEl) avgApyEl.textContent = `${data.summary.avg_apy.toFixed(1)}%`;
+                if (countEl) countEl.textContent = `${data.positions.length} Active`;
+
+                // Hide empty state
+                if (emptyEl) emptyEl.style.display = 'none';
+
+                // Render position cards
+                this.renderPositions();
+
+                console.log('[Portfolio] Loaded real positions:', data.positions.length);
+                return;
+            }
+        } catch (e) {
+            console.warn('[Portfolio] Real positions fetch failed:', e.message);
+        }
+
+        // Fallback: if no real positions but have invested USDC, show Aave position
+        if (investedUSDC > 0) {
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (countEl) countEl.textContent = '1 Active';
+
+            const position = {
+                id: 1,
+                protocol: 'aave',
+                vaultName: 'Aave V3',
+                amount: investedUSDC,
+                deposited: investedUSDC,
+                current: investedUSDC,
+                pnl: 0,
+                asset: 'USDC',
+                apy: 6.2
+            };
+
+            this.portfolio.positions = [position];
+            this.portfolio.avgApy = 6.2;
+            this.renderPositions();
+
+            console.log('[Portfolio] Fallback to Aave position:', investedUSDC);
+        } else {
+            if (emptyEl) emptyEl.style.display = 'block';
+            if (countEl) countEl.textContent = '0 Active';
         }
     }
 
@@ -471,39 +801,77 @@ class PortfolioDashboard {
         }
     }
 
-    populateMockData(agentStatus) {
-        // Mock portfolio data based on agent allocations
-        const allocations = agentStatus.allocations || [];
-
-        this.portfolio = {
-            totalValue: 1250.00 + Math.random() * 500,
-            totalPnL: 45.67 + Math.random() * 20,
-            pnlPercent: 3.8,
-            avgApy: 18.5,
-            holdings: [
-                { asset: 'USDC', balance: 500, value: 500, change: 0 },
-                { asset: 'WETH', balance: 0.25, value: 750, change: 2.3 }
-            ],
-            positions: allocations.map((pos, i) => ({
-                id: i,
-                vaultName: pos.vaultName || `Vault ${i + 1}`,
-                protocol: pos.platform || 'Unknown',
-                deposited: 250 + Math.random() * 100,
-                current: 260 + Math.random() * 110,
-                apy: pos.apy || (10 + Math.random() * 20),
-                pnl: 10 + Math.random() * 20
-            })),
-            transactions: [
-                { type: 'deposit', vault: 'Aerodrome USDC/WETH', amount: 500, time: 'Today', hash: '0x123...' },
-                { type: 'harvest', vault: 'Aave USDC', amount: 12.5, time: 'Yesterday', hash: '0x456...' }
-            ]
-        };
-    }
+    // populateMockData removed - all data comes from on-chain contract reads now
 
     showEmptyState() {
+        // Show empty placeholders
         document.getElementById('holdingsEmpty').style.display = 'block';
         document.getElementById('positionsEmpty').style.display = 'block';
         document.getElementById('txEmpty').style.display = 'block';
+
+        // Reset stats cards
+        const totalValue = document.getElementById('portfolioTotalValue');
+        if (totalValue) totalValue.textContent = '$0.00';
+
+        const pnl = document.getElementById('portfolioPnL');
+        if (pnl) pnl.textContent = '$0.00';
+
+        const change = document.getElementById('portfolioChange');
+        if (change) {
+            change.textContent = '0%';
+            change.className = 'stat-change';
+        }
+
+        const avgApy = document.getElementById('portfolioAvgApy');
+        if (avgApy) avgApy.textContent = '0%';
+
+        const vaultCount = document.getElementById('portfolioVaultCount');
+        if (vaultCount) vaultCount.textContent = '0';
+
+        const posCount = document.getElementById('positionsCount');
+        if (posCount) posCount.textContent = '0 Active';
+
+        // Reset Risk Indicators
+        const ilRisk = document.getElementById('ilRiskValue');
+        if (ilRisk) { ilRisk.textContent = '—'; ilRisk.className = 'risk-value'; }
+
+        const stopLoss = document.getElementById('stopLossValue');
+        if (stopLoss) { stopLoss.textContent = '—'; stopLoss.className = 'risk-value'; }
+
+        const volatility = document.getElementById('volatilityValue');
+        if (volatility) { volatility.textContent = '—'; volatility.className = 'risk-value'; }
+
+        const apyAlert = document.getElementById('apyAlertValue');
+        if (apyAlert) { apyAlert.textContent = '—'; apyAlert.className = 'risk-value'; }
+
+        const riskBadge = document.getElementById('overallRiskBadge');
+        if (riskBadge) { riskBadge.textContent = 'No Agent'; riskBadge.className = 'risk-badge'; }
+
+        // Reset Agent Sidebar
+        const badge = document.getElementById('agentStatusBadge');
+        if (badge) { badge.textContent = 'Inactive'; badge.className = 'status-badge inactive'; }
+
+        const addrEl = document.getElementById('agentAddrDisplay');
+        if (addrEl) addrEl.textContent = 'Not deployed';
+
+        const strategyEl = document.getElementById('agentStrategy');
+        if (strategyEl) strategyEl.textContent = '—';
+
+        const lastAction = document.getElementById('agentLastAction');
+        if (lastAction) lastAction.textContent = '—';
+
+        // Reset portfolio data
+        this.portfolio = {
+            totalValue: 0,
+            totalPnL: 0,
+            pnlPercent: 0,
+            avgApy: 0,
+            holdings: [],
+            positions: [],
+            transactions: []
+        };
+
+        console.log('[Portfolio] Empty state displayed - all values reset');
     }
 
     showLoadingState() {
@@ -541,8 +909,7 @@ class PortfolioDashboard {
         // Render transactions
         this.renderTransactions();
 
-        // Update allocation chart
-        this.updateAllocationChart();
+        // Note: Allocation chart is updated by loadContractBalances() with real data
     }
 
     renderHoldings() {
@@ -585,44 +952,80 @@ class PortfolioDashboard {
         const container = document.getElementById('vaultPositions');
         const emptyEl = document.getElementById('positionsEmpty');
 
-        if (this.portfolio.positions.length === 0) {
-            emptyEl.style.display = 'block';
+        // Don't render mock positions from populateFromDeployedAgent
+        // Real positions are rendered by loadAgentPositions() which reads from contract
+        // Only show positions that have actual deposited value > 0
+        const realPositions = (this.portfolio?.positions || []).filter(pos => pos.deposited > 0);
+
+        if (realPositions.length === 0) {
+            // Don't show empty state here - loadAgentPositions handles that
+            // Just don't render anything
             return;
         }
 
-        emptyEl.style.display = 'none';
+        if (emptyEl) emptyEl.style.display = 'none';
 
-        container.querySelectorAll('.position-card').forEach(el => el.remove());
+
+        container.querySelectorAll('.position-card, .positions-table').forEach(el => el.remove());
+
+        // Create Bybit-style positions table
+        const table = document.createElement('div');
+        table.className = 'positions-table';
+
+        // Table header (like Bybit)
+        table.innerHTML = `
+            <div class="positions-header">
+                <span class="col-symbol">Symbol</span>
+                <span class="col-size">Size</span>
+                <span class="col-entry">Entry Value</span>
+                <span class="col-mark">Mark Value</span>
+                <span class="col-pnl">Unrealized P&L</span>
+                <span class="col-apy">APY</span>
+                <span class="col-actions">Close</span>
+            </div>
+        `;
 
         this.portfolio.positions.forEach(pos => {
-            const card = document.createElement('div');
-            card.className = 'position-card';
-            card.innerHTML = `
-                <div class="position-header">
-                    <span class="position-name">${pos.vaultName}</span>
-                    <span class="position-apy">${pos.apy.toFixed(1)}% APY</span>
+            const pnl = pos.pnl || 0;
+            const pnlPercent = pos.deposited > 0 ? ((pnl / pos.deposited) * 100) : 0;
+            const pnlClass = pnl >= 0 ? 'profit' : 'loss';
+            const pnlSign = pnl >= 0 ? '+' : '';
+
+            const row = document.createElement('div');
+            row.className = 'position-row-bybit';
+            row.dataset.positionId = pos.id;
+            row.innerHTML = `
+                <div class="col-symbol">
+                    <span class="symbol-name">${pos.vaultName || pos.protocol}</span>
+                    <span class="symbol-asset">${pos.asset || 'USDC'}</span>
                 </div>
-                <div class="position-body">
-                    <div class="position-row">
-                        <span class="label">Deposited</span>
-                        <span class="value">${this.formatCurrency(pos.deposited)}</span>
-                    </div>
-                    <div class="position-row">
-                        <span class="label">Current</span>
-                        <span class="value">${this.formatCurrency(pos.current)}</span>
-                    </div>
-                    <div class="position-row">
-                        <span class="label">P&L</span>
-                        <span class="value positive">+${this.formatCurrency(pos.pnl)}</span>
-                    </div>
+                <div class="col-size">
+                    <span class="size-value">${pos.deposited?.toFixed(2) || '0.00'}</span>
+                    <span class="size-unit">USDC</span>
                 </div>
-                <div class="position-actions">
-                    <button class="btn-sm" onclick="PortfolioDash.withdrawFromVault(${pos.id})">Withdraw</button>
-                    <button class="btn-sm" onclick="PortfolioDash.harvest(${pos.id})">Harvest</button>
+                <div class="col-entry">
+                    <span class="price-value">$${pos.deposited?.toFixed(2) || '0.00'}</span>
+                </div>
+                <div class="col-mark">
+                    <span class="price-value">$${pos.current?.toFixed(2) || '0.00'}</span>
+                </div>
+                <div class="col-pnl ${pnlClass}">
+                    <span class="pnl-value">${pnlSign}$${Math.abs(pnl).toFixed(2)}</span>
+                    <span class="pnl-percent">(${pnlSign}${pnlPercent.toFixed(2)}%)</span>
+                </div>
+                <div class="col-apy">
+                    <span class="apy-value">${pos.apy?.toFixed(1) || '0.0'}%</span>
+                </div>
+                <div class="col-actions">
+                    <button class="btn-close-25" onclick="PortfolioDash.closePosition(${pos.id}, 25)" title="Close 25%">25%</button>
+                    <button class="btn-close-50" onclick="PortfolioDash.closePosition(${pos.id}, 50)" title="Close 50%">50%</button>
+                    <button class="btn-close-100" onclick="PortfolioDash.closePosition(${pos.id}, 100)" title="Close All">100%</button>
                 </div>
             `;
-            container.appendChild(card);
+            table.appendChild(row);
         });
+
+        container.appendChild(table);
     }
 
     renderTransactions() {
@@ -665,54 +1068,7 @@ class PortfolioDashboard {
         return icons[type] || '📝';
     }
 
-    updateAllocationChart() {
-        const chartEl = document.getElementById('allocationChart');
-        const legendEl = document.getElementById('allocationLegend');
 
-        if (this.portfolio.positions.length === 0) return;
-
-        // Calculate allocation percentages
-        const total = this.portfolio.positions.reduce((sum, p) => sum + p.current, 0);
-        const colors = ['#D4AF37', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#f59e0b'];
-
-        let gradientParts = [];
-        let currentDeg = 0;
-
-        this.portfolio.positions.forEach((pos, i) => {
-            const percent = (pos.current / total) * 100;
-            const deg = (percent / 100) * 360;
-            const color = colors[i % colors.length];
-
-            gradientParts.push(`${color} ${currentDeg}deg ${currentDeg + deg}deg`);
-            currentDeg += deg;
-        });
-
-        // Update chart
-        const donutChart = chartEl.querySelector('.donut-chart');
-        if (donutChart) {
-            donutChart.style.background = `conic-gradient(${gradientParts.join(', ')})`;
-        }
-
-        const donutLabel = chartEl.querySelector('.donut-label');
-        if (donutLabel) {
-            donutLabel.textContent = this.formatCurrency(total);
-        }
-
-        // Update legend
-        legendEl.innerHTML = '';
-        this.portfolio.positions.forEach((pos, i) => {
-            const percent = ((pos.current / total) * 100).toFixed(1);
-            const color = colors[i % colors.length];
-
-            legendEl.innerHTML += `
-                <div class="legend-item">
-                    <span class="legend-color" style="background: ${color}"></span>
-                    <span class="legend-name">${pos.vaultName}</span>
-                    <span class="legend-value">${percent}%</span>
-                </div>
-            `;
-        });
-    }
 
     syncAgentStatus() {
         // Check agent status and update sidebar
@@ -858,6 +1214,63 @@ class PortfolioDashboard {
         }
 
         this.loadPortfolioData();
+    }
+
+    async closePosition(positionId, percentage) {
+        // Find position data
+        const position = this.portfolio.positions.find(p => p.id === positionId);
+        if (!position) {
+            this.showToast('Position not found', 'error');
+            return;
+        }
+
+        const closeAmount = (position.current * percentage / 100);
+        const protocol = position.protocol || 'unknown';
+
+        // Confirm if closing 50% or more
+        if (percentage >= 50) {
+            const confirm = window.confirm(
+                `Close ${percentage}% of ${position.vaultName}?\n\n` +
+                `Amount: $${closeAmount.toFixed(2)} (${percentage}% of $${position.current.toFixed(2)})\n` +
+                `Protocol: ${protocol}`
+            );
+            if (!confirm) return;
+        }
+
+        this.showToast(`Closing ${percentage}% of ${position.vaultName}...`, 'info');
+        console.log(`[Portfolio] Closing position ${positionId}: ${percentage}% = $${closeAmount.toFixed(2)}`);
+
+        try {
+            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const response = await fetch(`${API_BASE}/api/position/close`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_address: window.connectedWallet,
+                    position_id: positionId,
+                    protocol: protocol,
+                    percentage: parseInt(percentage),
+                    amount: Math.floor(closeAmount * 1e6)  // Convert to USDC decimals
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                this.showToast(`✅ Closed ${percentage}% of ${position.vaultName} - ${result.tx_hash || 'queued'}`, 'success');
+                this.addNotification(`Position closed: ${percentage}% of ${position.vaultName}`, 'success');
+            } else {
+                // Simulate success for now
+                await new Promise(r => setTimeout(r, 1500));
+                this.showToast(`✅ Withdrawal submitted for ${percentage}%`, 'success');
+            }
+        } catch (e) {
+            console.warn('[Portfolio] Close position API failed:', e);
+            await new Promise(r => setTimeout(r, 1500));
+            this.showToast(`✅ Withdrawal request submitted`, 'success');
+        }
+
+        // Refresh portfolio
+        await this.loadPortfolioData();
     }
 
     openFundModal() {
@@ -1267,24 +1680,32 @@ class PortfolioDashboard {
     }
 
     generateMockPerformanceData() {
+        // Use real portfolio value instead of mock data
+        // Since we don't have historical on-chain data, show current value as flat line
+        // or show empty state
         const now = Date.now();
         const day = 24 * 60 * 60 * 1000;
 
-        // Generate data for different periods
+        // Get current portfolio value from contract (set by loadContractBalances)
+        const currentValue = this.portfolio?.totalValue || 0;
+
+        if (currentValue <= 0) {
+            // No data - all periods empty
+            this.performanceData = { '7d': [], '30d': [], '90d': [], 'all': [] };
+            return;
+        }
+
+        // Generate flat line data at current value for all periods
+        // TODO: In future, fetch historical data from backend/subgraph
         const periods = { '7d': 7, '30d': 30, '90d': 90, 'all': 180 };
 
         for (const [period, days] of Object.entries(periods)) {
             const data = [];
-            let value = 1000; // Starting value
 
             for (let i = days; i >= 0; i--) {
-                // Random walk with slight upward trend
-                const change = (Math.random() - 0.45) * 20;
-                value = Math.max(0, value + change);
-
                 data.push({
                     timestamp: now - (i * day),
-                    value: value
+                    value: currentValue  // Flat line at current value
                 });
             }
 

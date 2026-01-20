@@ -17,7 +17,7 @@ class AgentBuilderUI {
 
             // Risk & Returns
             riskLevel: 'medium',
-            minApy: 10,
+            minApy: 5,
             maxApy: 50,
             maxDrawdown: 20,
 
@@ -60,7 +60,7 @@ class AgentBuilderUI {
             },
             'balanced-growth': {
                 riskLevel: 'medium',
-                minApy: 10, maxApy: 50, maxDrawdown: 20,
+                minApy: 5, maxApy: 50, maxDrawdown: 20,
                 protocols: ['morpho', 'aave', 'moonwell', 'aerodrome'],
                 preferredAssets: ['USDC', 'WETH'],
                 vaultCount: 5, avoidIL: true, onlyAudited: true

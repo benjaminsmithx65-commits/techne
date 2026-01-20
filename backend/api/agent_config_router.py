@@ -10,11 +10,37 @@ from datetime import datetime
 import json
 import os
 
+# Auto-whitelist service for V4.3.2
+from services.whitelist_service import get_whitelist_service
+
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-# In-memory storage: user_address -> list of agents (max 5)
-DEPLOYED_AGENTS = {}
+# Storage file for persistence across restarts
+AGENTS_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "deployed_agents.json")
 MAX_AGENTS_PER_WALLET = 5
+
+def _load_agents() -> dict:
+    """Load agents from file"""
+    try:
+        if os.path.exists(AGENTS_FILE):
+            with open(AGENTS_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[AgentConfig] Failed to load agents: {e}")
+    return {}
+
+def _save_agents(agents: dict):
+    """Save agents to file"""
+    try:
+        os.makedirs(os.path.dirname(AGENTS_FILE), exist_ok=True)
+        with open(AGENTS_FILE, "w") as f:
+            json.dump(agents, f, indent=2)
+    except Exception as e:
+        print(f"[AgentConfig] Failed to save agents: {e}")
+
+# Load agents on startup
+DEPLOYED_AGENTS = _load_agents()
+print(f"[AgentConfig] Loaded {sum(len(v) for v in DEPLOYED_AGENTS.values())} agents from file")
 
 
 class ProConfig(BaseModel):
@@ -110,6 +136,17 @@ async def deploy_agent(request: AgentDeployRequest):
         # Add to user's agents list
         user_agents.append(agent_data)
         DEPLOYED_AGENTS[request.user_address] = user_agents
+        _save_agents(DEPLOYED_AGENTS)  # Persist to file
+        
+        # AUTO-WHITELIST on V4.3.2 contract
+        whitelist_result = {"success": False, "message": "Whitelist not attempted"}
+        try:
+            whitelist_svc = get_whitelist_service()
+            whitelist_result = whitelist_svc.whitelist_user(request.user_address)
+            print(f"[AgentConfig] Whitelist result for {request.user_address}: {whitelist_result}")
+        except Exception as wl_error:
+            print(f"[AgentConfig] Whitelist error (non-fatal): {wl_error}")
+            whitelist_result = {"success": False, "message": str(wl_error)}
         
         print(f"[AgentConfig] Agent {agent_id} deployed for {request.user_address}")
         print(f"[AgentConfig] Total agents for user: {len(user_agents)}")
@@ -120,7 +157,8 @@ async def deploy_agent(request: AgentDeployRequest):
             "agent_address": request.agent_address,
             "message": "Agent deployed successfully",
             "config": agent_data,
-            "total_agents": len(user_agents)
+            "total_agents": len(user_agents),
+            "whitelist": whitelist_result  # Include whitelist status in response
         }
         
     except HTTPException:
@@ -173,6 +211,7 @@ async def stop_agent(user_address: str, agent_id: str):
     
     agent["is_active"] = False
     agent["stopped_at"] = datetime.utcnow().isoformat()
+    _save_agents(DEPLOYED_AGENTS)  # Persist to file
     
     return {
         "success": True,
@@ -201,6 +240,7 @@ async def delete_agent(user_address: str, agent_id: str):
     # Remove agent
     user_agents.remove(agent)
     DEPLOYED_AGENTS[user_address] = user_agents
+    _save_agents(DEPLOYED_AGENTS)  # Persist to file
     
     print(f"[AgentConfig] Agent {agent_id} deleted for {user_address}")
     

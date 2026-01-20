@@ -7,20 +7,32 @@ Update here after deploying new contracts
 import os
 
 # ============================================
-# V2 CONTRACT (After deploy-v2.js)
+# V4 CONTRACT - INDIVIDUAL MODEL (After deploy-v4.js)
 # ============================================
 
-# V2 CONTRACT - DEPLOYED!
-AGENT_WALLET_V2_ADDRESS = os.environ.get(
-    "AGENT_WALLET_V2_ADDRESS",
-    "0x8df33b5b58212f16519ce86e810be2e8232df305"
+# V4 CONTRACT - DEPLOYED (with $1 min deposit)
+AGENT_WALLET_V4_ADDRESS = os.environ.get(
+    "AGENT_WALLET_V4_ADDRESS",
+    "0x360455d8c1bfee9d471d69026eed972997714903"
 )
+
+# V4.3.2 CONTRACT - PRODUCTION (Flash Loan, Cross-Asset, Sequencer Check)
+AGENT_WALLET_V43_ADDRESS = os.environ.get(
+    "AGENT_WALLET_V43_ADDRESS",
+    "0x323f98c4e05073c2f76666944d95e39b78024efd"
+)
+
+# V3 Legacy (shared vault model)
+AGENT_WALLET_V3_ADDRESS = "0xc590baaf11cd64c5477181950a98a7e4dcc78c88"
+
+# V2 Legacy (exploited - do not use)
+AGENT_WALLET_V2_ADDRESS = "0x8df33b5b58212f16519ce86e810be2e8232df305"
 
 # V1 Legacy (keep for reference)
 AGENT_WALLET_V1_ADDRESS = "0x567D1Fc55459224132aB5148c6140E8900f9a607"
 
-# Active version
-AGENT_WALLET_ADDRESS = AGENT_WALLET_V2_ADDRESS
+# Active version - V4.3.2 Production (Change here to switch versions)
+AGENT_WALLET_ADDRESS = AGENT_WALLET_V43_ADDRESS
 
 # ============================================
 # TOKEN ADDRESSES (Base Mainnet)

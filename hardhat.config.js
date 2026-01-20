@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "@nomicfoundation/hardhat-toolbox";
 
 /** @type import('hardhat/config').HardhatUserConfig */
 export default {
@@ -8,7 +9,8 @@ export default {
             optimizer: {
                 enabled: true,
                 runs: 200
-            }
+            },
+            viaIR: true  // Enables IR-based code generation to avoid stack too deep
         }
     },
     networks: {

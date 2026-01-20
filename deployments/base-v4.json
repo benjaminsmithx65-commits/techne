@@ -1,0 +1,23 @@
+{
+  "network": "base",
+  "contract": "TechneAgentWalletV4",
+  "version": "4.0.0",
+  "model": "individual",
+  "address": "0x360455d8c1bfee9d471d69026eed972997714903",
+  "deployer": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+  "txHash": "0xcdb22bc0ce801e2bec9a408cf2d32226e933f0ddbaebbf01aebf9228105114f4",
+  "timestamp": "2026-01-17T13:06:39.220Z",
+  "config": {
+    "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "ADMIN": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+    "AGENT": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+    "GUARDIAN": "0xa30A689ec0F9D717C5bA1098455B031b868B720f"
+  },
+  "features": [
+    "per-user-balance",
+    "per-user-investments",
+    "individual-withdraw",
+    "protocol-whitelist",
+    "mev-protection"
+  ]
+}

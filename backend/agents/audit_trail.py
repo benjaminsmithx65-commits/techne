@@ -27,6 +27,7 @@ class ActionType(Enum):
     AGENT_PAUSE = "agent_pause"
     POOL_DISCOVERY = "pool_discovery"
     RISK_ALERT = "risk_alert"
+    EMERGENCY_EXIT = "emergency_exit"  # Triggered by max_drawdown
 
 
 @dataclass

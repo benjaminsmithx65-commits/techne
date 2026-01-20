@@ -1,0 +1,31 @@
+{
+  "version": "V4.3.2",
+  "address": "0x323f98c4e05073c2f76666944d95e39b78024efd",
+  "deployer": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+  "txHash": "0xa0c2d61f0f39b43752a1211c7065608c506d96e6930ed1ca7801959ecec954d2",
+  "network": "base",
+  "chainId": 8453,
+  "timestamp": "2026-01-18T19:03:22.482Z",
+  "gasUsed": "3374778",
+  "constructor": {
+    "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "weth": "0x4200000000000000000000000000000000000006",
+    "admin": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+    "agent": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+    "guardian": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+    "priceOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
+    "sequencerFeed": "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",
+    "aavePool": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+    "dexRouter": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+    "dexFactory": "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"
+  },
+  "features": [
+    "Flash Loan Deleverage",
+    "Cross-Asset Swap (multi-hop)",
+    "L2 Sequencer Check",
+    "Health Factor Monitoring",
+    "Rebalance Hysteresis (4h cooldown)",
+    "Fee-on-Transfer Safe",
+    "Signature Replay Protection"
+  ]
+}

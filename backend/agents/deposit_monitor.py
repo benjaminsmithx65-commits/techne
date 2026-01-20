@@ -47,10 +47,10 @@ class DepositMonitor:
         # Track last known balances
         self.last_balances: Dict[str, Dict[str, int]] = {}
         
-        # RPC
+        # RPC - use public Base RPC or env override
         self.rpc_url = os.getenv(
             "ALCHEMY_RPC_URL",
-            "https://base-mainnet.g.alchemy.com/v2/demo"
+            "https://mainnet.base.org"  # Public Base RPC (no rate limits)
         )
         self.w3 = None
     
@@ -85,10 +85,12 @@ class DepositMonitor:
         except ImportError:
             return
         
-        active_agents = [
-            agent for agent in DEPLOYED_AGENTS.values()
-            if agent.get("is_active", False)
-        ]
+        # DEPLOYED_AGENTS is {user_address: [list of agents]}
+        active_agents = []
+        for user_agents in DEPLOYED_AGENTS.values():
+            for agent in user_agents:
+                if agent.get("is_active", False):
+                    active_agents.append(agent)
         
         for agent in active_agents:
             await self.check_agent_balance(agent)
@@ -134,8 +136,11 @@ class DepositMonitor:
         balances = {}
         
         try:
+            # Ensure address is checksum formatted
+            checksum_address = Web3.to_checksum_address(address)
+            
             # ETH balance
-            eth_balance = w3.eth.get_balance(address)
+            eth_balance = w3.eth.get_balance(checksum_address)
             balances["ETH"] = eth_balance
             
             # ERC20 balances

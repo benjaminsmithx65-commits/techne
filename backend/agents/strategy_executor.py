@@ -60,15 +60,41 @@ class StrategyExecutor:
         self.execution_interval = 300  # 5 minutes
         self.last_execution: Dict[str, datetime] = {}
         
-        # Smart contract config
+        # Smart contract config - V4.3.2 PRODUCTION
         self.wallet_contract = os.getenv(
             "AGENT_WALLET_ADDRESS", 
-            "0x567D1Fc55459224132aB5148c6140E8900f9a607"
+            "0x323f98c4e05073c2f76666944d95e39b78024efd"  # V4.3.3
         )
         self.rpc_url = os.getenv(
             "ALCHEMY_RPC_URL",
-            "https://base-mainnet.g.alchemy.com/v2/demo"
+            "https://mainnet.base.org"
         )
+        
+        # V4 ABI for executeStrategy
+        self.v4_abi = [
+            {
+                "inputs": [
+                    {"name": "user", "type": "address"},
+                    {"name": "protocol", "type": "address"},
+                    {"name": "amount", "type": "uint256"},
+                    {"name": "data", "type": "bytes"}
+                ],
+                "name": "executeStrategy",
+                "outputs": [
+                    {"name": "success", "type": "bool"},
+                    {"name": "result", "type": "bytes"}
+                ],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "user", "type": "address"}],
+                "name": "balances",
+                "outputs": [{"type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ]
     
     async def start(self):
         """Start the executor loop"""
@@ -362,87 +388,163 @@ class StrategyExecutor:
         
         return selected
     
-    async def execute_allocation(self, agent: dict, amount_usdc: float) -> Dict:
+    async def execute_v4_strategy(
+        self, 
+        user_address: str, 
+        protocol_address: str, 
+        amount_usdc: float,
+        call_data: bytes = b""
+    ) -> Dict:
         """
-        Execute real on-chain allocation to recommended pools
+        Execute strategy on V4 contract for a specific user.
+        
+        V4 Individual Model:
+        - Moves funds from balances[user] to investments[user][protocol]
+        - Each user's funds tracked separately
         
         Args:
-            agent: Agent config with recommended_pools
+            user_address: User whose funds to allocate
+            protocol_address: DeFi protocol to allocate to
+            amount_usdc: Amount in USDC (6 decimals)
+            call_data: Encoded call data for the protocol
+        """
+        try:
+            from web3 import Web3
+            
+            agent_private_key = os.getenv("AGENT_PRIVATE_KEY")
+            if not agent_private_key:
+                return {"success": False, "error": "AGENT_PRIVATE_KEY not set"}
+            
+            w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+            contract = w3.eth.contract(
+                address=Web3.to_checksum_address(self.wallet_contract),
+                abi=self.v4_abi
+            )
+            
+            # Check user's free balance first
+            user_balance = contract.functions.balances(
+                Web3.to_checksum_address(user_address)
+            ).call()
+            
+            amount_wei = int(amount_usdc * 1e6)  # USDC has 6 decimals
+            
+            if user_balance < amount_wei:
+                return {
+                    "success": False, 
+                    "error": f"Insufficient balance: {user_balance/1e6:.2f} USDC < {amount_usdc:.2f} USDC"
+                }
+            
+            # Build transaction
+            account = w3.eth.account.from_key(agent_private_key)
+            
+            tx = contract.functions.executeStrategy(
+                Web3.to_checksum_address(user_address),
+                Web3.to_checksum_address(protocol_address),
+                amount_wei,
+                call_data
+            ).build_transaction({
+                "from": account.address,
+                "gas": 500000,
+                "gasPrice": w3.eth.gas_price,
+                "nonce": w3.eth.get_transaction_count(account.address)
+            })
+            
+            # Sign and send
+            signed = account.sign_transaction(tx)
+            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+            
+            print(f"[StrategyExecutor] V4 executeStrategy TX: {tx_hash.hex()}")
+            
+            # Wait for receipt
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            return {
+                "success": receipt.status == 1,
+                "tx_hash": tx_hash.hex(),
+                "user": user_address,
+                "protocol": protocol_address,
+                "amount": amount_usdc,
+                "gas_used": receipt.gasUsed
+            }
+            
+        except Exception as e:
+            print(f"[StrategyExecutor] V4 execution error: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def execute_allocation(self, agent: dict, amount_usdc: float) -> Dict:
+        """
+        Execute real on-chain allocation to recommended pools using V4 contract.
+        
+        V4 calls executeStrategy(user, protocol, amount, data) for each pool.
+        
+        Args:
+            agent: Agent config with recommended_pools and user_address
             amount_usdc: Total USDC amount to allocate
             
         Returns:
             Execution result with tx hashes
         """
-        if not onchain_executor or not execute_lp_entry:
-            return {"success": False, "error": "On-chain executor not available"}
+        user_address = agent.get("user_address")
+        if not user_address:
+            return {"success": False, "error": "Agent has no user_address"}
         
         recommended = agent.get("recommended_pools", [])
         if not recommended:
             return {"success": False, "error": "No recommended pools"}
         
-        # Get agent private key (SECURITY: In production, use secure vault)
-        private_key = agent.get("_private_key")
-        if not private_key:
-            # For now, mark as needing key
-            agent["needs_execution"] = True
-            agent["pending_amount"] = amount_usdc
-            return {"success": False, "error": "Agent private key not configured"}
+        # Protocol addresses for single-sided lending
+        PROTOCOL_ADDRESSES = {
+            "aave": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+            "aave-v3": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+            "compound": "0x46e6b214b524310239732D51387075E0e70970bf",
+            "compound-v3": "0x46e6b214b524310239732D51387075E0e70970bf",
+            "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+            "morpho-blue": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+            "moonwell": "0xfBb21d0380bEE3312B33c4353c8936a0F13EF26C",
+        }
         
         results = []
         allocation_per_pool = amount_usdc / len(recommended)
         
         for pool in recommended:
             symbol = pool.get("symbol", "")
-            is_lp = any(sep in symbol for sep in ["-", "/"])
+            project = (pool.get("project") or "").lower()
             
-            if is_lp:
-                # Extract second token from LP pair
-                tokens = symbol.replace(" / ", "/").replace("-", "/").split("/")
-                if len(tokens) >= 2:
-                    token_b = tokens[1].strip().upper()
-                    stable = pool.get("stablecoin", False)
-                    
-                    print(f"[StrategyExecutor] Allocating ${allocation_per_pool:.2f} to {symbol}")
-                    
-                    result = await execute_lp_entry(
-                        token_b=token_b,
-                        usdc_amount=allocation_per_pool,
-                        stable=stable,
-                        private_key=private_key
-                    )
-                    results.append({
-                        "pool": symbol,
-                        "amount": allocation_per_pool,
-                        "result": result
-                    })
-            else:
-                # Single-sided pool - use lending executor
-                protocol = pool.get("project", "").lower()
-                
-                if supply_to_lending:
-                    print(f"[StrategyExecutor] Supplying ${allocation_per_pool:.2f} to {symbol} ({protocol})")
-                    
-                    # Determine token from symbol (e.g., "USDC" or "USDC lending")
-                    token = symbol.split()[0].upper() if symbol else "USDC"
-                    
-                    result = await supply_to_lending(
-                        protocol=protocol,
-                        token=token,
-                        amount_usd=allocation_per_pool,
-                        private_key=private_key
-                    )
-                    results.append({
-                        "pool": symbol,
-                        "protocol": protocol,
-                        "amount": allocation_per_pool,
-                        "result": result
-                    })
-                else:
-                    results.append({
-                        "pool": symbol,
-                        "amount": allocation_per_pool,
-                        "result": {"success": False, "error": "Lending executor not available"}
-                    })
+            # Get protocol address
+            protocol_address = PROTOCOL_ADDRESSES.get(project)
+            if not protocol_address:
+                # Try partial match
+                for key, addr in PROTOCOL_ADDRESSES.items():
+                    if key in project:
+                        protocol_address = addr
+                        break
+            
+            if not protocol_address:
+                print(f"[StrategyExecutor] Unknown protocol: {project}, skipping")
+                results.append({
+                    "pool": symbol,
+                    "protocol": project,
+                    "amount": allocation_per_pool,
+                    "result": {"success": False, "error": f"Unknown protocol: {project}"}
+                })
+                continue
+            
+            print(f"[StrategyExecutor] V4 allocating ${allocation_per_pool:.2f} for {user_address[:10]}... to {symbol}")
+            
+            # Execute via V4 contract
+            result = await self.execute_v4_strategy(
+                user_address=user_address,
+                protocol_address=protocol_address,
+                amount_usdc=allocation_per_pool,
+                call_data=b""  # Protocol-specific calldata would be encoded here
+            )
+            
+            results.append({
+                "pool": symbol,
+                "protocol": project,
+                "amount": allocation_per_pool,
+                "result": result
+            })
         
         # Update agent with execution results
         agent["last_execution"] = datetime.utcnow().isoformat()

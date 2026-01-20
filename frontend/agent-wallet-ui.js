@@ -1,12 +1,12 @@
 /**
  * Techne Agent Wallet UI
- * V2 - Institutional Grade Security
+ * V4.3.2 - Production with Flash Loan Deleverage, Cross-Asset Swap, Sequencer Check
  */
 
 const AgentWalletUI = {
-    // Contract address - V2 DEPLOYED ON BASE MAINNET
-    contractAddress: '0x8df33b5b58212f16519ce86e810be2e8232df305',
-    contractVersion: 'V2',
+    // Contract address - V4.3.2 PRODUCTION ON BASE MAINNET
+    contractAddress: '0x323f98c4e05073c2f76666944d95e39b78024efd',
+    contractVersion: 'V4.3.3',
 
     // Supported tokens on Base
     TOKENS: {
@@ -38,32 +38,33 @@ const AgentWalletUI = {
         'function symbol() view returns (string)'
     ],
 
-    // Vault V2 ABI - Institutional Grade
+    // Vault V4 ABI - Individual Model (no shares!)
     WALLET_ABI: [
         // Core functions
         'function deposit(uint256 amount)',
-        'function depositToken(address token, uint256 amount)',
-        'function withdraw(uint256 shares)',
+        'function withdraw(uint256 amount)',
+        'function withdrawAll()',
 
-        // View functions
-        'function totalValue() view returns (uint256)',
-        'function totalShares() view returns (uint256)',
-        'function getUserValue(address user) view returns (uint256)',
-        'function getUserShares(address user) view returns (uint256)',
+        // View functions - Individual balances (no shares!)
+        'function balances(address user) view returns (uint256)',
+        'function investments(address user, address protocol) view returns (uint256)',
+        'function totalInvested(address user) view returns (uint256)',
+        'function getUserTotalValue(address user) view returns (uint256)',
+        'function getUserFreeBalance(address user) view returns (uint256)',
+        'function getUserInvestment(address user, address protocol) view returns (uint256)',
+        'function getUserProtocols(address user) view returns (address[])',
+        'function canWithdraw(address user) view returns (bool available, uint256 timeLeft)',
+        'function isWhitelisted(address user) view returns (bool)',
 
-        // V2 Security - Withdraw limits
-        'function dailyWithdrawLimit() view returns (uint256)',
-        'function maxSingleWithdraw() view returns (uint256)',
-        'function getWithdrawLimitStatus() view returns (uint256 remaining, uint256 dailyLimit)',
+        // V4 Security - Constants
+        'function DEPOSIT_COOLDOWN() view returns (uint256)',
+        'function MINIMUM_DEPOSIT() view returns (uint256)',
+        'function MAX_SINGLE_WITHDRAW() view returns (uint256)',
 
-        // V2 Security - De-peg check
-        'function checkUSDCPeg() view returns (bool pegged, int256 price)',
-        'function depegProtectionEnabled() view returns (bool)',
+        // V4 Access Control
+        'function hasRole(bytes32 role, address account) view returns (bool)',
 
-        // V2 Security - Circuit breaker
-        'function circuitBreakerTriggered() view returns (bool)',
-
-        // V2 Security - Emergency
+        // Emergency
         'function emergencyMode() view returns (bool)',
         'function paused() view returns (bool)'
     ],
@@ -502,14 +503,14 @@ const AgentWalletUI = {
                             padding: 16px;
                             text-align: center;
                         ">
-                            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 6px;">Your Shares</div>
-                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${this.userShares}</div>
+                            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 6px;">Available</div>
+                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${(this.userValue / 1e6).toFixed(2)} USDC</div>
                         </div>
                     </div>
 
                     <!-- Shares Input -->
                     <div style="margin-bottom: 20px;">
-                        <label style="display: block; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Shares to Withdraw</label>
+                        <label style="display: block; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">USDC Amount to Withdraw</label>
                         <div style="
                             display: flex;
                             background: rgba(0,0,0,0.4);
@@ -539,7 +540,7 @@ const AgentWalletUI = {
                             ">MAX</button>
                         </div>
                         <div style="margin-top: 8px; font-size: 0.75rem; color: rgba(255,255,255,0.4);">
-                            Available: ${this.userShares} shares
+                            Available: ${(this.userValue / 1e6).toFixed(2)} USDC
                         </div>
                     </div>
 
@@ -686,11 +687,13 @@ const AgentWalletUI = {
     },
 
     /**
-     * Set max withdraw shares
+     * Set max withdraw - V4.3.2 uses USDC amount!
      */
     setMaxWithdraw() {
-        document.getElementById('withdrawShares').value = this.userShares;
-        this.updateWithdrawEstimate(this.userShares);
+        // userValue is in raw USDC units, convert to display
+        const maxUsdc = (this.userValue / 1e6).toFixed(2);
+        document.getElementById('withdrawShares').value = maxUsdc;
+        this.updateWithdrawEstimate(maxUsdc);
     },
 
     /**
@@ -711,6 +714,7 @@ const AgentWalletUI = {
 
     /**
      * Execute deposit transaction (multi-token support)
+     * AUTO-WHITELIST: Now automatically whitelists user before deposit
      */
     async executeDeposit() {
         const amount = document.getElementById('depositAmount')?.value;
@@ -729,17 +733,48 @@ const AgentWalletUI = {
         }
 
         const btn = document.getElementById('depositBtn');
-        btn.innerHTML = '<span>⏳</span> Approving...';
         btn.disabled = true;
 
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
+            const userAddress = await signer.getAddress();
+
+            // ============================================
+            // AUTO-WHITELIST: Call backend to whitelist user first
+            // ============================================
+            btn.innerHTML = '<span>🔐</span> Checking whitelist...';
+
+            try {
+                const whitelistResp = await fetch(
+                    `http://localhost:8080/api/whitelist?user_address=${userAddress}`,
+                    { method: 'POST' }
+                );
+                const whitelistResult = await whitelistResp.json();
+
+                if (whitelistResult.success) {
+                    if (whitelistResult.tx_hash) {
+                        console.log('[AgentWallet] User whitelisted, TX:', whitelistResult.tx_hash);
+                        btn.innerHTML = '<span>✓</span> Whitelisted! Approving...';
+                        // Wait for tx to be mined
+                        await new Promise(r => setTimeout(r, 3000));
+                    } else {
+                        console.log('[AgentWallet] User already whitelisted');
+                    }
+                } else {
+                    console.warn('[AgentWallet] Whitelist warning:', whitelistResult.message);
+                    // Continue anyway - user might be manually whitelisted
+                }
+            } catch (wlError) {
+                console.warn('[AgentWallet] Whitelist service unavailable:', wlError);
+                // Continue anyway - fallback to direct deposit attempt
+            }
 
             // Calculate amount in token's decimals
             const amountWei = BigInt(Math.floor(parseFloat(amount) * Math.pow(10, token.decimals)));
 
             // Approve token
+            btn.innerHTML = '<span>⏳</span> Approving...';
             const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
             const approveTx = await tokenContract.approve(this.contractAddress, amountWei);
             await approveTx.wait();
@@ -766,6 +801,14 @@ const AgentWalletUI = {
             // Refresh stats
             await this.refreshStats();
 
+            // Auto-refresh portfolio dashboard if available
+            if (window.portfolioDashboard?.loadOnChainData) {
+                window.portfolioDashboard.loadOnChainData();
+            }
+
+            // Start polling for agent allocation (every 10s for 2 minutes)
+            this.startAllocationPolling();
+
             setTimeout(() => {
                 document.getElementById('vaultModal')?.remove();
             }, 2000);
@@ -779,12 +822,13 @@ const AgentWalletUI = {
     },
 
     /**
-     * Execute withdraw transaction
+     * Execute withdraw transaction - V4.3.2 uses USDC amount!
      */
     async executeWithdraw() {
-        const shares = document.getElementById('withdrawShares')?.value;
-        if (!shares || shares <= 0) {
-            alert('Enter shares to withdraw');
+        // Input is in USDC display units (e.g. "10" means 10 USDC)
+        const amountInput = document.getElementById('withdrawShares')?.value;
+        if (!amountInput || parseFloat(amountInput) <= 0) {
+            alert('Enter USDC amount to withdraw');
             return;
         }
 
@@ -801,8 +845,12 @@ const AgentWalletUI = {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
 
+            // Convert to USDC units (6 decimals)
+            const amountUsdc = BigInt(Math.floor(parseFloat(amountInput) * 1e6));
+            console.log('[AgentWallet] Withdrawing:', amountInput, 'USDC (', amountUsdc.toString(), 'raw units)');
+
             const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
-            const tx = await wallet.withdraw(BigInt(shares));
+            const tx = await wallet.withdraw(amountUsdc);
             await tx.wait();
 
             btn.innerHTML = '<span class="techne-icon">' + TechneIcons.success + '</span> Withdrawn!';
@@ -825,7 +873,7 @@ const AgentWalletUI = {
     },
 
     /**
-     * Refresh vault stats from contract
+     * Refresh vault stats from contract - V4.3.2 compatible
      */
     async refreshStats() {
         if (!this.contractAddress || !window.ethereum || typeof ethers === 'undefined') return;
@@ -834,24 +882,47 @@ const AgentWalletUI = {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, provider);
 
-            // Get stats
-            this.totalVaultValue = await wallet.totalValue();
-            this.estimatedAPY = Number(await wallet.estimatedAPY()) / 100;
-
+            // V4.3.2 uses balances(user) and getUserTotalValue(user)
             if (window.connectedWallet) {
-                this.userValue = await wallet.getUserValue(window.connectedWallet);
-                this.userShares = Number(await wallet.getUserShares(window.connectedWallet));
-            }
+                try {
+                    // Get user's available balance
+                    const balance = await wallet.balances(window.connectedWallet);
+                    // Get user's total value (balance + invested)
+                    const totalValue = await wallet.getUserTotalValue(window.connectedWallet);
+                    // Get total invested
+                    const invested = await wallet.totalInvested(window.connectedWallet);
 
-            // Update UI
-            document.getElementById('vaultTVL').textContent =
-                '$' + (Number(this.totalVaultValue) / 1e6).toLocaleString();
-            document.getElementById('vaultAPY').textContent =
-                this.estimatedAPY.toFixed(1) + '%';
-            document.getElementById('userPosition').textContent =
-                '$' + (Number(this.userValue) / 1e6).toFixed(2);
-            document.getElementById('userSharesDisplay').textContent =
-                this.userShares.toLocaleString();
+                    this.userValue = totalValue;
+                    this.userBalance = balance;
+                    this.userInvested = invested;
+
+                    console.log('[AgentWallet] Stats:', {
+                        balance: Number(balance) / 1e6,
+                        invested: Number(invested) / 1e6,
+                        total: Number(totalValue) / 1e6
+                    });
+
+                    // Update Portfolio Dashboard if elements exist
+                    const totalValueEl = document.querySelector('[data-stat="total-value"]');
+                    if (totalValueEl) {
+                        totalValueEl.textContent = '$' + (Number(totalValue) / 1e6).toFixed(2);
+                    }
+
+                    // Update USDC row in Asset Holdings
+                    const usdcBalanceEl = document.querySelector('[data-asset="usdc-balance"]');
+                    if (usdcBalanceEl) {
+                        usdcBalanceEl.textContent = (Number(balance) / 1e6).toFixed(2);
+                    }
+
+                    const usdcValueEl = document.querySelector('[data-asset="usdc-value"]');
+                    if (usdcValueEl) {
+                        usdcValueEl.textContent = '$' + (Number(balance) / 1e6).toFixed(2);
+                    }
+
+                } catch (contractErr) {
+                    console.warn('[AgentWallet] Contract read error:', contractErr.message);
+                }
+            }
 
         } catch (e) {
             console.error('[AgentWallet] Error refreshing stats:', e);
@@ -867,6 +938,121 @@ const AgentWalletUI = {
         // window.addEventListener('walletConnected', () => {
         //     this.refreshStats();
         // });
+    },
+
+    /**
+     * Start WebSocket connection for real-time allocation updates
+     * Replaces polling with WebSocket for instant notifications
+     */
+    startAllocationPolling() {
+        // Close existing connection
+        if (this._allocationWs) {
+            this._allocationWs.close();
+        }
+
+        console.log('[AgentWallet] Connecting WebSocket for allocation updates...');
+
+        // Connect to backend WebSocket
+        const wsUrl = `ws://localhost:8080/ws/allocation/${window.connectedWallet}`;
+
+        try {
+            this._allocationWs = new WebSocket(wsUrl);
+
+            this._allocationWs.onopen = () => {
+                console.log('[AgentWallet] ✅ WebSocket connected');
+                Toast?.show('⏳ Waiting for agent to allocate funds...', 'info');
+            };
+
+            this._allocationWs.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[AgentWallet] WebSocket message:', data);
+
+                    if (data.type === 'allocation_complete') {
+                        console.log('[AgentWallet] ✅ Agent allocated funds!');
+                        Toast?.show('🤖 Agent has invested your funds!', 'success');
+
+                        // Refresh UI
+                        await this.refreshStats();
+                        if (window.portfolioDashboard?.loadOnChainData) {
+                            await window.portfolioDashboard.loadOnChainData();
+                        }
+
+                        this._allocationWs.close();
+                    } else if (data.type === 'allocation_pending') {
+                        Toast?.show('⏳ Agent is processing your deposit...', 'info');
+                    }
+                } catch (e) {
+                    console.warn('[AgentWallet] WS parse error:', e);
+                }
+            };
+
+            this._allocationWs.onerror = (error) => {
+                console.warn('[AgentWallet] WebSocket error, falling back to polling:', error);
+                this._startPollingFallback();
+            };
+
+            this._allocationWs.onclose = () => {
+                console.log('[AgentWallet] WebSocket closed');
+            };
+
+            // Timeout after 2 minutes
+            setTimeout(() => {
+                if (this._allocationWs?.readyState === WebSocket.OPEN) {
+                    console.log('[AgentWallet] WebSocket timeout');
+                    this._allocationWs.close();
+                }
+            }, 120000);
+
+        } catch (e) {
+            console.warn('[AgentWallet] WebSocket failed, using polling:', e);
+            this._startPollingFallback();
+        }
+    },
+
+    /**
+     * Fallback polling if WebSocket unavailable
+     */
+    _startPollingFallback() {
+        if (this._allocationPollInterval) {
+            clearInterval(this._allocationPollInterval);
+        }
+
+        let pollCount = 0;
+        const maxPolls = 12;
+
+        console.log('[AgentWallet] Using polling fallback...');
+
+        this._allocationPollInterval = setInterval(async () => {
+            pollCount++;
+
+            try {
+                await this.refreshStats();
+
+                if (window.portfolioDashboard?.loadOnChainData) {
+                    await window.portfolioDashboard.loadOnChainData();
+                }
+
+                if (window.connectedWallet && window.ethereum) {
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const contract = new ethers.Contract(this.contractAddress, this.WALLET_ABI, provider);
+                    const invested = await contract.totalInvested(window.connectedWallet);
+
+                    if (invested > 0n) {
+                        console.log('[AgentWallet] ✅ Funds invested:', Number(invested) / 1e6, 'USDC');
+                        Toast?.show('🤖 Agent has invested your funds!', 'success');
+                        clearInterval(this._allocationPollInterval);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[AgentWallet] Poll error:', e.message);
+            }
+
+            if (pollCount >= maxPolls) {
+                clearInterval(this._allocationPollInterval);
+            }
+        }, 10000);
     }
 };
 

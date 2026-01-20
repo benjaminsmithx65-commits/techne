@@ -229,6 +229,61 @@ async def broadcast_price_update(token: str, price: float):
     })
 
 
+async def broadcast_allocation(wallet: str, status: str, amount: float = 0, protocol: str = "", tx_hash: str = ""):
+    """Broadcast allocation event to connected clients"""
+    await manager.send_personal({
+        "type": f"allocation_{status}",  # allocation_pending, allocation_complete, allocation_failed
+        "amount": amount,
+        "protocol": protocol,
+        "tx_hash": tx_hash,
+        "timestamp": datetime.utcnow().isoformat()
+    }, wallet.lower())
+    print(f"[WebSocket] Broadcast allocation_{status} to {wallet[:10]}...")
+
+
+# ============================================
+# ALLOCATION WEBSOCKET ENDPOINT
+# ============================================
+
+@router.websocket("/ws/allocation/{wallet}")
+async def websocket_allocation(websocket: WebSocket, wallet: str):
+    """
+    WebSocket endpoint for real-time allocation updates.
+    Frontend connects here after deposit to get instant allocation notifications.
+    """
+    wallet = wallet.lower()
+    await manager.connect(websocket, wallet)
+    
+    try:
+        await websocket.send_json({
+            "type": "connected",
+            "message": "Waiting for allocation...",
+            "wallet": wallet,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        # Keep connection alive, wait for messages
+        while True:
+            try:
+                # Wait for any client message (ping, etc)
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=120)
+                
+                if data.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    
+            except asyncio.TimeoutError:
+                # Send heartbeat on timeout
+                await websocket.send_json({
+                    "type": "heartbeat",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket, wallet)
+
+
 # Stats endpoint
 @router.get("/ws/stats")
 async def websocket_stats():
