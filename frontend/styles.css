@@ -4684,20 +4684,20 @@ body.section-verify .main-content {
    PORTFOLIO DASHBOARD STYLES
    ============================================= */
 
-/* Portfolio section should not show sidebar */
+/* Portfolio section - FIXED WIDTH to prevent expansion */
 #section-portfolio {
     position: relative;
-    padding: 0 12px;
-    /* Add horizontal padding */
-    max-width: 3168px;
-    /* Limit max width */
+    padding: 0 24px;
+    max-width: 1400px;
+    width: 100%;
     margin: 0 auto;
-    /* Center the content */
+    box-sizing: border-box;
 }
 
 #section-portfolio .portfolio-stats-grid,
 #section-portfolio .portfolio-content {
     max-width: 100%;
+    width: 100%;
 }
 
 /* Stats Grid - Fixed width columns to prevent expansion */
@@ -8962,8 +8962,9 @@ body.builder-pro .basic-mode-only {
 
 .risk-indicators-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(140px, 200px));
     gap: var(--space-3);
+    justify-content: start;
 }
 
 @media (max-width: 900px) {
@@ -9138,10 +9139,12 @@ body.builder-pro .basic-mode-only {
    Less scrolling, wider cards, compact spacing
    =========================================== */
 
-/* Full-width section */
+/* Full-width section - FIXED to prevent expansion */
 #section-portfolio {
-    max-width: 100%;
+    max-width: 1400px;
+    width: 100%;
     padding: var(--space-4);
+    box-sizing: border-box;
 }
 
 /* Stats grid - Fixed width to prevent expansion */
@@ -9232,8 +9235,9 @@ body.builder-pro .basic-mode-only {
 
 .risk-indicators-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(140px, 200px));
     gap: var(--space-3);
+    justify-content: start;
 }
 
 /* Main content - two column layout */
