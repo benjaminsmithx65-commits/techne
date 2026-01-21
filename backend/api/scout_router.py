@@ -1065,7 +1065,7 @@ async def verify_pool_rpc_first(
         # Aerodrome on-chain APY (Base only)
         if chain == "base":
             from data_sources.aerodrome import aerodrome_client
-            enrichment_tasks.append(aerodrome_client.get_real_time_apy(pool_address))
+            enrichment_tasks.append(aerodrome_client.get_real_time_apy_multicall(pool_address))
             task_names.append("aerodrome")
         
         # Execute all in parallel with exception handling
