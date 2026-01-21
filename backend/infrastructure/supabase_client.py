@@ -573,6 +573,119 @@ class SupabaseClient:
             params={"select": "*", "order": "created_at.desc", "limit": str(limit)}
         )
         return result or []
+    
+    # ==========================================
+    # API METRICS PERSISTENCE
+    # ==========================================
+    
+    async def log_api_call(
+        self,
+        service: str,
+        endpoint: str,
+        status: str,
+        response_time_ms: float,
+        error_message: str = None,
+        status_code: int = None
+    ) -> bool:
+        """
+        Log individual API call to Supabase for persistent metrics.
+        Uses fire-and-forget pattern (non-blocking).
+        """
+        if not self.is_available:
+            return False
+        
+        data = {
+            "service": service.lower(),
+            "endpoint": endpoint,
+            "status": status,
+            "response_time_ms": round(response_time_ms, 2),
+            "error_message": error_message[:500] if error_message else None,
+            "status_code": status_code
+        }
+        
+        try:
+            result = await self._request("POST", "api_call_logs", data=data)
+            return result is not None
+        except Exception as e:
+            # Don't log errors for metrics logging to avoid infinite loops
+            return False
+    
+    async def update_service_metrics(
+        self,
+        service: str,
+        metrics_data: dict
+    ) -> bool:
+        """
+        Update aggregated service metrics in Supabase.
+        Called periodically (every 5 minutes) to persist aggregates.
+        """
+        if not self.is_available:
+            return False
+        
+        data = {
+            "service": service.lower(),
+            "total_calls": metrics_data.get("total_calls", 0),
+            "success_count": metrics_data.get("success_count", 0),
+            "error_count": metrics_data.get("error_count", 0),
+            "timeout_count": metrics_data.get("timeout_count", 0),
+            "rate_limit_count": metrics_data.get("rate_limit_count", 0),
+            "avg_response_ms": metrics_data.get("avg_response_ms", 0),
+            "min_response_ms": metrics_data.get("min_response_ms", 0),
+            "max_response_ms": metrics_data.get("max_response_ms", 0),
+            "last_error": metrics_data.get("last_error"),
+            "last_error_time": metrics_data.get("last_error_time"),
+            "last_success_time": metrics_data.get("last_success_time"),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        # Upsert by service name
+        headers = self._headers()
+        headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{self.url}/rest/v1/api_service_metrics",
+                    headers=headers,
+                    json=data,
+                    params={"on_conflict": "service"}
+                )
+                return resp.status_code in [200, 201]
+        except Exception:
+            return False
+    
+    async def get_api_metrics_from_db(self, service: str = None) -> list:
+        """
+        Get aggregated API metrics from Supabase.
+        Used to restore metrics on backend restart.
+        """
+        if not self.is_available:
+            return []
+        
+        params = {"select": "*"}
+        if service:
+            params["service"] = f"eq.{service.lower()}"
+        
+        result = await self._request("GET", "api_service_metrics", params=params)
+        return result or []
+    
+    async def get_recent_api_calls(self, service: str = None, limit: int = 100) -> list:
+        """
+        Get recent API call logs for debugging/analytics.
+        """
+        if not self.is_available:
+            return []
+        
+        params = {
+            "select": "*",
+            "order": "timestamp.desc",
+            "limit": str(limit)
+        }
+        if service:
+            params["service"] = f"eq.{service.lower()}"
+        
+        result = await self._request("GET", "api_call_logs", params=params)
+        return result or []
 
 
 # Global instance

@@ -160,6 +160,22 @@ class APIMetricsTracker:
         # Log slow calls
         if response_time_ms > 2000:
             logger.warning(f"[APIMetrics] Slow call: {service} {endpoint} took {response_time_ms:.0f}ms")
+        
+        # Persist to Supabase (fire-and-forget, non-blocking)
+        try:
+            import asyncio
+            from infrastructure.supabase_client import supabase
+            if supabase.is_available:
+                asyncio.create_task(supabase.log_api_call(
+                    service=service,
+                    endpoint=endpoint,
+                    status=status,
+                    response_time_ms=response_time_ms,
+                    error_message=error_message,
+                    status_code=status_code
+                ))
+        except Exception:
+            pass  # Don't fail metrics tracking if Supabase fails
     
     def check_rate_limit(self, service: str) -> Dict[str, Any]:
         """Check current rate limit status for a service"""
