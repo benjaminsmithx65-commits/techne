@@ -4700,12 +4700,13 @@ body.section-verify .main-content {
     max-width: 100%;
 }
 
-/* Stats Grid */
+/* Stats Grid - Fixed width columns to prevent expansion */
 .portfolio-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(4, minmax(180px, 280px));
     gap: 16px;
     margin-bottom: 24px;
+    justify-content: start;
 }
 
 .portfolio-stat-card {
@@ -9143,12 +9144,13 @@ body.builder-pro .basic-mode-only {
     padding: var(--space-4);
 }
 
-/* Stats grid - horizontal, wider */
+/* Stats grid - Fixed width to prevent expansion */
 .portfolio-stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(180px, 280px));
     gap: var(--space-3);
     margin-bottom: var(--space-4);
+    justify-content: start;
 }
 
 .portfolio-stat-card {
