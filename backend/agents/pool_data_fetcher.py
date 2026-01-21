@@ -102,6 +102,8 @@ class PoolDataFetcher:
     
     async def _fetch_from_subgraph(self, protocol: str, pool_address: str) -> Optional[dict]:
         """Fetch data from The Graph subgraph"""
+        import time
+        from infrastructure.api_metrics import api_metrics
         
         subgraph_url = SUBGRAPHS.get(protocol)
         if not subgraph_url:
@@ -117,14 +119,25 @@ class PoolDataFetcher:
         else:
             query = self._build_generic_query(pool_address)
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(subgraph_url, json={"query": query}) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    return self._parse_response(protocol, result)
-                else:
-                    print(f"[PoolDataFetcher] Subgraph returned {resp.status}")
-                    return None
+        start_time = time.time()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(subgraph_url, json={"query": query}) as resp:
+                    response_time = time.time() - start_time
+                    
+                    if resp.status == 200:
+                        api_metrics.record_call('thegraph', f'/{protocol}', 'success', response_time)
+                        result = await resp.json()
+                        return self._parse_response(protocol, result)
+                    else:
+                        api_metrics.record_call('thegraph', f'/{protocol}', 'error', response_time, 
+                                               error_message=f"HTTP {resp.status}", status_code=resp.status)
+                        print(f"[PoolDataFetcher] Subgraph returned {resp.status}")
+                        return None
+        except Exception as e:
+            api_metrics.record_call('thegraph', f'/{protocol}', 'error', time.time() - start_time,
+                                   error_message=str(e)[:200])
+            raise
     
     def _build_aave_query(self, pool_address: str) -> str:
         """Build GraphQL query for Aave V3"""

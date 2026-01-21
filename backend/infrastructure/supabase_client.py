@@ -60,10 +60,14 @@ class SupabaseClient:
         params: dict = None
     ) -> Optional[List[dict]]:
         """Make async request to Supabase REST API"""
+        import time
+        from infrastructure.api_metrics import api_metrics
+        
         if not self.is_available:
             return None
         
         url = f"{self.url}/rest/v1/{table}"
+        start_time = time.time()
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
@@ -78,13 +82,20 @@ class SupabaseClient:
                 else:
                     return None
                 
+                response_time = time.time() - start_time
+                
                 if resp.status_code in [200, 201, 204]:
+                    api_metrics.record_call('supabase', f'{method} /{table}', 'success', response_time)
                     return resp.json() if resp.text else []
                 else:
+                    api_metrics.record_call('supabase', f'{method} /{table}', 'error', response_time,
+                                           error_message=f"HTTP {resp.status_code}", status_code=resp.status_code)
                     logger.error(f"[Supabase] {method} {table}: {resp.status_code}")
                     return None
                     
             except Exception as e:
+                api_metrics.record_call('supabase', f'{method} /{table}', 'error', time.time() - start_time,
+                                       error_message=str(e)[:200])
                 logger.error(f"[Supabase] Request failed: {e}")
                 return None
     

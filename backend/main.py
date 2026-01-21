@@ -283,6 +283,14 @@ try:
 except ImportError as e:
     print(f"[PoolData] Router not available: {e}")
 
+# Include Metrics API (API monitoring & health)
+try:
+    from api.metrics_router import router as metrics_router
+    app.include_router(metrics_router)
+    print("[Metrics] API metrics endpoint loaded - /api/metrics")
+except ImportError as e:
+    print(f"[Metrics] Router not available: {e}")
+
 # Security Middleware (Production-grade protection)
 try:
     from security import SecurityMiddleware, RateLimiter, RateLimitConfig

@@ -8,7 +8,7 @@ const API_BASE = 'http://localhost:8080';
 // ===========================================
 // STATE
 // ===========================================
-let currentSection = 'explore';
+let currentSection = 'verify';
 let connectedWallet = null;
 let ethersProvider = null;
 let ethersSigner = null;
@@ -31,6 +31,9 @@ let filters = {
 // INITIALIZATION
 // ===========================================
 document.addEventListener('DOMContentLoaded', () => {
+    // Set initial section class on body for sidebar visibility
+    document.body.classList.add('section-verify');
+
     initNavigation();
     initFilters();
     initWallet();
@@ -38,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initProtocolSearch();
     initBuildSection();
     sortProtocolsByTVL();
-    loadPools();
+    // Don't load pools on init since we start on verify section
 });
 
 // Sort protocol cards by TVL (descending)
