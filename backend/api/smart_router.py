@@ -7,6 +7,7 @@ Tiered Adapter System:
 - Tier 2 (High): UniswapV3Adapter - Fee APY, Tick data
 - Tier 3 (Basic): UniversalScanner - TVL & Tokens only
 """
+import asyncio
 import logging
 import re
 import time
@@ -15,6 +16,14 @@ from web3 import Web3
 from enum import Enum
 
 logger = logging.getLogger("SmartRouter")
+
+# =============================================================================
+# MODULE-LEVEL IMPORTS (loaded once at startup, not per-request)
+# This saves ~5.6s on first request!
+# =============================================================================
+from data_sources.geckoterminal import gecko_client
+from data_sources.aerodrome import aerodrome_client
+from data_sources.dexscreener import dexscreener_client
 
 # =============================================================================
 # APY CACHE - 2 minute TTL to avoid repeated slow RPC calls
@@ -522,7 +531,6 @@ class SmartRouter:
         
         # STEP 1: ALWAYS try GeckoTerminal first (no RPC calls, fast)
         try:
-            from data_sources.geckoterminal import gecko_client
             gecko_data = await gecko_client.get_pool_by_address(chain, pool_address)
             
             if gecko_data and gecko_data.get("tvl", 0) > 0:
@@ -534,8 +542,6 @@ class SmartRouter:
         
         # If we have data, enrich and return
         if pool_data:
-            import asyncio
-            from data_sources.aerodrome import aerodrome_client
             
             # =========================================================
             # PARALLEL ENRICHMENT: Run OHLCV + APY + Security together!
@@ -600,7 +606,6 @@ class SmartRouter:
                 if cached:
                     return cached
                 try:
-                    from data_sources.dexscreener import dexscreener_client
                     result = await dexscreener_client.get_token_volatility(chain, pool_address)
                     if result:
                         _set_cached_dexscreener(pool_address, result)
@@ -609,13 +614,55 @@ class SmartRouter:
                     logger.debug(f"DexScreener volatility failed: {e}")
                     return None
             
-            # Run all FOUR in parallel!
-            logger.info(f"⚡ SmartRouter: Running OHLCV + APY + Security + DexScreener in parallel...")
-            ohlcv_data, apy_data, security_result, dexscreener_data = await asyncio.gather(
+            # === NEW: Peg, LP Lock, Whale - moved here for mega-parallel ===
+            async def fetch_peg():
+                if not SECURITY_CHECKER_AVAILABLE:
+                    return {}
+                try:
+                    return await security_checker.check_stablecoin_peg(pool_data, chain)
+                except:
+                    return {}
+            
+            async def fetch_lp_lock():
+                if not LIQUIDITY_LOCK_AVAILABLE:
+                    return {"has_lock": False, "source": "not_checked"}
+                try:
+                    return await liquidity_lock_checker.check_lp_lock(pool_address, chain)
+                except:
+                    return {"has_lock": False, "source": "error"}
+            
+            async def fetch_whale():
+                if not HOLDER_ANALYSIS_AVAILABLE:
+                    return {"source": "not_available"}
+                try:
+                    lp_analysis = await holder_analyzer.get_holder_analysis(pool_address, chain)
+                    if lp_analysis.get("top_10_percent") is not None:
+                        return {"lp_token": lp_analysis, "source": lp_analysis.get("source", "moralis")}
+                    WHITELISTED = {"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                   "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
+                                   "0x4200000000000000000000000000000000000006"}
+                    t0 = pool_data.get("token0", "").lower()
+                    t1 = pool_data.get("token1", "").lower()
+                    target = t0 if t0 and t0 not in WHITELISTED else (t1 if t1 and t1 not in WHITELISTED else None)
+                    if target:
+                        ta = await holder_analyzer.get_holder_analysis(target, chain)
+                        if ta.get("top_10_percent") is not None:
+                            return {"token": ta, "lp_token": lp_analysis, "source": ta.get("source", "moralis")}
+                    return {"lp_token": lp_analysis, "source": "whitelisted_tokens"}
+                except:
+                    return {"source": "not_available"}
+            
+            # Run ALL SEVEN in parallel! (was 2 sequential gathers)
+            logger.info(f"⚡ SmartRouter: Running 7-way parallel (OHLCV+APY+Security+Dex+Peg+Lock+Whale)...")
+            (ohlcv_data, apy_data, security_result, dexscreener_data, 
+             peg_status, liquidity_lock, whale_analysis) = await asyncio.gather(
                 fetch_ohlcv(),
                 fetch_apy(),
                 fetch_security(),
                 fetch_dexscreener(),
+                fetch_peg(),
+                fetch_lp_lock(),
+                fetch_whale(),
                 return_exceptions=True
             )
             
@@ -628,6 +675,18 @@ class SmartRouter:
                 security_result = {"status": "error", "tokens": {}}
             if isinstance(dexscreener_data, Exception):
                 dexscreener_data = None
+            # NEW: Handle peg/lock/whale exceptions
+            if isinstance(peg_status, Exception):
+                peg_status = {}
+            if isinstance(liquidity_lock, Exception):
+                liquidity_lock = {"has_lock": False, "source": "error"}
+            if isinstance(whale_analysis, Exception):
+                whale_analysis = {"source": "error"}
+            
+            # Set peg/lock/whale on pool_data immediately
+            pool_data["peg_status"] = peg_status
+            pool_data["liquidity_lock"] = liquidity_lock
+            pool_data["whale_analysis"] = whale_analysis
             
             # Process DexScreener per-token volatility
             if dexscreener_data:
@@ -740,69 +799,10 @@ class SmartRouter:
             
             # =================================================================
             # COMPREHENSIVE RISK ANALYSIS (IL, Volatility, Pool Age, Whale)
+            # NOTE: peg/lock/whale already set from 7-way parallel gather above
             # =================================================================
             if SECURITY_CHECKER_AVAILABLE:
                 try:
-                    # =========================================================
-                    # PARALLEL: Peg + LP Lock + Whale Analysis 
-                    # All in parallel for ~5s savings vs sequential
-                    # =========================================================
-                    async def fetch_peg():
-                        return await security_checker.check_stablecoin_peg(pool_data, chain)
-                    
-                    async def fetch_lp_lock():
-                        if LIQUIDITY_LOCK_AVAILABLE:
-                            try:
-                                return await liquidity_lock_checker.check_lp_lock(pool_address, chain)
-                            except:
-                                pass
-                        return {"has_lock": False, "source": "not_checked"}
-                    
-                    async def fetch_whale():
-                        if not HOLDER_ANALYSIS_AVAILABLE:
-                            return {"source": "not_available"}
-                        try:
-                            lp_analysis = await holder_analyzer.get_holder_analysis(pool_address, chain)
-                            if lp_analysis.get("top_10_percent") is not None:
-                                return {"lp_token": lp_analysis, "source": lp_analysis.get("source", "moralis")}
-                            # Fallback to underlying token
-                            WHITELISTED_TOKENS = {
-                                "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
-                                "0x4200000000000000000000000000000000000006",
-                            }
-                            token0 = pool_data.get("token0", "").lower()
-                            token1 = pool_data.get("token1", "").lower()
-                            target = token0 if token0 and token0 not in WHITELISTED_TOKENS else (
-                                token1 if token1 and token1 not in WHITELISTED_TOKENS else None)
-                            if target:
-                                ta = await holder_analyzer.get_holder_analysis(target, chain)
-                                if ta.get("top_10_percent") is not None:
-                                    return {"token": ta, "lp_token": lp_analysis, "source": ta.get("source", "moralis")}
-                            return {"lp_token": lp_analysis, "source": "whitelisted_tokens"}
-                        except:
-                            pass
-                        return {"source": "not_available"}
-                    
-                    # Run all 3 in parallel!
-                    logger.info("⚡ SmartRouter: Running Peg + LP Lock + Whale in parallel...")
-                    peg_status, liquidity_lock, whale_analysis = await asyncio.gather(
-                        fetch_peg(), fetch_lp_lock(), fetch_whale(),
-                        return_exceptions=True
-                    )
-                    
-                    # Handle exceptions
-                    if isinstance(peg_status, Exception):
-                        peg_status = {}
-                    if isinstance(liquidity_lock, Exception):
-                        liquidity_lock = {"has_lock": False, "source": "error"}
-                    if isinstance(whale_analysis, Exception):
-                        whale_analysis = {"source": "error"}
-                    
-                    pool_data["peg_status"] = peg_status
-                    pool_data["liquidity_lock"] = liquidity_lock
-                    pool_data["whale_analysis"] = whale_analysis
-                    
                     # Determine audit status from protocol (sync - fast)
                     audit_status = self._get_audit_status(pool_data, protocol)
                     pool_data["audit_status"] = audit_status
