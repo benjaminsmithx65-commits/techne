@@ -604,23 +604,19 @@ class SmartRouter:
                     pool_type = apy_data.get("pool_type", "unknown")
                     
                     if total_tvl > 0 and yearly_rewards > 0:
-                        if pool_type == "v2":
-                            v2_apr = (yearly_rewards / total_tvl) * 100
-                            pool_data["apy"] = v2_apr
-                            pool_data["apy_reward"] = v2_apr
-                            pool_data["apy_source"] = "aerodrome_v2_tvl_fallback"
-                            pool_data["apy_status"] = "ok"
-                            logger.info(f"✅ V2 APR: {v2_apr:.2f}%")
-                        else:
-                            staked_ratio = apy_data.get("staked_ratio", 1.0)
-                            staked_tvl = total_tvl * staked_ratio
-                            staker_apr = (yearly_rewards / staked_tvl) * 100 if staked_tvl > 0 else 0
-                            pool_data["apy"] = staker_apr
-                            pool_data["apy_reward"] = staker_apr
-                            pool_data["apy_source"] = "aerodrome_cl_staker_apr"
-                            pool_data["apy_status"] = "ok"
-                            pool_data["staked_ratio"] = staked_ratio
-                            logger.info(f"✅ CL APR: {staker_apr:.2f}%")
+                        # BOTH V2 and CL pools: use staked_ratio for accurate APY
+                        # APY = yearly_rewards / (total_tvl * staked_ratio)
+                        # This matches Aerodrome's calculation
+                        staked_ratio = apy_data.get("staked_ratio", 1.0)
+                        staked_tvl = total_tvl * staked_ratio
+                        staker_apr = (yearly_rewards / staked_tvl) * 100 if staked_tvl > 0 else 0
+                        
+                        pool_data["apy"] = staker_apr
+                        pool_data["apy_reward"] = staker_apr
+                        pool_data["apy_source"] = f"aerodrome_{pool_type}_staker_apr"
+                        pool_data["apy_status"] = "ok"
+                        pool_data["staked_ratio"] = staked_ratio
+                        logger.info(f"✅ {pool_type.upper()} APR: {staker_apr:.2f}% (staked_ratio={staked_ratio:.2%})")
                         
                         pool_data["gauge_address"] = apy_data.get("gauge_address")
                         pool_data["yearly_emissions_usd"] = yearly_rewards

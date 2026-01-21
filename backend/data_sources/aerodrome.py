@@ -669,7 +669,15 @@ class AerodromeOnChain:
                 pool_type = "v2"
                 reward_rate = v2_reward_rate
                 total_staked = v2_total_supply
-                logger.info(f"V2 detected: rewardRate={reward_rate}, totalSupply={total_staked}")
+                
+                # Calculate V2 staked ratio: gauge.totalSupply / pool.totalSupply
+                pool_total_supply = results2[pool_supply_idx][1] if results2[pool_supply_idx][0] else 0
+                if pool_total_supply > 0:
+                    staked_ratio = total_staked / pool_total_supply
+                    logger.info(f"V2 detected: staked_ratio={staked_ratio:.4f} ({staked_ratio*100:.1f}%)")
+                else:
+                    staked_ratio = 1.0
+                logger.info(f"V2 detected: rewardRate={reward_rate}, gauge_staked={total_staked}, pool_supply={pool_total_supply}")
             elif v2_reward_rate > 0 and cl_liquidity > 0:
                 pool_type = "cl"
                 reward_rate = v2_reward_rate  # CL gauges also have rewardRate
@@ -733,51 +741,14 @@ class AerodromeOnChain:
                 response["epoch_end"] = self.get_epoch_end_timestamp()
                 
             elif pool_type == "v2":
-                # V2: Calculate LP price from multicall results
-                lp_price = 0
-                if (results2[pool_reserves_idx][0] and results2[pool_supply_idx][0] and
-                    results2[pool_token0_idx][0] and results2[pool_token1_idx][0]):
-                    
-                    reserves = results2[pool_reserves_idx][1]
-                    total_supply = results2[pool_supply_idx][1]
-                    token0 = results2[pool_token0_idx][1]
-                    token1 = results2[pool_token1_idx][1]
-                    
-                    # Get token prices (may need additional calls - parallel)
-                    price0, price1 = await asyncio.gather(
-                        self.get_token_price(token0),
-                        self.get_token_price(token1)
-                    )
-                    
-                    # Assume 18 decimals for LP, adjust for token decimals
-                    reserve0 = reserves[0] / 1e18  # Simplified
-                    reserve1 = reserves[1] / 1e18
-                    lp_supply = total_supply / 1e18
-                    
-                    if lp_supply > 0:
-                        tvl = (reserve0 * price0) + (reserve1 * price1)
-                        lp_price = tvl / lp_supply
-                
-                if lp_price > 0:
-                    total_staked_tokens = total_staked / 1e18
-                    total_staked_usd = total_staked_tokens * lp_price
-                    
-                    if total_staked_usd > 0:
-                        reward_apy = (yearly_rewards_usd / total_staked_usd) * 100
-                        response["apy"] = reward_apy
-                        response["apy_reward"] = reward_apy
-                        response["total_staked_usd"] = total_staked_usd
-                        response["apy_status"] = "ok"
-                        response["reason"] = "V2_MULTICALL_CALCULATED"
-                        logger.info(f"V2 APY: {reward_apy:.2f}%")
-                    else:
-                        response["apy_status"] = "requires_external_tvl"
-                        response["reason"] = "ZERO_STAKED"
-                else:
-                    response["apy_status"] = "requires_external_tvl"
-                    response["reason"] = "LP_PRICE_UNAVAILABLE"
-                
+                # V2 pools: Return yearly_rewards + staked_ratio for accurate APY
+                # SmartRouter will use: APY = yearly_rewards / (gecko_tvl * staked_ratio) * 100
+                response["total_staked"] = total_staked
+                response["staked_ratio"] = staked_ratio
+                response["apy_status"] = "requires_external_tvl"
+                response["reason"] = "V2_USE_STAKED_TVL"
                 response["epoch_end"] = self.get_epoch_end_timestamp()
+                logger.info(f"V2 pool - yearly=${yearly_rewards_usd:,.0f}, staked_ratio={staked_ratio:.4f}")
             
             elapsed = time.time() - start_time
             logger.info(f"🚀 Multicall APY completed in {elapsed:.2f}s (was ~13s)")
