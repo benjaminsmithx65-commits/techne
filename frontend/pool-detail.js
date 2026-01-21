@@ -926,18 +926,18 @@ const PoolDetailModal = {
         // Get token symbols - try symbol0/symbol1, fallback to parsing pool.symbol
         let poolSymbols = [pool.symbol0, pool.symbol1].filter(s => s && s.trim());
         if (poolSymbols.length < 2 && pool.symbol) {
+            // Parse symbols from pool name (e.g., "VFY/ZEN" or "VFY-ZEN")
             poolSymbols = pool.symbol.split(/[\/\-]/).map(s => s.trim()).filter(Boolean).slice(0, 2);
         }
-        const cleanTokens = tokenEntries
-            .filter(([addr, t]) => !t.is_honeypot && !t.can_take_back_ownership && !t.hidden_owner)
-            .map(([addr, t]) => t.symbol || poolSymbols.shift() || 'Token');
-
-        // If no security data, use pool symbols directly
-        const displayTokens = cleanTokens.length > 0 ? cleanTokens : poolSymbols;
 
         const isClean = riskyCount === 0;
         const statusColor = isClean ? '#10B981' : honeypotCount > 0 ? '#EF4444' : '#FBBF24';
         const statusIcon = isClean ? '✅' : honeypotCount > 0 ? '🚨' : '⚠️';
+
+        // Display all tokens with their status
+        const tokenDisplay = poolSymbols.length > 0
+            ? poolSymbols.map(s => `${s} ✓`).join(', ')
+            : `${tokenList.length || 2} tokens checked`;
 
         return `
             <div class="pd-section pd-section-compact">
@@ -949,7 +949,7 @@ const PoolDetailModal = {
                     </span>
                 </div>
                 <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 2px;">
-                    ${poolSymbols.length > 0 ? poolSymbols.map(s => s + ' ✓').join(', ') : `${tokenList.length} tokens checked`}
+                    ${tokenDisplay}
                 </div>
             </div>
         `;
