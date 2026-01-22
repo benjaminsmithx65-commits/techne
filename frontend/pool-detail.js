@@ -440,7 +440,7 @@ const PoolDetailModal = {
         // Build caveats based on pool characteristics
         const caveats = [];
         if (isEpoch) caveats.push('Epoch-based: changes weekly');
-        if (isCL) caveats.push('CL pool: gauge APR may differ');
+        if (isCL) caveats.push('Pool-wide APR shown - actual varies by position range');
         if (hasGauge) caveats.push('Requires gauge staking');
         if (pool.apy > 100) caveats.push('High APY: verify sustainability');
 
