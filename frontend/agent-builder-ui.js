@@ -91,13 +91,121 @@ class AgentBuilderUI {
     }
 
     init() {
+        this.bindModeToggle(); // NEW: 3-tier mode switching
+        this.bindAIInstantEvents(); // NEW: Strategy card selection
         this.bindChainPoolEvents();
         this.bindPresetEvents();
         this.bindConfigEvents();
         this.bindAdvancedEvents();
         this.bindChatEvents();
         this.bindCollapsibleEvents();
-        console.log('[AgentBuilder] Extended UI initialized');
+
+        // Set initial mode
+        document.body.dataset.builderMode = 'instant';
+        console.log('[AgentBuilder] Extended UI initialized with AI-Instant mode');
+    }
+
+    // NEW: 3-Tier Mode Toggle (AI-Instant / Flexible / Advanced)
+    bindModeToggle() {
+        document.querySelectorAll('#builderModeToggle .mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Update active button
+                document.querySelectorAll('#builderModeToggle .mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const mode = btn.dataset.mode;
+                document.body.dataset.builderMode = mode;
+
+                console.log('[AgentBuilder] Mode switched to:', mode);
+
+                // Show/hide panels based on mode
+                const instantPanel = document.getElementById('aiInstantPanel');
+                const configPanel = document.getElementById('agentConfigPanel');
+
+                if (mode === 'instant') {
+                    if (instantPanel) instantPanel.style.display = 'block';
+                    if (configPanel) configPanel.style.display = 'none';
+                } else {
+                    if (instantPanel) instantPanel.style.display = 'none';
+                    if (configPanel) configPanel.style.display = 'block';
+                }
+            });
+        });
+    }
+
+    // NEW: AI-Instant Strategy Card Selection
+    bindAIInstantEvents() {
+        const strategies = {
+            'safe': {
+                riskLevel: 'low',
+                minApy: 5, maxApy: 12, maxDrawdown: 10,
+                protocols: ['aave', 'morpho', 'moonwell', 'compound'],
+                preferredAssets: ['USDC', 'USDT'],
+                poolType: 'single', avoidIL: true, onlyAudited: true,
+                minPoolTvl: 50000000,
+                narrative: '[AI] Strategy: <strong>Safe</strong> selected. Maximum security mode. Targeting 5-12% APY on audited protocols only. TVL $50M+ required. No IL exposure. Ready to deploy.'
+            },
+            'steady': {
+                riskLevel: 'medium',
+                minApy: 10, maxApy: 25, maxDrawdown: 20,
+                protocols: ['morpho', 'aave', 'moonwell', 'aerodrome'],
+                preferredAssets: ['USDC', 'WETH'],
+                poolType: 'single', avoidIL: true, onlyAudited: true,
+                minPoolTvl: 10000000,
+                narrative: '[AI] Strategy: <strong>Steady</strong> selected. Balanced approach. Targeting 10-25% APY. TVL $10M+, risk medium, auto-compound enabled. Ready to deploy.'
+            },
+            'fast': {
+                riskLevel: 'high',
+                minApy: 20, maxApy: 100, maxDrawdown: 40,
+                protocols: ['aerodrome', 'beefy', 'morpho', 'moonwell'],
+                preferredAssets: ['WETH', 'AERO', 'cbETH'],
+                poolType: 'dual', avoidIL: false, onlyAudited: false,
+                minPoolTvl: 1000000,
+                narrative: '[AI] Strategy: <strong>Fast</strong> selected. Maximum growth potential. Targeting 20-50%+ APY. Aggressive rotation enabled. IL exposure possible. Ready to deploy.'
+            }
+        };
+
+        // Strategy card click
+        document.querySelectorAll('.strategy-card').forEach(card => {
+            card.addEventListener('click', () => {
+                // Update active card
+                document.querySelectorAll('.strategy-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+
+                const strategy = card.dataset.strategy;
+                const config = strategies[strategy];
+
+                if (config) {
+                    // Apply strategy config
+                    Object.assign(this.config, config);
+
+                    // Update narrative terminal
+                    const narrative = document.getElementById('aiNarrativeContent');
+                    if (narrative) {
+                        narrative.innerHTML = config.narrative;
+                    }
+
+                    console.log('[AgentBuilder] AI-Instant strategy:', strategy, config);
+                }
+            });
+        });
+
+        // Deploy button
+        const deployBtn = document.getElementById('deployInstantBtn');
+        if (deployBtn) {
+            deployBtn.addEventListener('click', () => {
+                const amount = document.getElementById('instantAmount')?.value || 1000;
+                console.log('[AgentBuilder] Deploying AI-Instant with amount:', amount);
+
+                // Trigger deploy with AI config
+                if (window.agentWallet) {
+                    window.agentWallet.deployFromConfig({
+                        ...this.config,
+                        amount: parseFloat(amount)
+                    });
+                }
+            });
+        }
     }
 
     // Chain and Pool Type selectors

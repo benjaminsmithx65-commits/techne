@@ -332,9 +332,49 @@ contract TechneAgentWalletV43 is AccessControl, ReentrancyGuard, Pausable, IFlas
         // 4. Update tracking
         lastRebalanceTime[user][protocol] = block.timestamp;
         lastRebalancePrice[user][protocol] = currentPrice;
-        
+
         emit RebalanceExecuted(user, protocol, currentPrice);
         return true;
+    }
+
+    // ============================================
+    // V4.3.4 NEW - Simple Exit Position (No leverage)
+    // ============================================
+    
+    /**
+     * @notice Exit from a non-leveraged lending position
+     * @dev For simple supply positions without debt - withdraws from Aave back to contract
+     * @param user The user whose position to exit
+     * @param lendingProtocol The lending pool address (e.g., Aave)
+     */
+    function exitPosition(
+        address user,
+        address lendingProtocol
+    ) 
+        external 
+        onlyRole(AGENT_ROLE) 
+        nonReentrant 
+    {
+        require(isLendingProtocol[lendingProtocol], "Not lending protocol");
+        require(investments[user][lendingProtocol] > 0, "No position");
+        
+        uint256 invested = investments[user][lendingProtocol];
+        
+        // Withdraw from Aave - returns all supplied USDC
+        uint256 withdrawn = IPool(lendingProtocol).withdraw(
+            address(USDC),
+            type(uint256).max,  // Withdraw everything
+            address(this)
+        );
+        
+        // Update accounting
+        investments[user][lendingProtocol] = 0;
+        totalInvested[user] -= invested;
+        
+        // Add withdrawn funds back to user's idle balance
+        balances[user] += withdrawn;
+        
+        emit PositionExited(user, lendingProtocol, withdrawn);
     }
 
     // ============================================

@@ -244,6 +244,134 @@ def is_cache_valid(key: str) -> bool:
 
 
 # ============================================
+# DATA STALENESS CHECK (VC Requirement #1)
+# ============================================
+MAX_DATA_AGE_MINUTES = 15  # Block transactions if data older than this
+MAX_PRICE_AGE_SECONDS = 30  # Block if price older than 30s (Pyth)
+
+def is_data_stale(cache_key: str = None, max_age_minutes: int = None, check_price: bool = True) -> tuple:
+    """
+    Check if data is too stale for trading decisions.
+    
+    Now also checks Pyth price oracle for real-time price freshness!
+    
+    Returns:
+        (is_stale: bool, age_minutes: float, message: str)
+    
+    Usage:
+        stale, age, msg = is_data_stale()
+        if stale:
+            raise ValueError(f"Cannot trade: {msg}")
+    """
+    max_age = max_age_minutes or MAX_DATA_AGE_MINUTES
+    
+    # Check all data sources if no specific key
+    keys_to_check = [cache_key] if cache_key else [
+        k for k in _cache.keys() if k not in ["ttl_minutes"]
+    ]
+    
+    oldest_age = 0
+    stale_sources = []
+    
+    for key in keys_to_check:
+        cache = _cache.get(key)
+        if not cache or not cache.get("timestamp"):
+            stale_sources.append(f"{key}: never fetched")
+            oldest_age = max_age + 1
+            continue
+        
+        age = datetime.now() - cache["timestamp"]
+        age_minutes = age.total_seconds() / 60
+        
+        if age_minutes > max_age:
+            stale_sources.append(f"{key}: {age_minutes:.1f}min old")
+        
+        oldest_age = max(oldest_age, age_minutes)
+    
+    is_stale = oldest_age > max_age
+    
+    # ============================================
+    # PYTH PRICE CHECK (Real-time price staleness)
+    # ============================================
+    if check_price:
+        try:
+            from services.price_oracle import is_price_stale as pyth_is_stale
+            price_stale, price_age, price_msg = pyth_is_stale("ETH/USD", MAX_PRICE_AGE_SECONDS)
+            
+            if price_stale:
+                is_stale = True
+                stale_sources.append(f"Pyth: {price_msg}")
+        except ImportError:
+            pass  # Pyth not available, rely on cache only
+        except Exception as e:
+            stale_sources.append(f"Pyth error: {str(e)[:50]}")
+    
+    if is_stale:
+        msg = f"Data stale ({oldest_age:.1f} min > {max_age} min limit): {', '.join(stale_sources)}"
+    else:
+        msg = f"Data fresh ({oldest_age:.1f} min old)"
+    
+    return (is_stale, oldest_age, msg)
+
+
+# ============================================
+# APY MOVING AVERAGE (VC Requirement #3)
+# ============================================
+_apy_history = {}  # {pool_id: [(timestamp, apy), ...]}
+APY_HISTORY_HOURS = 12  # Keep 12 hours of APY history
+
+def record_apy(pool_id: str, apy: float) -> None:
+    """Record APY observation for moving average calculation."""
+    if pool_id not in _apy_history:
+        _apy_history[pool_id] = []
+    
+    # Add new observation
+    _apy_history[pool_id].append((datetime.now(), apy))
+    
+    # Prune old observations (older than APY_HISTORY_HOURS)
+    cutoff = datetime.now() - timedelta(hours=APY_HISTORY_HOURS)
+    _apy_history[pool_id] = [
+        (ts, val) for ts, val in _apy_history[pool_id] if ts > cutoff
+    ]
+
+def get_apy_moving_average(pool_id: str, hours: int = 6) -> float:
+    """
+    Get moving average APY for a pool.
+    
+    Returns average of APY observations over the last N hours.
+    Falls back to current APY if no history.
+    """
+    if pool_id not in _apy_history or not _apy_history[pool_id]:
+        return None
+    
+    cutoff = datetime.now() - timedelta(hours=hours)
+    recent = [apy for ts, apy in _apy_history[pool_id] if ts > cutoff]
+    
+    if not recent:
+        return None
+    
+    return sum(recent) / len(recent)
+
+def get_apy_volatility(pool_id: str, hours: int = 6) -> float:
+    """
+    Get APY volatility (standard deviation) over last N hours.
+    High volatility = unstable yield.
+    """
+    if pool_id not in _apy_history or len(_apy_history[pool_id]) < 2:
+        return None
+    
+    cutoff = datetime.now() - timedelta(hours=hours)
+    recent = [apy for ts, apy in _apy_history[pool_id] if ts > cutoff]
+    
+    if len(recent) < 2:
+        return None
+    
+    mean = sum(recent) / len(recent)
+    variance = sum((x - mean) ** 2 for x in recent) / len(recent)
+    return variance ** 0.5  # Standard deviation
+
+
+# ============================================
 # PROJECT WHITELIST (Multi-chain)
 # ============================================
 PROJECT_WHITELIST = {

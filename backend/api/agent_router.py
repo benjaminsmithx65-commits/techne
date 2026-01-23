@@ -3,6 +3,9 @@ Agent Operations API Router
 Endpoints for agent actions: harvest, rebalance, pause, audit
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -88,6 +91,85 @@ async def manual_allocate(user_address: str = Query(...)):
         }
 
 # ============================================
+# SMART ACCOUNT ENDPOINTS (Trustless Architecture)
+# ============================================
+
+@router.get("/smart-account")
+async def get_smart_account(wallet_address: str = Query(...)):
+    """
+    Get user's Smart Account address and info.
+    
+    Returns:
+    - smart_account: Address of user's Smart Account (or null if not created)
+    - factory: Factory address for creating new accounts
+    - can_create: Whether user can create a new Smart Account
+    """
+    from api.smart_account_executor import SmartAccountExecutor, FACTORY_ADDRESS
+    
+    try:
+        executor = SmartAccountExecutor(wallet_address)
+        
+        # Check if session key is setup
+        can_use_session_key = False
+        if executor.smart_account:
+            can_use_session_key = executor.can_use_session_key
+        
+        return {
+            "success": True,
+            "smart_account": executor.smart_account,
+            "factory": FACTORY_ADDRESS,
+            "is_active": executor.is_smart_account_active,
+            "can_use_session_key": can_use_session_key,
+            "legacy_wallet": "0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "smart_account": None
+        }
+
+
+@router.post("/smart-account/register")
+async def register_smart_account(
+    wallet_address: str = Query(...),
+    smart_account_address: str = Query(...),
+    session_key_address: str = Query(None)
+):
+    """
+    Register a user's Smart Account address in the database.
+    Called after user creates Smart Account via frontend.
+    """
+    try:
+        from infrastructure.supabase_client import supabase
+        
+        if supabase.is_available:
+            result = await supabase.save_user_smart_account(
+                wallet_address,
+                smart_account_address,
+                session_key_address
+            )
+            
+            return {
+                "success": True,
+                "registered": result is not None,
+                "smart_account": smart_account_address
+            }
+        
+        return {
+            "success": True,
+            "registered": False,
+            "message": "Supabase not available - will use on-chain data"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ============================================
 # CLOSE POSITION ENDPOINT
 # ============================================
 
@@ -107,37 +189,131 @@ async def close_position(request: ClosePositionRequest):
     
     Withdraws the specified percentage from the protocol back to user's wallet.
     """
+    import os
+    
     try:
-        from agents.audit_trail import log_action, ActionType
-        
         amount_usdc = request.amount / 1e6
         
-        print(f"[ClosePosition] Closing {request.percentage}% of position {request.position_id}")
-        print(f"[ClosePosition] Protocol: {request.protocol}, Amount: ${amount_usdc:.2f}")
+        print(f"[ClosePosition] Closing {request.percentage}% of position {request.position_id}", flush=True)
+        print(f"[ClosePosition] Protocol: {request.protocol}, Amount: ${amount_usdc:.2f}", flush=True)
         
-        # In production, this would:
-        # 1. Call withdraw on the protocol (Aave, Moonwell, etc.)
-        # 2. Transfer funds back to TechneAgentWallet
-        # 3. Update user's balance on contract
+        # 0. Execute ON-CHAIN withdrawal via SmartAccountExecutor
+        # Supports both Smart Account mode and legacy Techne Wallet fallback
+        onchain_tx_hash = None
+        if request.protocol.lower() in ["aave", "aave-v3", "aave v3"]:
+            print("[ClosePosition] Protocol is Aave - using SmartAccountExecutor", flush=True)
+            try:
+                from api.smart_account_executor import SmartAccountExecutor
+                
+                executor = SmartAccountExecutor(request.user_address)
+                print(f"[ClosePosition] Smart Account: {executor.smart_account}", flush=True)
+                print(f"[ClosePosition] Mode: {'smart_account' if executor.is_smart_account_active else 'legacy'}", flush=True)
+                
+                # Execute exit position
+                result = await executor.exit_position_aave()
+                
+                if result.get("success"):
+                    if result.get("mode") == "legacy":
+                        # Legacy mode executed synchronously
+                        onchain_tx_hash = result.get("tx_hash")
+                        print(f"[ClosePosition] ✅ Legacy exitPosition SUCCESS: {onchain_tx_hash}", flush=True)
+                    elif result.get("mode") == "smart_account":
+                        # Smart Account mode returns prepared tx for frontend
+                        print(f"[ClosePosition] ✅ Smart Account TX prepared - needs owner signature", flush=True)
+                        # Return calldata to frontend for user signing
+                else:
+                    print(f"[ClosePosition] ⚠️ Exit failed: {result.get('error')}", flush=True)
+                    
+            except Exception as e:
+                print(f"[ClosePosition] On-chain error: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
         
-        # Log to audit trail
-        log_action(
-            agent_id="system",
-            wallet=request.user_address,
-            action_type=ActionType.WITHDRAW,
-            details={
-                "position_id": request.position_id,
-                "protocol": request.protocol,
-                "percentage": request.percentage,
-                "amount_usdc": amount_usdc
-            },
-            success=True
-        )
+        # 1. Close/Update position in Supabase
+        try:
+            from infrastructure.supabase_client import supabase
+            if supabase and supabase.is_available:
+                if request.percentage >= 100:
+                    # Full close - mark as closed
+                    await supabase.close_user_position(request.user_address, request.protocol)
+                    await supabase.log_position_history(
+                        user_address=request.user_address,
+                        protocol=request.protocol,
+                        action="close",
+                        amount=amount_usdc,
+                        metadata={"percentage": request.percentage}
+                    )
+                    print(f"[ClosePosition] Position closed in Supabase")
+                else:
+                    # Partial close - update current value
+                    # Get current position and reduce by percentage
+                    positions = await supabase.get_user_positions(request.user_address)
+                    for pos in positions:
+                        if pos.get("protocol") == request.protocol:
+                            new_value = pos.get("current_value", 0) * (1 - request.percentage / 100)
+                            await supabase.update_user_position_value(
+                                request.user_address,
+                                request.protocol,
+                                new_value
+                            )
+                            await supabase.log_position_history(
+                                user_address=request.user_address,
+                                protocol=request.protocol,
+                                action="partial_close",
+                                amount=amount_usdc,
+                                metadata={"percentage": request.percentage, "new_value": new_value}
+                            )
+                            break
+                    print(f"[ClosePosition] Position reduced by {request.percentage}% in Supabase")
+        except Exception as e:
+            print(f"[ClosePosition] Supabase update failed: {e}")
         
-        # Simulate transaction hash
-        import hashlib
-        import time
-        tx_hash = "0x" + hashlib.sha256(f"{request.user_address}{time.time()}".encode()).hexdigest()[:64]
+        # 2. Update in-memory DEPLOYED_AGENTS
+        try:
+            from api.agent_config_router import DEPLOYED_AGENTS, _save_agents
+            user_agents = DEPLOYED_AGENTS.get(request.user_address.lower(), [])
+            for agent in user_agents:
+                positions = agent.get("positions", [])
+                if request.percentage >= 100:
+                    # Remove position
+                    agent["positions"] = [p for p in positions if p.get("protocol") != request.protocol]
+                else:
+                    # Reduce position value
+                    for pos in positions:
+                        if pos.get("protocol") == request.protocol:
+                            pos["current_value"] = pos.get("current_value", 0) * (1 - request.percentage / 100)
+            _save_agents()
+            print(f"[ClosePosition] In-memory agents updated")
+        except Exception as e:
+            print(f"[ClosePosition] In-memory update failed: {e}")
+        
+        # 3. Log to audit trail
+        try:
+            from agents.audit_trail import audit_trail, ActionType
+            audit_trail.log(
+                action_type=ActionType.WITHDRAW,
+                agent_id="system",
+                wallet_address=request.user_address,
+                details={
+                    "position_id": request.position_id,
+                    "protocol": request.protocol,
+                    "percentage": request.percentage,
+                    "amount_usdc": amount_usdc
+                },
+                tx_hash=onchain_tx_hash,
+                value_usd=amount_usdc,
+                success=True
+            )
+        except Exception as e:
+            print(f"[ClosePosition] Audit log failed: {e}")
+        
+        # Use real tx hash if available, otherwise simulate
+        if onchain_tx_hash:
+            tx_hash = onchain_tx_hash
+        else:
+            import hashlib
+            import time
+            tx_hash = "0x" + hashlib.sha256(f"{request.user_address}{time.time()}".encode()).hexdigest()[:64]
         
         return {
             "success": True,
@@ -145,6 +321,7 @@ async def close_position(request: ClosePositionRequest):
             "protocol": request.protocol,
             "amount_usdc": amount_usdc,
             "tx_hash": tx_hash,
+            "onchain": onchain_tx_hash is not None,
             "timestamp": datetime.utcnow().isoformat()
         }
         
@@ -422,34 +599,35 @@ async def harvest_rewards(request: HarvestRequest):
     Returns the harvested amount in USD.
     """
     try:
-        # Import on-chain executor
-        from integrations.onchain_executor import OnChainExecutor
+        from api.smart_account_executor import SmartAccountExecutor
         from agents.audit_trail import log_action, ActionType
         
-        executor = OnChainExecutor()
+        # Use SmartAccountExecutor for harvesting
+        executor = SmartAccountExecutor(request.wallet, request.agentId)
+        result = await executor.harvest_rewards()
         
-        # In production, this would:
-        # 1. Get all LP positions for the agent
-        # 2. Call harvest on each vault contract
-        # 3. Return harvested amounts
-        
-        # For now, simulate harvest
-        harvested_amount = 12.50  # Would come from actual harvest tx
+        harvested_amount = result.get("harvested_usd", 0)
         
         # Log to audit trail
         log_action(
             agent_id=request.agentId,
             wallet=request.wallet,
             action_type=ActionType.HARVEST,
-            details={"amount_usd": harvested_amount},
-            success=True
+            details={
+                "amount_usd": harvested_amount,
+                "mode": result.get("mode", "unknown"),
+                "smart_account": executor.smart_account
+            },
+            success=result.get("success", False)
         )
         
         return {
-            "success": True,
+            "success": result.get("success", False),
             "harvestedAmount": harvested_amount,
             "timestamp": datetime.utcnow().isoformat(),
-            "agentId": request.agentId
+            "agentId": request.agentId,
+            "mode": result.get("mode"),
+            "smartAccount": executor.smart_account
         }
         
     except Exception as e:

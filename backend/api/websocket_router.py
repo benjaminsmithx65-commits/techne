@@ -241,6 +241,41 @@ async def broadcast_allocation(wallet: str, status: str, amount: float = 0, prot
     print(f"[WebSocket] Broadcast allocation_{status} to {wallet[:10]}...")
 
 
+async def broadcast_to_user(wallet: str, message: dict):
+    """
+    Generic broadcast function to send any message to a user.
+    Used by PositionMonitor for exit/enter events.
+    """
+    await manager.send_personal(message, wallet.lower())
+    print(f"[WebSocket] Broadcast {message.get('type', 'unknown')} to {wallet[:10]}...")
+
+
+async def broadcast_position_exit(wallet: str, agent_id: str, position_id: str, protocol: str, reason: str, amount: float):
+    """Broadcast position exit event"""
+    await manager.send_personal({
+        "type": "position_exit",
+        "agent_id": agent_id,
+        "position_id": position_id,
+        "protocol": protocol,
+        "reason": reason,
+        "amount": amount,
+        "timestamp": datetime.utcnow().isoformat()
+    }, wallet.lower())
+
+
+async def broadcast_position_enter(wallet: str, agent_id: str, protocol: str, pool_address: str, amount: float, apy: float):
+    """Broadcast new position entry event"""
+    await manager.send_personal({
+        "type": "position_enter",
+        "agent_id": agent_id,
+        "protocol": protocol,
+        "pool_address": pool_address,
+        "amount": amount,
+        "apy": apy,
+        "timestamp": datetime.utcnow().isoformat()
+    }, wallet.lower())
+
+
 # ============================================
 # ALLOCATION WEBSOCKET ENDPOINT
 # ============================================

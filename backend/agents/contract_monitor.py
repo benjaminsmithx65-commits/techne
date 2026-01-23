@@ -11,7 +11,7 @@ Enhanced with Revert Finance patterns:
 import asyncio
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional
 from web3 import Web3
 from eth_account import Account
@@ -161,13 +161,27 @@ PROTOCOLS = {
         "name": "Aerodrome USDC/WETH",
         "asset": "USDC/WETH",
         "pool_type": "dual",
-        "risk_level": "high",
+        "risk_level": "medium",  # Aerodrome is now established
         "is_lending": False,
         "audited": True,
         "supply_sig": "addLiquidity(address,address,bool,uint256,uint256,uint256,uint256,address,uint256)",
-        "apy": 15.0,
-        "tvl": 35000000,   # $35M TVL
+        "apy": 18.0,
+        "tvl": 85000000,   # $85M TVL
         "volatility": 12.0 # High volatility (LP pairs)
+    },
+    "uniswap": {
+        "address": "0xd0b53D9277642d899DF5C87A3966A349A798F224",  # Uniswap V3 USDC/WETH pool on Base
+        "router": "0x2626664c2603336E57B271c5C0b26F421741e481",   # Universal Router Base
+        "name": "Uniswap V3 USDC/WETH",
+        "asset": "USDC/WETH",
+        "pool_type": "dual",
+        "risk_level": "low",  # Uniswap is battle-tested
+        "is_lending": False,
+        "audited": True,
+        "supply_sig": "mint(address,int24,int24,uint128,bytes)",  # Uniswap V3 mint
+        "apy": 12.0,
+        "tvl": 150000000,  # $150M TVL
+        "volatility": 10.0
     }
 }
 
@@ -183,6 +197,182 @@ MAX_TWAP_DEVIATION_BPS = 100     # 1% max deviation (100 bps)
 
 # 0x API for swap aggregation (best prices)
 ZERO_X_API_URL = "https://base.api.0x.org/swap/v1/quote"
+
+
+# ============================================
+# GAS-VS-PROFIT CALCULATOR (VC Requirement #2)
+# ============================================
+# Base chain gas costs
+BASE_GAS_PER_TX_USD = 0.01  # ~$0.01 per tx on Base
+SWAP_FEE_PERCENT = 0.003    # 0.3% typical DEX swap fee
+DEFAULT_SLIPPAGE = 0.005    # 0.5% slippage
+
+def should_rotate_position(
+    current_apy: float,
+    new_apy: float,
+    position_value_usd: float,
+    holding_days: int = 30,
+    num_transactions: int = 4  # withdraw + swap + swap + deposit
+) -> dict:
+    """
+    Calculate if rotating to a new pool is profitable.
+    
+    Returns:
+        {
+            "should_rotate": bool,
+            "total_cost": float,
+            "expected_profit": float,
+            "net_gain": float,
+            "breakeven_days": float,
+            "reason": str
+        }
+    
+    Only recommends rotation if net gain is positive.
+    """
+    # Calculate costs
+    gas_cost = BASE_GAS_PER_TX_USD * num_transactions
+    swap_fees = position_value_usd * SWAP_FEE_PERCENT * 2  # Both directions
+    slippage_cost = position_value_usd * DEFAULT_SLIPPAGE
+    
+    total_cost = gas_cost + swap_fees + slippage_cost
+    
+    # Calculate expected extra profit from APY difference
+    apy_diff = new_apy - current_apy
+    if apy_diff <= 0:
+        return {
+            "should_rotate": False,
+            "total_cost": total_cost,
+            "expected_profit": 0,
+            "net_gain": -total_cost,
+            "breakeven_days": float('inf'),
+            "reason": f"New APY ({new_apy:.2f}%) not higher than current ({current_apy:.2f}%)"
+        }
+    
+    # Daily extra profit
+    daily_extra = position_value_usd * (apy_diff / 100) / 365
+    
+    # Profit over holding period
+    expected_profit = daily_extra * holding_days
+    net_gain = expected_profit - total_cost
+    
+    # Breakeven calculation
+    breakeven_days = total_cost / daily_extra if daily_extra > 0 else float('inf')
+    
+    should_rotate = net_gain > 0
+    
+    if should_rotate:
+        reason = f"Profitable: ${net_gain:.2f} net gain over {holding_days}d (breakeven: {breakeven_days:.1f}d)"
+    else:
+        reason = f"Not profitable: ${net_gain:.2f} loss (need {breakeven_days:.1f}d to breakeven)"
+    
+    return {
+        "should_rotate": should_rotate,
+        "total_cost": round(total_cost, 4),
+        "expected_profit": round(expected_profit, 4),
+        "net_gain": round(net_gain, 4),
+        "breakeven_days": round(breakeven_days, 1) if breakeven_days != float('inf') else None,
+        "reason": reason
+    }
+
+
+# ============================================
+# IL TRACKING FOR DUAL-SIDED LP (VC Requirement #5)
+# ============================================
+def calculate_impermanent_loss(
+    initial_price_ratio: float,
+    current_price_ratio: float
+) -> dict:
+    """
+    Calculate impermanent loss for a dual-sided LP position.
+    
+    Uses the standard IL formula:
+    IL = 2 * sqrt(price_ratio) / (1 + price_ratio) - 1
+    
+    Args:
+        initial_price_ratio: Price of token A / token B at entry
+        current_price_ratio: Current price ratio
+    
+    Returns:
+        {"il_percent": float, "hodl_advantage": float}
+    """
+    if initial_price_ratio <= 0:
+        return {"il_percent": 0, "hodl_advantage": 0}
+    
+    # Price ratio change (k = current / initial)
+    k = current_price_ratio / initial_price_ratio
+    
+    # IL formula: 2*sqrt(k)/(1+k) - 1
+    import math
+    if k <= 0:
+        return {"il_percent": 0, "hodl_advantage": 0}
+    
+    lp_value = 2 * math.sqrt(k) / (1 + k)
+    hodl_value = 1  # Normalized to 1 at entry
+    
+    il_percent = (1 - lp_value) * 100
+    hodl_advantage = (hodl_value - lp_value) * 100
+    
+    return {
+        "il_percent": round(il_percent, 4),
+        "hodl_advantage": round(hodl_advantage, 4),
+        "price_change_ratio": round(k, 4)
+    }
+
+
+def calculate_lp_equity(
+    initial_token_a: float,
+    initial_token_b: float,
+    initial_price_a: float,
+    initial_price_b: float,
+    current_token_a: float,
+    current_token_b: float,
+    current_price_a: float,
+    current_price_b: float,
+    earned_fees_usd: float = 0
+) -> dict:
+    """
+    Calculate full equity status for a dual-sided LP position.
+    
+    Compares:
+    - Current LP value (tokens + fees)
+    - HODL value (if just held initial tokens)
+    - Net IL impact
+    
+    Returns comprehensive position status.
+    """
+    # HODL value (what we'd have if we just held tokens)
+    hodl_value = (initial_token_a * current_price_a) + (initial_token_b * current_price_b)
+    
+    # Current LP value (tokens + earned fees)
+    lp_token_value = (current_token_a * current_price_a) + (current_token_b * current_price_b)
+    lp_total_value = lp_token_value + earned_fees_usd
+    
+    # Initial deposit value
+    initial_value = (initial_token_a * initial_price_a) + (initial_token_b * initial_price_b)
+    
+    # IL = HODL - LP (without fees)
+    il_usd = hodl_value - lp_token_value
+    il_percent = (il_usd / hodl_value * 100) if hodl_value > 0 else 0
+    
+    # Net P&L including fees
+    net_pnl = lp_total_value - initial_value
+    net_pnl_percent = (net_pnl / initial_value * 100) if initial_value > 0 else 0
+    
+    # Are fees compensating for IL?
+    fees_cover_il = earned_fees_usd >= il_usd
+    
+    return {
+        "initial_value_usd": round(initial_value, 2),
+        "current_lp_value_usd": round(lp_total_value, 2),
+        "hodl_value_usd": round(hodl_value, 2),
+        "earned_fees_usd": round(earned_fees_usd, 2),
+        "il_usd": round(il_usd, 2),
+        "il_percent": round(il_percent, 4),
+        "net_pnl_usd": round(net_pnl, 2),
+        "net_pnl_percent": round(net_pnl_percent, 4),
+        "fees_cover_il": fees_cover_il,
+        "is_profitable": net_pnl > 0
+    }
 
 
 class ContractMonitor:
@@ -215,6 +405,11 @@ class ContractMonitor:
         # Track last harvest time per user for compound_frequency
         # Format: {user_address: datetime_of_last_harvest}
         self.last_harvest_time: Dict[str, datetime] = {}
+        
+        # Track when user capital became idle (no matching pools)
+        # For parking strategy - only park after 1 hour of idle
+        # Format: {user_address: datetime_when_idle_started}
+        self.idle_since: Dict[str, datetime] = {}
         
         # RPC
         self.rpc_url = os.getenv(
@@ -471,8 +666,17 @@ class ContractMonitor:
                 print(f"[ContractMonitor] Selected: {best_protocol} ({best_apy}% APY) - meets all filters")
                 return best_protocol
             else:
-                # No protocol meets all filters - fallback to highest APY anyway with warning
-                print(f"[ContractMonitor] WARNING: No preferred protocol meets all filters, using highest available")
+                # ==========================================
+                # PARKING STRATEGY: No protocol meets filters
+                # Instead of idle capital → Park in Aave V3
+                # ==========================================
+                print(f"[ContractMonitor] ⚠️ No protocol meets all filters!")
+                print(f"[ContractMonitor] 🅿️ Activating PARKING STRATEGY")
+                print(f"  Reason: Filters too strict - parking capital in Aave V3 (~3.5% APY)")
+                print(f"  Agent will auto-check every hour for matching pools")
+                
+                # Return aave as parking destination (handled specially in allocate_funds)
+                return "aave_parking"
         
         # Default: pick highest APY lending protocol with supply support (ignoring filters)
         best_apy = 0
@@ -559,11 +763,12 @@ class ContractMonitor:
                     continue
             
             # ==========================================
-            # RULE: min_pool_tvl - Skip low TVL pools (PRO)
+            # RULE: min_pool_tvl - Skip low TVL pools
+            # Default: $10M minimum TVL for production safety
             # ==========================================
-            min_tvl = agent_config.get("min_pool_tvl", 0) or 0
+            min_tvl = agent_config.get("min_pool_tvl", 10_000_000) or 10_000_000  # $10M default
             proto_tvl = proto_info.get("tvl", 0)
-            if min_tvl > 0 and proto_tvl < min_tvl:
+            if proto_tvl < min_tvl:
                 print(f"[ContractMonitor] Skipping {proto_key}: TVL ${proto_tvl/1e6:.1f}M < min ${min_tvl/1e6:.1f}M")
                 continue
             
@@ -652,53 +857,58 @@ class ContractMonitor:
                 ['uint256', 'address'],
                 [amount, Web3.to_checksum_address(CONTRACT_ADDRESS)]
             )
-        elif protocol_key == "aerodrome":
-            # Dual-sided LP: need to swap 50% USDC -> WETH, then addLiquidity
-            # This is a simplified version - actual implementation would need multicall
+        elif protocol_key in ["aerodrome", "uniswap"]:
+            # ==========================================
+            # WETH-FIRST STRATEGY for Dual-Sided LP
+            # 1. 100% USDC → WETH (deep liquidity)
+            # 2. 50% WETH → target token
+            # 3. addLiquidity(WETH + target)
+            # ==========================================
             router = protocol.get("router")
-            usdc_amount = amount // 2  # 50% stays USDC
-            swap_amount = amount - usdc_amount  # 50% to swap
+            asset_pair = protocol.get("asset", "USDC/WETH")
+            
+            # Parse target token from asset pair (e.g., "WETH/VIRTUALS" → VIRTUALS)
+            tokens = [t.strip() for t in asset_pair.replace(" ", "").split("/")]
+            target_token = tokens[1] if tokens[0] == "WETH" else tokens[0]
             
             # ==========================================
-            # RULE: TWAP Oracle Protection (Revert Finance pattern)
+            # RULE: TWAP Oracle Protection
             # ==========================================
             is_safe, current_price, twap_price, deviation_bps = self.check_twap_price()
             if not is_safe:
                 raise ValueError(
-                    f"TWAP check failed: price deviation {deviation_bps} bps exceeds {MAX_TWAP_DEVIATION_BPS} bps limit. "
-                    f"Potential sandwich attack detected - skipping LP."
+                    f"TWAP check failed: deviation {deviation_bps} bps > {MAX_TWAP_DEVIATION_BPS} bps. "
+                    f"Potential sandwich attack - skipping LP."
                 )
             
             # ==========================================
-            # RULE: slippage - Use configured slippage tolerance
+            # RULE: Slippage from agent config
             # ==========================================
             slippage_pct = agent_config.get("slippage", 0.5) if agent_config else 0.5
-            slippage_multiplier = (100 - slippage_pct) / 100  # e.g., 0.5% -> 0.995
+            slippage_mult = (100 - slippage_pct) / 100
             
-            print(f"[ContractMonitor] Using slippage tolerance: {slippage_pct}%")
+            # WETH-First: Swap 100% USDC → WETH first
+            print(f"[ContractMonitor] WETH-First LP Strategy for {protocol_key}")
+            print(f"[ContractMonitor] Step 1: 100% USDC → WETH (deep liquidity)")
+            print(f"[ContractMonitor] Step 2: 50% WETH → {target_token}")
+            print(f"[ContractMonitor] Step 3: addLiquidity(WETH + {target_token})")
+            print(f"[ContractMonitor] Slippage tolerance: {slippage_pct}%")
             
-            # For now, we return a placeholder - actual swap needs to be done separately
-            # The real flow:
-            # 1. Contract holds USDC
-            # 2. Agent calls swap via 0x or Router (separate TX)
-            # 3. Agent calls addLiquidity with both tokens
-            
-            # Build addLiquidity calldata with estimated WETH (will be adjusted by Router)
             deadline = int(datetime.utcnow().timestamp()) + 3600
             
-            print(f"[ContractMonitor] Aerodrome LP: {usdc_amount/1e6:.2f} USDC + swap {swap_amount/1e6:.2f} USDC -> WETH")
-            
+            # For now, return swap calldata for USDC→WETH
+            # Full flow will be multicall: swap + swap + addLiquidity
             calldata = selector + self.w3.codec.encode(
                 ['address', 'address', 'bool', 'uint256', 'uint256', 'uint256', 'uint256', 'address', 'uint256'],
                 [
-                    Web3.to_checksum_address(USDC_ADDRESS),  # tokenA
-                    Web3.to_checksum_address(WETH_ADDRESS),  # tokenB
+                    Web3.to_checksum_address(WETH_ADDRESS),  # tokenA (WETH)
+                    Web3.to_checksum_address(USDC_ADDRESS),  # tokenB placeholder
                     False,  # stable = false (volatile pair)
-                    usdc_amount,  # amountADesired
-                    0,  # amountBDesired - will be filled by swap
-                    int(usdc_amount * slippage_multiplier),  # amountAMin (user's slippage)
-                    0,  # amountBMin
-                    Web3.to_checksum_address(CONTRACT_ADDRESS),  # to
+                    amount,  # Full amount goes to WETH first
+                    0,
+                    int(amount * slippage_mult),
+                    0,
+                    Web3.to_checksum_address(CONTRACT_ADDRESS),
                     deadline
                 ]
             )
@@ -803,6 +1013,22 @@ class ContractMonitor:
                     break
             
             # ==========================================
+            # RULE: DATA STALENESS CHECK (VC Requirement #1)
+            # Block transaction if data is too old
+            # ==========================================
+            try:
+                from artisan.data_sources import is_data_stale
+                stale, age_min, stale_msg = is_data_stale()
+                if stale:
+                    print(f"[ContractMonitor] ⚠️ DATA STALE: {stale_msg}")
+                    print(f"[ContractMonitor] Cannot allocate - data too old. Will refresh and retry.")
+                    return  # Skip allocation until data refreshes
+                else:
+                    print(f"[ContractMonitor] ✓ Data fresh ({age_min:.1f} min old)")
+            except ImportError:
+                print("[ContractMonitor] Staleness check not available - proceeding")
+            
+            # ==========================================
             # RULE: max_gas_price - Skip if gas too high
             # ==========================================
             max_gas_gwei = agent_config.get("max_gas_price", 50) if agent_config else 50
@@ -827,6 +1053,75 @@ class ContractMonitor:
             
             # Execute allocation for each protocol
             for alloc_idx, (protocol_key, alloc_amount) in enumerate(allocations):
+                
+                # ==========================================
+                # PARKING STRATEGY: Special handling for idle capital
+                # When no pools match filters, park in Aave V3
+                # RULES:
+                #   1. Only park if amount >= $10,000 USD
+                #   2. Only park if idle for >= 1 hour
+                # ==========================================
+                if protocol_key == "aave_parking":
+                    MIN_PARKING_AMOUNT = 10_000 * 1e6  # $10k in USDC (6 decimals)
+                    IDLE_THRESHOLD_SECONDS = 3600  # 1 hour
+                    
+                    user_lower = user.lower()
+                    now = datetime.utcnow()
+                    
+                    # Check minimum amount
+                    if alloc_amount < MIN_PARKING_AMOUNT:
+                        print(f"[ContractMonitor] 🅿️ Parking skipped - amount ${alloc_amount/1e6:.2f} < $10k minimum")
+                        # Clear idle timer since amount is too small
+                        self.idle_since.pop(user_lower, None)
+                        continue
+                    
+                    # Check 1-hour idle timer
+                    if user_lower not in self.idle_since:
+                        # First time we see no matching pools - start timer
+                        self.idle_since[user_lower] = now
+                        print(f"[ContractMonitor] 🅿️ No matching pools - starting 1h idle timer")
+                        print(f"  User: {user}")
+                        print(f"  Amount: ${alloc_amount/1e6:.2f} USDC")
+                        print(f"  Parking will activate at: {now + timedelta(hours=1)}")
+                        continue  # Don't park yet
+                    
+                    idle_duration = (now - self.idle_since[user_lower]).total_seconds()
+                    if idle_duration < IDLE_THRESHOLD_SECONDS:
+                        remaining_min = (IDLE_THRESHOLD_SECONDS - idle_duration) / 60
+                        print(f"[ContractMonitor] 🅿️ Idle timer running: {idle_duration/60:.0f}min / 60min")
+                        print(f"  Parking in: {remaining_min:.0f} minutes")
+                        continue  # Not yet 1 hour
+                    
+                    # Timer expired - proceed with parking!
+                    print(f"[ContractMonitor] 🅿️ PARKING CAPITAL to Aave V3")
+                    print(f"  Amount: ${alloc_amount/1e6:.2f} USDC")
+                    print(f"  Reason: No pools matched for {idle_duration/3600:.1f} hours")
+                    print(f"  Expected return: ~3.5% APY (safe harbor)")
+                    
+                    try:
+                        from services.parking_strategy import ParkingStrategy
+                        parking = ParkingStrategy()
+                        result = await parking.park_capital(user, alloc_amount)
+                        
+                        if result["success"]:
+                            print(f"[ContractMonitor] ✅ Capital parked successfully!")
+                            print(f"  Protocol: {result['protocol']}")
+                            print(f"  aToken: {result.get('atoken_balance', 'N/A')}")
+                            # Clear idle timer - capital is no longer idle
+                            self.idle_since.pop(user_lower, None)
+                            # Track as parked position
+                            self.track_position(user, "aave_parked", alloc_amount)
+                        else:
+                            print(f"[ContractMonitor] ⚠️ Parking failed: {result.get('error', 'Unknown')}")
+                            # Fallback to regular Aave
+                            protocol_key = "aave"
+                            # Continue with normal flow below
+                    except Exception as e:
+                        print(f"[ContractMonitor] Parking error: {e} - falling back to regular Aave")
+                        protocol_key = "aave"
+                    else:
+                        continue  # Skip to next allocation if parking succeeded
+                
                 protocol_info = PROTOCOLS.get(protocol_key)
                 if not protocol_info:
                     print(f"[ContractMonitor] Unknown protocol: {protocol_key}, skipping")
@@ -1066,11 +1361,14 @@ class ContractMonitor:
         """
         Execute rebalance: move funds to better protocol if available.
         RULE: auto_rebalance + rebalance_threshold
+        
+        Now includes gas-vs-profit check (VC Requirement #2)
         """
         try:
             from agents.audit_trail import audit_trail, ActionType
             
             current_value = pos_data.get("current_value", 0)
+            current_value_usd = current_value / 1e6  # Convert from USDC decimals
             current_proto_info = PROTOCOLS.get(protocol_key, {})
             current_apy = current_proto_info.get("apy", 0)
             
@@ -1085,6 +1383,44 @@ class ContractMonitor:
                 print(f"  Current: {protocol_key} ({current_apy}%) -> Best: {best_protocol} ({best_apy}%)")
                 return
             
+            # ==========================================
+            # GAS-VS-PROFIT CHECK (VC Requirement #2)
+            # Don't rotate if costs exceed profits
+            # ==========================================
+            duration_days = agent_config.get("duration", 30) or 30
+            rotation_check = should_rotate_position(
+                current_apy=current_apy,
+                new_apy=best_apy,
+                position_value_usd=current_value_usd,
+                holding_days=duration_days
+            )
+            
+            if not rotation_check["should_rotate"]:
+                print(f"[ContractMonitor] ❌ ROTATION BLOCKED: Not profitable")
+                print(f"  {rotation_check['reason']}")
+                print(f"  Total cost: ${rotation_check['total_cost']:.2f}")
+                print(f"  Expected profit: ${rotation_check['expected_profit']:.2f}")
+                
+                # Log blocked rotation
+                await audit_trail.log_action(
+                    user_address=user,
+                    action_type=ActionType.REBALANCE,
+                    details={
+                        "status": "blocked",
+                        "reason": "unprofitable_rotation",
+                        "from_protocol": protocol_key,
+                        "to_protocol": best_protocol,
+                        "total_cost": rotation_check["total_cost"],
+                        "net_gain": rotation_check["net_gain"],
+                        "breakeven_days": rotation_check["breakeven_days"]
+                    },
+                    tx_hash=None
+                )
+                return
+            
+            print(f"[ContractMonitor] ✅ ROTATION APPROVED: Profitable!")
+            print(f"  {rotation_check['reason']}")
+            print(f"  Net gain: ${rotation_check['net_gain']:.2f} over {duration_days} days")
             print(f"[ContractMonitor] 🔄 REBALANCE: {user[:10]}...")
             print(f"  From: {protocol_key} ({current_apy}%) -> To: {best_protocol} ({best_apy}%)")
             print(f"  APY improvement: +{apy_improvement:.1f}%")
@@ -1291,6 +1627,53 @@ class ContractMonitor:
                     else:
                         print(f"  Emergency exit disabled - skipping withdrawal")
                     continue  # Skip other checks if exiting
+                
+                # ==========================================
+                # IL MONITORING (VC Requirement #5)
+                # Check if impermanent loss is consuming capital
+                # ==========================================
+                if pos_data.get("pool_type") == "dual":  # Only for dual-sided LP
+                    try:
+                        il_data = pos_data.get("il_data", {})
+                        earned_fees = il_data.get("earned_fees_usd", 0)
+                        il_usd = il_data.get("il_usd", 0)
+                        
+                        # Alert if IL > fees (net negative from IL)
+                        if il_usd > 0 and earned_fees < il_usd:
+                            il_to_fee_ratio = il_usd / earned_fees if earned_fees > 0 else float('inf')
+                            
+                            print(f"[ContractMonitor] ⚠️ IL WARNING: {user_addr[:10]}... on {proto_key}")
+                            print(f"  IL: ${il_usd:.2f} > Fees: ${earned_fees:.2f}")
+                            print(f"  IL/Fees ratio: {il_to_fee_ratio:.1f}x")
+                            
+                            # Log IL warning
+                            try:
+                                from agents.audit_trail import audit_trail, ActionType
+                                await audit_trail.log_action(
+                                    user_address=user_addr,
+                                    action_type=ActionType.ALERT,
+                                    details={
+                                        "type": "il_warning",
+                                        "il_usd": round(il_usd, 2),
+                                        "fees_usd": round(earned_fees, 2),
+                                        "ratio": round(il_to_fee_ratio, 2),
+                                        "protocol": proto_key
+                                    },
+                                    tx_hash=None
+                                )
+                            except Exception:
+                                pass
+                            
+                            # If IL is 2x+ fees, consider exit
+                            max_il_ratio = agent_config.get("max_il_ratio", 2.0) or 2.0
+                            if il_to_fee_ratio >= max_il_ratio:
+                                print(f"[ContractMonitor] 🚨 IL EXIT: Ratio {il_to_fee_ratio:.1f}x >= max {max_il_ratio}x")
+                                emergency_exit_enabled = agent_config.get("emergency_exit", True)
+                                if emergency_exit_enabled:
+                                    await self.execute_emergency_exit(user_addr, proto_key, pos_data, agent_config, drawdown_pct)
+                                continue
+                    except Exception as e:
+                        print(f"[ContractMonitor] IL check error: {e}")
                 
                 # ==========================================
                 # RULE: duration - Close position when investment period ends

@@ -9893,3 +9893,329 @@ body.builder-pro .basic-mode-only {
     background: var(--success) !important;
     color: white !important;
 }
+
+/* ===========================================
+   AI-INSTANT MODE (3-Tier System)
+   =========================================== */
+
+/* Panel visibility */
+.ai-instant-panel {
+    display: block;
+    width: 100%;
+}
+
+body[data-builder-mode="flexible"] .ai-instant-panel,
+body[data-builder-mode="advanced"] .ai-instant-panel {
+    display: none;
+}
+
+body[data-builder-mode="instant"] .agent-config-panel {
+    display: none;
+}
+
+/* Strategy Cards Header */
+.strategy-cards-header {
+    text-align: center;
+    margin-bottom: var(--space-6);
+}
+
+.strategy-cards-header h3 {
+    font-size: 1.4rem;
+    margin: 0 0 8px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.strategy-subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Strategy Cards Grid */
+.strategy-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-5);
+    margin-bottom: var(--space-6);
+}
+
+.strategy-card {
+    background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-surface) 100%);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: var(--space-5);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+}
+
+.strategy-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(212, 168, 83, 0.5);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.strategy-card.active {
+    border-color: var(--gold);
+    background: linear-gradient(180deg, rgba(212, 168, 83, 0.1) 0%, rgba(212, 168, 83, 0.03) 100%);
+    box-shadow: 0 0 24px rgba(212, 168, 83, 0.2);
+}
+
+.strategy-icon {
+    font-size: 2.5rem;
+    margin-bottom: var(--space-3);
+}
+
+.strategy-card h4 {
+    font-size: 1.25rem;
+    margin: 0 0 var(--space-2);
+    color: var(--text);
+    font-weight: 700;
+}
+
+.strategy-apy {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: var(--space-3);
+}
+
+.strategy-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-4);
+    line-height: 1.5;
+}
+
+.strategy-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 var(--space-4);
+    text-align: left;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.strategy-features li {
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+}
+
+.strategy-features li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--gold);
+}
+
+.strategy-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.strategy-badge.low-risk {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.strategy-badge.medium-risk {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+    border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.strategy-badge.high-risk {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Safe card glow */
+.strategy-card.safe.active {
+    border-color: #22c55e;
+    box-shadow: 0 0 24px rgba(34, 197, 94, 0.2);
+}
+
+/* Fast card glow */
+.strategy-card.fast.active {
+    border-color: #ef4444;
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.15);
+}
+
+/* Amount Input Section */
+.instant-amount-section {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: var(--space-5);
+    margin-bottom: var(--space-5);
+}
+
+.amount-label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    font-weight: 500;
+}
+
+.amount-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: var(--space-3);
+}
+
+.currency-symbol {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.instant-amount-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+    font-family: var(--font-body);
+}
+
+.instant-amount-input::-webkit-outer-spin-button,
+.instant-amount-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+}
+
+.currency-name {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* AI Narrative Terminal */
+.ai-narrative-terminal {
+    background: linear-gradient(135deg, rgba(212, 168, 83, 0.08) 0%, rgba(212, 168, 83, 0.02) 100%);
+    border: 1px solid rgba(212, 168, 83, 0.25);
+    border-radius: 12px;
+    padding: var(--space-4);
+    margin-bottom: var(--space-5);
+}
+
+.narrative-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.narrative-icon {
+    font-size: 1.1rem;
+}
+
+.narrative-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.narrative-content {
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.6;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+}
+
+.narrative-content strong {
+    color: var(--gold);
+}
+
+/* Deploy Button */
+.btn-deploy-instant {
+    width: 100%;
+    padding: 18px 24px;
+    background: var(--gradient-gold);
+    border: none;
+    border-radius: 12px;
+    color: var(--bg-void);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 20px rgba(212, 168, 83, 0.3);
+}
+
+.btn-deploy-instant:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(212, 168, 83, 0.4);
+}
+
+.btn-deploy-instant:active {
+    transform: translateY(0);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .strategy-cards-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-4);
+    }
+
+    .strategy-card {
+        padding: var(--space-4);
+    }
+}
+
+/* ==========================================
+   MODE-BASED VISIBILITY RULES
+   Basic mode: only strategy cards + neural terminal
+   Flexible/Advanced: show config panel
+   ========================================== */
+
+/* Hide AI Instant panel by default */
+.ai-instant-panel {
+    display: none;
+}
+
+/* Hide config panel by default */
+.agent-config-panel {
+    display: none;
+}
+
+/* Basic (instant) mode: show AI Instant panel, hide config */
+body[data-builder-mode="instant"] .ai-instant-panel {
+    display: block !important;
+}
+
+body[data-builder-mode="instant"] .agent-config-panel {
+    display: none !important;
+}
+
+/* Flexible/Advanced modes: hide AI Instant panel, show config */
+body[data-builder-mode="flexible"] .ai-instant-panel,
+body[data-builder-mode="advanced"] .ai-instant-panel {
+    display: none !important;
+}
+
+body[data-builder-mode="flexible"] .agent-config-panel,
+body[data-builder-mode="advanced"] .agent-config-panel {
+    display: block !important;
+}

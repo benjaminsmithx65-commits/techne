@@ -309,6 +309,85 @@ class LendingExecutor:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
+    async def withdraw_aave(
+        self,
+        token: str,
+        amount: int,
+        private_key: str,
+        to_address: str = None
+    ) -> Dict:
+        """
+        Withdraw from Aave V3 on Base
+        
+        Args:
+            token: Token symbol (USDC, WETH)
+            amount: Amount in token decimals (use type(uint256).max for all)
+            private_key: Signer private key
+            to_address: Recipient address (defaults to signer)
+        """
+        account = self.get_account(private_key)
+        token_address = TOKENS.get(token.upper())
+        pool_address = LENDING_PROTOCOLS["aave-v3"]["pool"]
+        recipient = to_address or account.address
+        
+        print(f"[LendingExecutor] Aave V3 withdraw: {amount / 1e6:.2f} {token} to {recipient[:10]}...")
+        
+        # 1. Check gas
+        gas_ok, gas_price = self.check_gas_price()
+        if not gas_ok:
+            return {"success": False, "error": "Gas price too high"}
+        
+        # 2. Withdraw
+        pool = self.w3.eth.contract(
+            address=Web3.to_checksum_address(pool_address),
+            abi=AAVE_POOL_ABI
+        )
+        
+        nonce = self.w3.eth.get_transaction_count(account.address)
+        
+        tx = pool.functions.withdraw(
+            Web3.to_checksum_address(token_address),
+            amount,
+            Web3.to_checksum_address(recipient)
+        ).build_transaction({
+            'from': account.address,
+            'nonce': nonce,
+            'gasPrice': gas_price,
+            'gas': 300000
+        })
+        
+        try:
+            signed = account.sign_transaction(tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            
+            print(f"[LendingExecutor] Aave withdraw tx: {tx_hash.hex()}")
+            
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            result = {
+                "success": receipt.status == 1,
+                "tx_hash": tx_hash.hex(),
+                "protocol": "aave-v3",
+                "action": "withdraw",
+                "amount": amount,
+                "token": token,
+                "gas_used": receipt.gasUsed
+            }
+            
+            if result["success"]:
+                self.completed_txs.append(result)
+                self._log_action("withdraw", "aave-v3", amount, tx_hash.hex(), account.address)
+                print(f"[LendingExecutor] ✓ Aave withdraw confirmed")
+            else:
+                self.failed_txs.append(result)
+                print(f"[LendingExecutor] ✗ Aave withdraw failed")
+            
+            return result
+            
+        except Exception as e:
+            print(f"[LendingExecutor] Aave withdraw error: {e}")
+            return {"success": False, "error": str(e)}
+    
     # ============================================
     # COMPOUND V3 INTEGRATION
     # ============================================

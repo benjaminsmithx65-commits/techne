@@ -182,6 +182,14 @@ async def startup_event():
     except Exception as e:
         print(f"[Startup] Strategy executor failed: {e}")
     
+    # Start position monitor (exit triggers: duration, APY, stop-loss)
+    try:
+        from agents.position_monitor import position_monitor
+        asyncio.create_task(position_monitor.start())
+        print("[Startup] ✅ Position monitor started (exit triggers every 60s)")
+    except Exception as e:
+        print(f"[Startup] Position monitor failed: {e}")
+    
     # Start API Metrics persistence (every 5 minutes)
     async def metrics_persistence_loop():
         """Background task to persist API metrics to Supabase"""

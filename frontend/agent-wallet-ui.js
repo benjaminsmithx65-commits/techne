@@ -4,9 +4,34 @@
  */
 
 const AgentWalletUI = {
-    // Contract address - V4.3.2 PRODUCTION ON BASE MAINNET
-    contractAddress: '0x323f98c4e05073c2f76666944d95e39b78024efd',
+    // Legacy Contract - V4.3.3 (for backward compatibility)
+    contractAddress: '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4',
     contractVersion: 'V4.3.3',
+
+    // NEW: Smart Account Factory (Trustless Architecture)
+    factoryAddress: '0x33f5e2F6d194869ACc60C965C2A24eDC5de8a216',
+
+    // Factory ABI for creating Smart Accounts
+    FACTORY_ABI: [
+        'function createAccount(bytes32 salt) returns (address account)',
+        'function getAddress(address owner, bytes32 salt) view returns (address)',
+        'function getAccounts(address owner) view returns (address[])',
+        'function getAccountCount(address owner) view returns (uint256)'
+    ],
+
+    // Smart Account ABI (for owner operations)
+    SMART_ACCOUNT_ABI: [
+        'function execute(address target, uint256 value, bytes data) returns (bytes)',
+        'function owner() view returns (address)',
+        'function addSessionKey(address key, uint48 validUntil, uint256 dailyLimitUSD)',
+        'function revokeSessionKey(address key)',
+        'function getSessionKeyInfo(address key) view returns (bool active, uint48 validUntil, uint256 dailyLimitUSD, uint256 spentTodayUSD)',
+        'function revenueFee() view returns (uint256)',
+        'function MAX_REVENUE_FEE_BPS() view returns (uint256)'
+    ],
+
+    // User's Smart Account address (populated after connection)
+    userSmartAccount: null,
 
     // Supported tokens on Base
     TOKENS: {
@@ -16,6 +41,14 @@ const AgentWalletUI = {
             symbol: 'USDC',
             name: 'USD Coin',
             icon: '💵'
+        },
+        ETH: {
+            address: null,  // Native ETH - no contract address
+            decimals: 18,
+            symbol: 'ETH',
+            name: 'Ether',
+            icon: '⟠',
+            isNative: true
         },
         WETH: {
             address: '0x4200000000000000000000000000000000000006',
@@ -93,6 +126,163 @@ const AgentWalletUI = {
         // setInterval(() => this.refreshStats(), 30000);
 
         console.log('[AgentWallet] UI initialized (contract refresh disabled)');
+    },
+
+    // ============================================
+    // SMART ACCOUNT METHODS (Trustless Architecture)
+    // ============================================
+
+    /**
+     * Check if user has a Smart Account
+     * @returns {Promise<string|null>} Smart Account address or null
+     */
+    async checkSmartAccount() {
+        if (!window.ethereum) {
+            console.warn('[SmartAccount] No wallet connected');
+            return null;
+        }
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const userAddress = await signer.getAddress();
+
+            const factory = new ethers.Contract(
+                this.factoryAddress,
+                this.FACTORY_ABI,
+                provider
+            );
+
+            const accounts = await factory.getAccounts(userAddress);
+
+            if (accounts.length > 0) {
+                this.userSmartAccount = accounts[0];
+                console.log('[SmartAccount] Found:', this.userSmartAccount);
+                return this.userSmartAccount;
+            }
+
+            console.log('[SmartAccount] No account found for', userAddress);
+            return null;
+
+        } catch (error) {
+            console.error('[SmartAccount] Check failed:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Create a new Smart Account for the user
+     * @returns {Promise<string>} Created account address
+     */
+    async createSmartAccount() {
+        if (!window.ethereum) {
+            throw new Error('Please connect your wallet first');
+        }
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+
+            const factory = new ethers.Contract(
+                this.factoryAddress,
+                this.FACTORY_ABI,
+                signer
+            );
+
+            // Generate unique salt
+            const salt = ethers.keccak256(
+                ethers.solidityPacked(
+                    ['address', 'uint256'],
+                    [await signer.getAddress(), Date.now()]
+                )
+            );
+
+            console.log('[SmartAccount] Creating with salt:', salt);
+
+            const tx = await factory.createAccount(salt);
+            console.log('[SmartAccount] TX sent:', tx.hash);
+
+            const receipt = await tx.wait();
+            console.log('[SmartAccount] Created in block:', receipt.blockNumber);
+
+            // Get the created account address
+            const accounts = await factory.getAccounts(await signer.getAddress());
+            this.userSmartAccount = accounts[accounts.length - 1];
+
+            console.log('[SmartAccount] Address:', this.userSmartAccount);
+            return this.userSmartAccount;
+
+        } catch (error) {
+            console.error('[SmartAccount] Creation failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Revoke a session key (emergency stop)
+     * @param {string} sessionKeyAddress - Address of the session key to revoke
+     */
+    async revokeSessionKey(sessionKeyAddress) {
+        if (!this.userSmartAccount) {
+            throw new Error('No Smart Account found');
+        }
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+
+            const account = new ethers.Contract(
+                this.userSmartAccount,
+                this.SMART_ACCOUNT_ABI,
+                signer
+            );
+
+            const tx = await account.revokeSessionKey(sessionKeyAddress);
+            console.log('[SmartAccount] Revoking session key:', tx.hash);
+
+            await tx.wait();
+            console.log('[SmartAccount] Session key revoked successfully');
+
+            return true;
+
+        } catch (error) {
+            console.error('[SmartAccount] Revoke failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Get Smart Account info (fee, session keys)
+     */
+    async getSmartAccountInfo() {
+        if (!this.userSmartAccount) {
+            return null;
+        }
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+
+            const account = new ethers.Contract(
+                this.userSmartAccount,
+                this.SMART_ACCOUNT_ABI,
+                provider
+            );
+
+            const [revenueFee, maxFee] = await Promise.all([
+                account.revenueFee(),
+                account.MAX_REVENUE_FEE_BPS()
+            ]);
+
+            return {
+                address: this.userSmartAccount,
+                revenueFeePercent: Number(revenueFee) / 100, // Convert BPS to %
+                maxFeePercent: Number(maxFee) / 100
+            };
+
+        } catch (error) {
+            console.error('[SmartAccount] Get info failed:', error);
+            return null;
+        }
     },
 
     /**
@@ -256,7 +446,7 @@ const AgentWalletUI = {
                             ">
                                 💵 USDC
                             </button>
-                            <button id="tokenSelectWETH" onclick="AgentWalletUI.selectToken('WETH')" style="
+                            <button id="tokenSelectETH" onclick="AgentWalletUI.selectToken('ETH')" style="
                                 padding: 12px;
                                 background: rgba(255,255,255,0.03);
                                 border: 1px solid rgba(255,255,255,0.1);
@@ -270,7 +460,7 @@ const AgentWalletUI = {
                                 gap: 8px;
                                 transition: all 0.2s;
                             ">
-                                ⟠ WETH
+                                ⟠ ETH
                             </button>
                         </div>
                     </div>
@@ -404,8 +594,11 @@ const AgentWalletUI = {
 
     /**
      * Show withdraw modal - Premium styled
+     * @param {string} asset - Token symbol (USDC, ETH, WETH)
      */
-    showWithdrawModal() {
+    showWithdrawModal(asset = 'USDC') {
+        // Store which token we're withdrawing
+        this.withdrawToken = asset;
         document.getElementById('vaultModal')?.remove();
 
         const modal = document.createElement('div');
@@ -461,7 +654,7 @@ const AgentWalletUI = {
                     </div>
                     <div style="flex: 1;">
                         <h2 style="margin: 0; font-size: 1.2rem; color: #fff; font-weight: 600;">Withdraw Funds</h2>
-                        <p style="margin: 4px 0 0; font-size: 0.8rem; color: rgba(255,255,255,0.5);">Withdraw USDC from your Agent Vault</p>
+                        <p style="margin: 4px 0 0; font-size: 0.8rem; color: rgba(255,255,255,0.5);">Withdraw ${asset} from your Agent Vault</p>
                     </div>
                     <button onclick="document.getElementById('vaultModal').remove()" style="
                         background: rgba(255,255,255,0.05);
@@ -504,13 +697,13 @@ const AgentWalletUI = {
                             text-align: center;
                         ">
                             <div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 6px;">Available</div>
-                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${(this.userValue / 1e6).toFixed(2)} USDC</div>
+                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${(this.userValue / 1e6).toFixed(2)} ${asset}</div>
                         </div>
                     </div>
 
                     <!-- Shares Input -->
                     <div style="margin-bottom: 20px;">
-                        <label style="display: block; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">USDC Amount to Withdraw</label>
+                        <label style="display: block; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">${asset} Amount to Withdraw</label>
                         <div style="
                             display: flex;
                             background: rgba(0,0,0,0.4);
@@ -540,7 +733,7 @@ const AgentWalletUI = {
                             ">MAX</button>
                         </div>
                         <div style="margin-top: 8px; font-size: 0.75rem; color: rgba(255,255,255,0.4);">
-                            Available: ${(this.userValue / 1e6).toFixed(2)} USDC
+                            Available: ${(this.userValue / 1e6).toFixed(2)} ${asset}
                         </div>
                     </div>
 
@@ -582,7 +775,7 @@ const AgentWalletUI = {
                             <path d="M3 12h6l2 3h2l2-3h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                             <path d="M12 3v6m0 0l3-3m-3 3L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
-                        Withdraw USDC
+                        Withdraw ${asset}
                     </button>
                 </div>
             </div>
@@ -606,7 +799,7 @@ const AgentWalletUI = {
     },
 
     /**
-     * Select deposit token (USDC or WETH)
+     * Select deposit token (USDC or ETH)
      */
     selectToken(symbol) {
         this.selectedToken = symbol;
@@ -614,19 +807,19 @@ const AgentWalletUI = {
 
         // Update UI
         const usdcBtn = document.getElementById('tokenSelectUSDC');
-        const wethBtn = document.getElementById('tokenSelectWETH');
+        const ethBtn = document.getElementById('tokenSelectETH');
 
         if (symbol === 'USDC') {
             usdcBtn.style.background = 'rgba(212, 168, 83, 0.15)';
             usdcBtn.style.border = '2px solid #d4a853';
             usdcBtn.style.color = '#fff';
-            wethBtn.style.background = 'rgba(255,255,255,0.03)';
-            wethBtn.style.border = '1px solid rgba(255,255,255,0.1)';
-            wethBtn.style.color = 'rgba(255,255,255,0.7)';
+            ethBtn.style.background = 'rgba(255,255,255,0.03)';
+            ethBtn.style.border = '1px solid rgba(255,255,255,0.1)';
+            ethBtn.style.color = 'rgba(255,255,255,0.7)';
         } else {
-            wethBtn.style.background = 'rgba(212, 168, 83, 0.15)';
-            wethBtn.style.border = '2px solid #d4a853';
-            wethBtn.style.color = '#fff';
+            ethBtn.style.background = 'rgba(212, 168, 83, 0.15)';
+            ethBtn.style.border = '2px solid #d4a853';
+            ethBtn.style.color = '#fff';
             usdcBtn.style.background = 'rgba(255,255,255,0.03)';
             usdcBtn.style.border = '1px solid rgba(255,255,255,0.1)';
             usdcBtn.style.color = 'rgba(255,255,255,0.7)';
@@ -636,7 +829,7 @@ const AgentWalletUI = {
         document.getElementById('selectedTokenLabel').textContent = symbol;
         document.getElementById('tokenSymbol').textContent = symbol;
         document.getElementById('minAmountHint').textContent =
-            symbol === 'USDC' ? 'Min: 10 USDC' : 'Min: 0.005 WETH';
+            symbol === 'USDC' ? 'Min: 10 USDC' : 'Min: 0.001 ETH';
 
         // Clear and reload balance
         document.getElementById('depositAmount').value = '';
@@ -653,8 +846,15 @@ const AgentWalletUI = {
 
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
-            const contract = new ethers.Contract(token.address, this.ERC20_ABI, provider);
-            const balance = await contract.balanceOf(window.connectedWallet);
+            let balance;
+
+            // Handle native ETH differently
+            if (token.isNative) {
+                balance = await provider.getBalance(window.connectedWallet);
+            } else {
+                const contract = new ethers.Contract(token.address, this.ERC20_ABI, provider);
+                balance = await contract.balanceOf(window.connectedWallet);
+            }
 
             const formatted = (Number(balance) / Math.pow(10, token.decimals)).toFixed(
                 token.decimals === 18 ? 4 : 2
@@ -721,7 +921,7 @@ const AgentWalletUI = {
         const token = this.TOKENS[this.selectedToken];
 
         // Validate minimum amounts
-        const minAmount = this.selectedToken === 'USDC' ? 10 : 0.005;
+        const minAmount = this.selectedToken === 'USDC' ? 10 : 0.001;
         if (!amount || parseFloat(amount) < minAmount) {
             alert(`Minimum deposit is ${minAmount} ${this.selectedToken}`);
             return;
@@ -773,23 +973,40 @@ const AgentWalletUI = {
             // Calculate amount in token's decimals
             const amountWei = BigInt(Math.floor(parseFloat(amount) * Math.pow(10, token.decimals)));
 
-            // Approve token
-            btn.innerHTML = '<span>⏳</span> Approving...';
-            const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
-            const approveTx = await tokenContract.approve(this.contractAddress, amountWei);
-            await approveTx.wait();
-
-            btn.innerHTML = '<span>⏳</span> Depositing...';
-
-            // Deposit - use depositToken for non-USDC, deposit for USDC
-            const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
             let depositTx;
 
-            if (this.selectedToken === 'USDC') {
-                depositTx = await wallet.deposit(amountWei);
+            // Handle native ETH - send directly to agent executor for gas
+            if (token.isNative) {
+                // Agent executor address (controlled by AGENT_PRIVATE_KEY)
+                const AGENT_EXECUTOR_ADDRESS = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
+
+                btn.innerHTML = '<span>⏳</span> Funding Agent Gas...';
+
+                // Send ETH directly to agent executor for gas
+                depositTx = await signer.sendTransaction({
+                    to: AGENT_EXECUTOR_ADDRESS,
+                    value: amountWei
+                });
+
+                console.log('[AgentWallet] ETH sent to agent executor for gas');
             } else {
-                // For WETH and other tokens, use depositToken
-                depositTx = await wallet.depositToken(token.address, amountWei);
+                // For ERC20 tokens - approve first
+                btn.innerHTML = '<span>⏳</span> Approving...';
+                const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
+                const approveTx = await tokenContract.approve(this.contractAddress, amountWei);
+                await approveTx.wait();
+
+                btn.innerHTML = '<span>⏳</span> Depositing...';
+
+                // Deposit - use depositToken for non-USDC, deposit for USDC
+                const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
+
+                if (this.selectedToken === 'USDC') {
+                    depositTx = await wallet.deposit(amountWei);
+                } else {
+                    // For WETH and other tokens, use depositToken
+                    depositTx = await wallet.depositToken(token.address, amountWei);
+                }
             }
             await depositTx.wait();
 

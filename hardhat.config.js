@@ -1,27 +1,33 @@
-import "dotenv/config";
-import "@nomicfoundation/hardhat-toolbox";
+require("dotenv").config();
+require("@nomicfoundation/hardhat-ethers");
 
 /** @type import('hardhat/config').HardhatUserConfig */
-export default {
+module.exports = {
     solidity: {
-        version: "0.8.20",
-        settings: {
-            optimizer: {
-                enabled: true,
-                runs: 200
+        compilers: [
+            {
+                version: "0.8.20",
+                settings: {
+                    optimizer: { enabled: true, runs: 200 },
+                    viaIR: true
+                }
             },
-            viaIR: true  // Enables IR-based code generation to avoid stack too deep
-        }
+            {
+                version: "0.8.24",
+                settings: {
+                    optimizer: { enabled: true, runs: 200 },
+                    viaIR: true
+                }
+            }
+        ]
     },
     networks: {
         base: {
-            type: "http",
-            url: process.env.ALCHEMY_RPC_URL || "https://base-mainnet.g.alchemy.com/v2/AqxI9okL6ZYv38MBFDHhb",
+            url: process.env.ALCHEMY_RPC_URL || "https://mainnet.base.org",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 8453
         },
         baseSepolia: {
-            type: "http",
             url: "https://sepolia.base.org",
             accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
             chainId: 84532

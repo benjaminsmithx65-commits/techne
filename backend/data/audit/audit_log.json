@@ -26,5 +26,226 @@
     "value_usd": 50,
     "success": true,
     "error": null
+  },
+  {
+    "timestamp": "2026-01-22T01:36:46.156116",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T01:38:42.029409",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T01:40:32.466542",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:13:02.685454",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:26:55.171713",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:42:20.939472",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:42:49.138712",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:46:00.174735",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058",
+    "details": {
+      "position_id": 123,
+      "protocol": "aave-v3",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T10:48:36.215042",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058",
+    "details": {
+      "position_id": 123,
+      "protocol": "aave-v3",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T19:28:55.319668",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058",
+    "details": {
+      "position_id": 123,
+      "protocol": "aave-v3",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T19:30:38.068209",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 1,
+      "protocol": "aave",
+      "percentage": 100,
+      "amount_usdc": 0.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 0.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T19:39:36.412228",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058",
+    "details": {
+      "position_id": 123,
+      "protocol": "aave-v3",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-22T19:50:25.669363",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058",
+    "details": {
+      "position_id": 123,
+      "protocol": "aave-v3",
+      "percentage": 100,
+      "amount_usdc": 10.0
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 10.0,
+    "success": true,
+    "error": null
   }
 ]

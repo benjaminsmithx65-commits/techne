@@ -1,66 +1,46 @@
-const hre = require("hardhat");
+const { ethers } = require("hardhat");
 
 async function main() {
-    console.log("🚀 Deploying TechneAgentWallet to Base Mainnet...\n");
+    console.log("Deploying TechneAgentWalletV43 with exitPosition()...");
 
-    // Base Mainnet addresses
-    const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-    const AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
-    const AERODROME_FACTORY = "0x420DD381b31aEf6683db6B902084cB0FFECe40Da";
-    const AGENT = "0x542c3b6cb5c93c4e4b4c20de48ee87dd79efdfec";
+    const [deployer] = await ethers.getSigners();
+    console.log("Deployer address:", deployer.address);
+    console.log("Balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "ETH");
 
-    const [deployer] = await hre.ethers.getSigners();
+    // Constructor parameters for Base mainnet
+    const constructorArgs = [
+        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  // USDC
+        "0x4200000000000000000000000000000000000006",  // WETH
+        deployer.address,                              // Admin
+        deployer.address,                              // Agent
+        deployer.address,                              // Guardian
+        "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",  // Price Oracle
+        "0xBCF85224fc0756B9Fa45aA7892530B47e10b6433",  // Sequencer Feed
+        "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",  // Aave Pool
+        "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",  // DEX Router (Aerodrome)
+        "0x420DD381b31aEf6683db6B902084cB0FFECe40Da"   // Aero Factory
+    ];
 
-    console.log("📍 Deployer:", deployer.address);
-
-    const balance = await hre.ethers.provider.getBalance(deployer.address);
-    console.log("💰 Balance:", hre.ethers.formatEther(balance), "ETH\n");
-
-    console.log("📝 Constructor args:");
-    console.log("   USDC:", USDC);
-    console.log("   Router:", AERODROME_ROUTER);
-    console.log("   Factory:", AERODROME_FACTORY);
-    console.log("   Agent:", AGENT);
+    console.log("\nConstructor args:", constructorArgs);
 
     // Deploy
-    console.log("\n⏳ Deploying...");
-
-    const TechneAgentWallet = await hre.ethers.getContractFactory("TechneAgentWallet");
-    const wallet = await TechneAgentWallet.deploy(
-        USDC,
-        AERODROME_ROUTER,
-        AERODROME_FACTORY,
-        AGENT
-    );
+    const TechneWallet = await ethers.getContractFactory("TechneAgentWalletV43");
+    const wallet = await TechneWallet.deploy(...constructorArgs);
 
     await wallet.waitForDeployment();
-
     const address = await wallet.getAddress();
 
-    console.log("\n================================");
-    console.log("✅ DEPLOYMENT SUCCESSFUL!");
-    console.log("================================");
-    console.log("📍 Contract Address:", address);
-    console.log("🔗 Basescan: https://basescan.org/address/" + address);
-    console.log("================================\n");
-
-    // Verify on Basescan
-    console.log("⏳ Waiting 30s before verification...");
-    await new Promise(r => setTimeout(r, 30000));
-
-    console.log("📝 Verifying on Basescan...");
-    try {
-        await hre.run("verify:verify", {
-            address: address,
-            constructorArguments: [USDC, AERODROME_ROUTER, AERODROME_FACTORY, AGENT],
-        });
-        console.log("✅ Contract verified on Basescan!");
-    } catch (e) {
-        console.log("⚠️ Verification failed:", e.message);
-    }
+    console.log("\n✅ TechneAgentWalletV43 deployed to:", address);
+    console.log("\nNext steps:");
+    console.log("1. Update backend TECHNE_WALLET address to:", address);
+    console.log("2. Whitelist user address");
+    console.log("3. Approve AAVE Pool as lending protocol");
+    console.log("4. Migrate funds from old contract if needed");
 }
 
-main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-});
+main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });

@@ -53,3 +53,35 @@ Assume the issue is in the **LOGIC**, not the UI.
 
 ### Contract:
 - TechneAgentWallet V4.3.3: `0x323f98c4e05073c2f76666944d95e39b78024efd`
+- TechneAccountFactory: `0x33f5e2F6d194869ACc60C965C2A24eDC5de8a216`
+
+## 6. TURBO MODE (AUTO-APPROVE ALL)
+
+When user says "turbo", "/turbo", or "bez approva":
+// turbo-all
+
+### Auto-Approve Commands:
+// turbo
+- `npm install`, `npm run dev`, `npm run build`, `npm test`
+// turbo
+- `python`, `pip install`, `uvicorn`, `pytest`
+// turbo
+- `npx hardhat compile`, `npx hardhat run`, `npx hardhat test`
+// turbo
+- `git add`, `git commit`, `git push`, `git pull`
+// turbo
+- `curl`, `Invoke-RestMethod`
+// turbo
+- File create/edit/delete within project directories
+
+### Never Auto-Approve (require explicit confirmation):
+- Deleting system files outside project
+- Running unknown scripts from internet
+- Transactions involving real money (mainnet deploys with funds)
+
+### Turbo Behavior:
+1. Set `SafeToAutoRun: true` for all listed command types
+2. Set `ShouldAutoProceed: true` for notify_user when confident
+3. Continue working without waiting for user between steps
+4. Only stop on unrecoverable errors
+

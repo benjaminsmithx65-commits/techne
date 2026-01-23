@@ -1,0 +1,13 @@
+{
+    "user_address": "0xTestUser123",
+    "agent_address": "0xAgentAddr456",
+    "pool_type": "dual",
+    "protocols": [
+        "aerodrome",
+        "uniswap"
+    ],
+    "min_pool_tvl": 10000000,
+    "duration": 30,
+    "max_gas_price": 50,
+    "slippage": 0.5
+}

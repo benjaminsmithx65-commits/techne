@@ -637,6 +637,11 @@ async function checkWalletConnection() {
             updateWalletUI();
             loadUserPoolHistory();
             updateWalletGatedSections();
+
+            // Reload portfolio agents with connected wallet
+            if (window.PortfolioDash?.loadAgents) {
+                window.PortfolioDash.loadAgents();
+            }
         }
     } catch (e) {
         console.log('Wallet check error:', e);
@@ -687,6 +692,11 @@ async function connectWallet() {
                 // Load user data
                 loadUserPoolHistory();
                 updateWalletGatedSections();
+
+                // Reload portfolio agents now that wallet is connected
+                if (window.PortfolioDash?.loadAgents) {
+                    window.PortfolioDash.loadAgents();
+                }
             } else {
                 Toast?.show('No accounts found. Please unlock MetaMask.', 'warning');
             }

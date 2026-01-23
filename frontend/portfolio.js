@@ -167,7 +167,7 @@ class PortfolioDashboard {
         // Auto-select first active agent
         const activeAgent = this.agents.find(a => a.isActive || a.is_active);
         if (activeAgent) {
-            this.selectedAgentId = activeAgent.id;
+            this.selectAgent(activeAgent.id);  // This triggers updateRiskIndicators
             const selector = document.getElementById('agentSelector');
             if (selector) selector.value = activeAgent.id;
         } else if (this.agents.length === 0) {
@@ -330,7 +330,7 @@ class PortfolioDashboard {
 
         try {
             // V4.3.3 contract address
-            const CONTRACT_ADDRESS = '0x323f98c4e05073c2f76666944d95e39b78024efd';
+            const CONTRACT_ADDRESS = '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4';
             const ABI = [
                 'function balances(address user) view returns (uint256)',
                 'function totalInvested(address user) view returns (uint256)',
@@ -341,20 +341,28 @@ class PortfolioDashboard {
             const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
 
             const balance = await contract.balances(window.connectedWallet);
-            const invested = await contract.totalInvested(window.connectedWallet);
 
-            // Try getUserTotalValue, fallback to balance + invested
-            let totalValue;
+            // Get invested amount from BACKEND (Supabase) instead of contract
+            // This allows Close Position to actually update the displayed amount
+            let investedUSDC = 0;
             try {
-                totalValue = await contract.getUserTotalValue(window.connectedWallet);
+                const API_BASE = window.API_BASE || 'http://localhost:8080';
+                const posResponse = await fetch(`${API_BASE}/api/position/${window.connectedWallet}`);
+                const posData = await posResponse.json();
+                if (posData.success && posData.positions) {
+                    // Sum all active positions
+                    investedUSDC = posData.positions.reduce((sum, pos) => sum + pos.current_value, 0);
+                }
             } catch (e) {
-                totalValue = balance + invested;
+                console.warn('[Portfolio] Backend positions fetch failed, falling back to contract:', e.message);
+                // Fallback to contract if backend fails
+                const invested = await contract.totalInvested(window.connectedWallet);
+                investedUSDC = Number(invested) / 1e6;
             }
 
             // Convert from wei (6 decimals for USDC)
             const balanceUSDC = Number(balance) / 1e6;
-            const investedUSDC = Number(invested) / 1e6;
-            const totalUSDC = Number(totalValue) / 1e6;
+            const totalUSDC = balanceUSDC + investedUSDC;
 
             console.log('[Portfolio] Contract balances:', {
                 idle: balanceUSDC,
@@ -379,7 +387,7 @@ class PortfolioDashboard {
                 });
             }
 
-            // Show invested funds (in Aave/lending protocols)
+            // Show invested funds (from backend positions, not contract)
             if (investedUSDC > 0) {
                 this.portfolio.holdings.push({
                     asset: 'USDC (Invested)',
@@ -400,13 +408,55 @@ class PortfolioDashboard {
                 });
             }
 
-            // Add WETH row (always 0 for now)
-            this.portfolio.holdings.push({
-                asset: 'WETH',
-                balance: 0,
-                value: 0,
-                change: 0
-            });
+            // Fetch and add ETH balance for agent executor
+            const AGENT_EXECUTOR_ADDRESS = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
+            const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
+
+            try {
+                // Get agent executor ETH balance
+                const agentEthBalance = await provider.getBalance(AGENT_EXECUTOR_ADDRESS);
+                const agentEthFormatted = Number(agentEthBalance) / 1e18;
+
+                // Get ETH price for USD value (approximate $3000)
+                const ethPrice = 3000;
+
+                this.portfolio.holdings.push({
+                    asset: 'ETH (Agent Gas)',
+                    balance: agentEthFormatted.toFixed(4),
+                    value: (agentEthFormatted * ethPrice).toFixed(2),
+                    change: 0,
+                    label: 'Agent executor gas balance'
+                });
+
+                // Get user WETH balance from contract
+                const wethContract = new ethers.Contract(WETH_ADDRESS, [
+                    'function balanceOf(address) view returns (uint256)'
+                ], provider);
+                const wethBalance = await wethContract.balanceOf(window.connectedWallet);
+                const wethFormatted = Number(wethBalance) / 1e18;
+
+                this.portfolio.holdings.push({
+                    asset: 'WETH',
+                    balance: wethFormatted.toFixed(4),
+                    value: (wethFormatted * ethPrice).toFixed(2),
+                    change: 0
+                });
+            } catch (e) {
+                console.warn('[Portfolio] ETH/WETH balance fetch failed:', e.message);
+                // Fallback to 0
+                this.portfolio.holdings.push({
+                    asset: 'ETH (Agent Gas)',
+                    balance: 0,
+                    value: 0,
+                    change: 0
+                });
+                this.portfolio.holdings.push({
+                    asset: 'WETH',
+                    balance: 0,
+                    value: 0,
+                    change: 0
+                });
+            }
 
             // Load and render Agent Positions
             await this.loadAgentPositions(investedUSDC);
@@ -1028,6 +1078,74 @@ class PortfolioDashboard {
         container.appendChild(table);
     }
 
+    /**
+     * Close a position (partial or full)
+     * @param {number|string} positionId - Position ID
+     * @param {number} percent - Percentage to close (25, 50, or 100)
+     */
+    async closePosition(positionId, percent) {
+        const position = this.portfolio.positions.find(p => p.id == positionId);
+        if (!position) {
+            Toast?.show('Position not found', 'error');
+            return;
+        }
+
+        const amount = (position.current || position.deposited) * (percent / 100);
+        const protocol = position.protocol || position.vaultName;
+
+        console.log(`[Portfolio] Closing ${percent}% of position ${positionId}:`, amount, protocol);
+
+        // Confirm with user
+        if (!confirm(`Close ${percent}% of ${protocol} position ($${amount.toFixed(2)})?`)) {
+            return;
+        }
+
+        try {
+            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const wallet = window.connectedWallet;
+
+            // Call backend to withdraw
+            const response = await fetch(`${API_BASE}/api/position/close`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_address: wallet,
+                    position_id: positionId,
+                    protocol: protocol,
+                    percentage: percent,
+                    amount: Math.round(amount * 1e6)  // Convert to USDC 6 decimals
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                Toast?.show(`Closed ${percent}% of ${protocol} position`, 'success');
+
+                // Update local state
+                if (percent >= 100) {
+                    // Remove position from list
+                    this.portfolio.positions = this.portfolio.positions.filter(p => p.id != positionId);
+                } else {
+                    // Reduce position amount
+                    position.current = (position.current || position.deposited) * (1 - percent / 100);
+                    position.deposited = position.deposited * (1 - percent / 100);
+                }
+
+                // Re-render positions
+                this.renderPositions();
+
+                // Refresh from backend
+                await this.loadAgentPositions();
+            } else {
+                Toast?.show(data.error || 'Failed to close position', 'error');
+            }
+        } catch (e) {
+            console.error('[Portfolio] Close position error:', e);
+            Toast?.show('Failed to close position: ' + e.message, 'error');
+        }
+    }
+
     renderTransactions() {
         const container = document.getElementById('txHistory');
         const emptyEl = document.getElementById('txEmpty');
@@ -1134,6 +1252,18 @@ class PortfolioDashboard {
             case 'rebalance':
                 this.triggerRebalance();
                 break;
+        }
+    }
+
+    /**
+     * Withdraw specific asset - called by Withdraw buttons in Asset Holdings table
+     */
+    withdraw(asset) {
+        console.log('[Portfolio] Withdraw requested for:', asset);
+        if (window.AgentWalletUI) {
+            AgentWalletUI.showWithdrawModal(asset);  // Pass asset type
+        } else {
+            this.showToast('Agent Wallet not initialized', 'warning');
         }
     }
 
@@ -1641,6 +1771,18 @@ class PortfolioDashboard {
                 break;
             case 'agent_status':
                 this.handleAgentStatusChange(data);
+                break;
+            case 'position_exit':
+                // Position was exited due to trigger (duration/APY/stop-loss)
+                console.log('[Portfolio] Position exit:', data);
+                Toast?.show(`Position exited: ${data.reason || 'Auto-exit triggered'}`, 'warning');
+                this.loadAgentPositions();
+                break;
+            case 'position_enter':
+                // New position was opened after reinvestment
+                console.log('[Portfolio] Position enter:', data);
+                Toast?.show(`New position opened: ${data.protocol} (${data.apy?.toFixed(1)}% APY)`, 'success');
+                this.loadAgentPositions();
                 break;
             case 'heartbeat':
                 // Keep-alive, no action needed

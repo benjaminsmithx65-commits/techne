@@ -68,7 +68,7 @@ class AgentDeployRequest(BaseModel):
     min_apy: float = 10
     max_apy: float = 50
     max_drawdown: float = 20
-    protocols: List[str] = ["morpho", "aave", "moonwell"]
+    protocols: List[str] = ["morpho", "aave", "moonwell", "aerodrome", "uniswap"]
     preferred_assets: List[str] = ["USDC", "WETH"]
     max_allocation: int = 25
     vault_count: int = 5
@@ -76,6 +76,15 @@ class AgentDeployRequest(BaseModel):
     only_audited: bool = True
     is_pro_mode: bool = False
     pro_config: Optional[ProConfig] = None
+    # Additional configs from Build UI
+    rebalance_threshold: int = 5           # % APY change to trigger rebalance
+    max_gas_price: int = 50                # Max gwei for transactions
+    slippage: float = 0.5                  # Max slippage %
+    compound_frequency: int = 7            # Days between auto-compound
+    avoid_il: bool = True                  # Avoid impermanent loss (single-sided only)
+    emergency_exit: bool = True            # Enable emergency exit on high volatility
+    min_pool_tvl: int = 10000000           # $10M minimum TVL default
+    duration: int = 30                     # Investment duration in days (0 = no limit)
 
 
 class AgentStatusResponse(BaseModel):
@@ -126,6 +135,16 @@ async def deploy_agent(request: AgentDeployRequest):
             "only_audited": request.only_audited,
             "is_pro_mode": request.is_pro_mode,
             "pro_config": request.pro_config.dict() if request.pro_config else None,
+            # Additional configs from Build UI
+            "rebalance_threshold": request.rebalance_threshold,
+            "max_gas_price": request.max_gas_price,
+            "slippage": request.slippage,
+            "compound_frequency": request.compound_frequency,
+            "avoid_il": request.avoid_il,
+            "emergency_exit": request.emergency_exit,
+            "min_pool_tvl": request.min_pool_tvl,
+            "duration": request.duration,
+            # Operational state
             "deployed_at": datetime.utcnow().isoformat(),
             "is_active": True,
             "positions": [],
@@ -174,7 +193,7 @@ async def get_agent_status(user_address: str, agent_id: Optional[str] = None):
     Get status of deployed agents for a user
     If agent_id provided, returns single agent
     """
-    user_agents = DEPLOYED_AGENTS.get(user_address, [])
+    user_agents = DEPLOYED_AGENTS.get(user_address.lower(), [])
     
     if not user_agents:
         return AgentStatusResponse(

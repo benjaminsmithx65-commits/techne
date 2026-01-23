@@ -1,0 +1,40 @@
+{
+    "name": "Example Feature",
+    "branchName": "feature/example",
+    "description": "Example PRD for Ralph-style workflow",
+    "stories": [
+        {
+            "id": 1,
+            "title": "Setup base structure",
+            "description": "Create the foundation files",
+            "acceptanceCriteria": [
+                "Files created",
+                "No errors"
+            ],
+            "priority": 1,
+            "passes": false
+        },
+        {
+            "id": 2,
+            "title": "Implement core logic",
+            "description": "Add the main functionality",
+            "acceptanceCriteria": [
+                "Feature works",
+                "Tests pass"
+            ],
+            "priority": 2,
+            "passes": false
+        },
+        {
+            "id": 3,
+            "title": "Add UI integration",
+            "description": "Connect to frontend",
+            "acceptanceCriteria": [
+                "UI shows data",
+                "User can interact"
+            ],
+            "priority": 3,
+            "passes": false
+        }
+    ]
+}

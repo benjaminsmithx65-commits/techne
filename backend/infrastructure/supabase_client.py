@@ -690,6 +690,76 @@ class SupabaseClient:
             }
             for row in result
         }
+    
+    # ==========================================
+    # SMART ACCOUNTS (Trustless Architecture)
+    # ==========================================
+    
+    async def save_user_smart_account(
+        self,
+        user_address: str,
+        smart_account_address: str,
+        session_key_address: str = None,
+        metadata: dict = None
+    ) -> Optional[dict]:
+        """Save user's Smart Account address mapping"""
+        if not self.is_available:
+            return None
+        
+        data = {
+            "user_address": user_address.lower(),
+            "smart_account_address": smart_account_address.lower(),
+            "session_key_address": session_key_address.lower() if session_key_address else None,
+            "created_at": datetime.utcnow().isoformat(),
+            "metadata": json.dumps(metadata or {})
+        }
+        
+        headers = self._headers()
+        headers["Prefer"] = "return=representation,resolution=merge-duplicates"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{self.url}/rest/v1/smart_accounts",
+                    headers=headers,
+                    json=data,
+                    params={"on_conflict": "user_address"}
+                )
+                if resp.status_code in [200, 201]:
+                    logger.info(f"[Supabase] Smart Account saved: {user_address[:10]}... -> {smart_account_address[:10]}...")
+                    return resp.json()[0] if resp.text else data
+                return None
+        except Exception as e:
+            logger.error(f"[Supabase] Save Smart Account failed: {e}")
+            return None
+    
+    async def get_user_smart_account(self, user_address: str) -> Optional[str]:
+        """Get user's Smart Account address"""
+        result = await self._request(
+            "GET", "smart_accounts",
+            params={
+                "user_address": f"eq.{user_address.lower()}",
+                "select": "smart_account_address",
+                "limit": "1"
+            }
+        )
+        return result[0]["smart_account_address"] if result else None
+    
+    async def update_session_key(
+        self,
+        user_address: str,
+        session_key_address: str
+    ) -> bool:
+        """Update session key for a user's Smart Account"""
+        result = await self._request(
+            "PATCH", "smart_accounts",
+            data={
+                "session_key_address": session_key_address.lower(),
+                "updated_at": datetime.utcnow().isoformat()
+            },
+            params={"user_address": f"eq.{user_address.lower()}"}
+        )
+        return result is not None
 
 
 # Global instance
@@ -773,4 +843,16 @@ CREATE TABLE IF NOT EXISTS harvests (
 CREATE INDEX IF NOT EXISTS idx_positions_user ON positions(user_address);
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_address);
 CREATE INDEX IF NOT EXISTS idx_leverage_user ON leverage_positions(user_address);
+
+-- Smart Accounts (Trustless Architecture)
+CREATE TABLE IF NOT EXISTS smart_accounts (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_address TEXT NOT NULL UNIQUE,
+    smart_account_address TEXT NOT NULL,
+    session_key_address TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_smart_accounts_user ON smart_accounts(user_address);
 """
