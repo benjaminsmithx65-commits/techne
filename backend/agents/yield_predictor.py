@@ -12,11 +12,32 @@ Features:
 
 import asyncio
 import httpx
+import os
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 import logging
 from collections import deque
 import statistics
+
+from dotenv import load_dotenv
+load_dotenv()
+
+# Supabase client (lazy init)
+_supabase_client = None
+
+def get_supabase():
+    global _supabase_client
+    if _supabase_client is None:
+        try:
+            from supabase import create_client
+            url = os.getenv("SUPABASE_URL")
+            key = os.getenv("SUPABASE_ANON_KEY")
+            if url and key:
+                _supabase_client = create_client(url, key)
+        except Exception as e:
+            logger.debug(f"Supabase not available: {e}")
+    return _supabase_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("YieldPredictor")
@@ -357,6 +378,178 @@ class YieldPredictor:
             },
             "last_updated": datetime.now().isoformat()
         }
+    
+    # =====================================================
+    # REINFORCEMENT LEARNING FEEDBACK LOOP
+    # =====================================================
+    
+    async def record_prediction(self, prediction: Dict[str, Any], days_ahead: int = 7) -> bool:
+        """
+        Record a prediction to Supabase for future verification.
+        Called automatically after predict() for learning.
+        """
+        supabase = get_supabase()
+        if not supabase:
+            return False
+        
+        try:
+            pool_id = prediction.get("pool_id")
+            predicted_apy = prediction.get("predicted_apy", {}).get(f"{days_ahead}d", 0)
+            current_apy = prediction.get("current_apy", 0)
+            confidence = prediction.get("confidence", {}).get("score", 0)
+            
+            record = {
+                "id": str(uuid.uuid4()),
+                "pool_id": pool_id,
+                "predicted_apy": predicted_apy,
+                "current_apy_at_prediction": current_apy,
+                "confidence_score": confidence,
+                "days_ahead": days_ahead,
+                "verify_at": (datetime.now() + timedelta(days=days_ahead)).isoformat(),
+                "created_at": datetime.now().isoformat(),
+                "verified": False,
+                "actual_apy": None,
+                "error_pct": None
+            }
+            
+            supabase.table("prediction_feedback").insert(record).execute()
+            logger.debug(f"📊 Recorded prediction for {pool_id}")
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Failed to record prediction: {e}")
+            return False
+    
+    async def verify_past_predictions(self) -> Dict[str, Any]:
+        """
+        Check predictions that are due for verification.
+        Fetches actual APY and calculates error.
+        Run this daily via cron/scheduler.
+        """
+        supabase = get_supabase()
+        if not supabase:
+            return {"error": "Supabase not configured"}
+        
+        try:
+            # Find unverified predictions past their verify_at date
+            now = datetime.now().isoformat()
+            result = supabase.table("prediction_feedback").select("*").eq(
+                "verified", False
+            ).lt("verify_at", now).limit(100).execute()
+            
+            pending = result.data or []
+            verified_count = 0
+            total_error = 0
+            
+            for pred in pending:
+                pool_id = pred["pool_id"]
+                
+                # Fetch current actual APY from DefiLlama
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        url = f"https://yields.llama.fi/chart/{pool_id}"
+                        response = await client.get(url)
+                        
+                        if response.status_code == 200:
+                            data = response.json().get("data", [])
+                            if data:
+                                actual_apy = data[-1].get("apy", 0)
+                                predicted_apy = pred["predicted_apy"]
+                                
+                                # Calculate error
+                                if predicted_apy > 0:
+                                    error_pct = abs(actual_apy - predicted_apy) / predicted_apy * 100
+                                else:
+                                    error_pct = 100
+                                
+                                # Update record
+                                supabase.table("prediction_feedback").update({
+                                    "verified": True,
+                                    "actual_apy": actual_apy,
+                                    "error_pct": error_pct,
+                                    "verified_at": datetime.now().isoformat()
+                                }).eq("id", pred["id"]).execute()
+                                
+                                verified_count += 1
+                                total_error += error_pct
+                                
+                except Exception as e:
+                    logger.debug(f"Failed to verify {pool_id}: {e}")
+            
+            avg_error = total_error / verified_count if verified_count > 0 else 0
+            
+            return {
+                "verified": verified_count,
+                "pending": len(pending) - verified_count,
+                "avg_error_pct": round(avg_error, 2),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Verification failed: {e}")
+            return {"error": str(e)}
+    
+    async def get_model_accuracy(self, days: int = 30) -> Dict[str, Any]:
+        """
+        Get model accuracy metrics over past N days.
+        Returns MAE, accuracy rate, and improvement trend.
+        """
+        supabase = get_supabase()
+        if not supabase:
+            return {"error": "Supabase not configured"}
+        
+        try:
+            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+            result = supabase.table("prediction_feedback").select("*").eq(
+                "verified", True
+            ).gt("created_at", cutoff).execute()
+            
+            records = result.data or []
+            
+            if not records:
+                return {
+                    "period_days": days,
+                    "predictions_verified": 0,
+                    "message": "No verified predictions yet"
+                }
+            
+            errors = [r["error_pct"] for r in records if r.get("error_pct") is not None]
+            
+            # Calculate metrics
+            mae = statistics.mean(errors) if errors else 0  # Mean Absolute Error
+            accuracy_rate = sum(1 for e in errors if e < 20) / len(errors) * 100 if errors else 0
+            
+            # Trend: compare first half vs second half
+            mid = len(errors) // 2
+            if mid > 0:
+                first_half_mae = statistics.mean(errors[:mid])
+                second_half_mae = statistics.mean(errors[mid:])
+                improvement = first_half_mae - second_half_mae
+            else:
+                improvement = 0
+            
+            return {
+                "period_days": days,
+                "predictions_verified": len(records),
+                "mae_pct": round(mae, 2),
+                "accuracy_rate": round(accuracy_rate, 2),  # % within 20% error
+                "improvement_trend": round(improvement, 2),  # positive = getting better
+                "best_performing_pools": self._get_best_pools(records),
+                "worst_performing_pools": self._get_worst_pools(records)
+            }
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _get_best_pools(self, records: List[Dict], n: int = 3) -> List[str]:
+        """Get pool IDs with lowest prediction error"""
+        sorted_records = sorted(records, key=lambda r: r.get("error_pct", 100))
+        return [r["pool_id"] for r in sorted_records[:n]]
+    
+    def _get_worst_pools(self, records: List[Dict], n: int = 3) -> List[str]:
+        """Get pool IDs with highest prediction error"""
+        sorted_records = sorted(records, key=lambda r: r.get("error_pct", 0), reverse=True)
+        return [r["pool_id"] for r in sorted_records[:n]]
 
 
 # Singleton instance
