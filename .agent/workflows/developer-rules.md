@@ -85,3 +85,77 @@ When user says "turbo", "/turbo", or "bez approva":
 3. Continue working without waiting for user between steps
 4. Only stop on unrecoverable errors
 
+## 7. FULL STACK INTEGRATION RULE (CRITICAL)
+
+**NEVER implement features in isolation.** Every feature must work END-TO-END.
+
+### The "Connected Systems" Checklist:
+Before marking ANY feature as "done", verify ALL connections:
+
+```
+[ ] 1. CONTRACT - Does the smart contract have the required function?
+       - If NO: Either add it OR find existing function that works
+       - WARNING: Don't add UI for features contract can't execute!
+
+[ ] 2. BACKEND - Is there an endpoint that:
+       - Receives the frontend request?
+       - Calls the contract/service correctly?
+       - Returns data in the format frontend expects?
+
+[ ] 3. FRONTEND - Does the UI:
+       - Call the correct backend endpoint?
+       - Use the correct HTTP method (GET/POST)?
+       - Handle the response data structure properly?
+       - Match existing styling patterns?
+
+[ ] 4. DATA FLOW - Trace the complete path:
+       Frontend Button → API Call → Backend Handler → Service Logic → Contract/DB → Response
+```
+
+### Anti-Patterns (FORBIDDEN):
+1. ❌ Adding UI slider without backend using that value
+2. ❌ Creating backend endpoint without frontend calling it
+3. ❌ Adding contract function without backend/frontend integration
+4. ❌ Using hardcoded values instead of actual API calls
+5. ❌ Creating new CSS classes without matching existing theme
+6. ❌ Adding console.log("TODO") and leaving it
+
+### Before Implementing, ALWAYS Ask:
+1. "Where does this data come FROM?" (user input, contract, API?)
+2. "Where does this data GO?" (contract, DB, display?)
+3. "What existing code handles similar features?" (copy pattern)
+4. "Is there an existing endpoint I can extend vs. creating new?"
+
+### Style Consistency Rules:
+- **CSS**: Use existing variables from `styles.css` (--color-*, --radius-*, etc.)
+- **JS**: Match existing function naming patterns (camelCase, async/await style)
+- **Python**: Match existing FastAPI patterns (router structure, Pydantic models)
+- **Error handling**: Copy error patterns from similar existing code
+
+### When Adding NEW Functionality:
+1. FIRST: Search for similar existing implementation
+2. SECOND: Understand the full data flow of that similar feature
+3. THIRD: Implement your feature following that exact same pattern
+4. FOURTH: Test by tracing the complete path manually
+
+## 8. DEBUGGING PRIORITY ORDER
+
+When user reports "X doesn't work":
+
+1. **Console errors** - Check browser DevTools for JS errors
+2. **Network tab** - Check if API call is made and what response is
+3. **Backend logs** - Check uvicorn output for Python errors
+4. **Contract state** - Verify contract has correct data/permissions
+5. **Frontend logic** - Only then check UI event handlers
+
+### Common Issues Checklist:
+```
+[ ] Wrong API URL (localhost vs production)
+[ ] Missing CORS headers
+[ ] Wrong HTTP method (GET vs POST)
+[ ] Data format mismatch (JSON structure)
+[ ] BigInt/Number mixing in JS
+[ ] Missing window. prefix for globals
+[ ] Contract function not in ABI
+[ ] Wallet not connected
+```

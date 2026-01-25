@@ -18,7 +18,7 @@ class AgentBuilderUI {
             // Risk & Returns
             riskLevel: 'medium',
             minApy: 5,
-            maxApy: 50,
+            maxApy: 200,
             maxDrawdown: 20,
 
             // Protocols - Base only
@@ -67,7 +67,7 @@ class AgentBuilderUI {
             },
             'yield-maximizer': {
                 riskLevel: 'high',
-                minApy: 25, maxApy: 100, maxDrawdown: 40,
+                minApy: 25, maxApy: 500, maxDrawdown: 40,
                 protocols: ['aerodrome', 'beefy', 'morpho', 'moonwell'],
                 preferredAssets: ['WETH', 'AERO', 'cbETH'],
                 vaultCount: 8, avoidIL: true, onlyAudited: false
@@ -145,7 +145,7 @@ class AgentBuilderUI {
             },
             'fast': {
                 riskLevel: 'high',
-                minApy: 20, maxApy: 100, maxDrawdown: 40,
+                minApy: 20, maxApy: 200, maxDrawdown: 40,
                 protocols: ['aerodrome', 'beefy', 'morpho', 'moonwell'],
                 preferredAssets: ['WETH', 'AERO', 'cbETH'],
                 poolType: 'dual', avoidIL: false, onlyAudited: false,
@@ -263,11 +263,18 @@ class AgentBuilderUI {
             b.classList.toggle('active', b.dataset.risk === this.config.riskLevel);
         });
 
-        // APY sliders
+        // APY sliders and custom inputs
         const minApySlider = document.getElementById('minApyConfig');
         const maxApySlider = document.getElementById('maxApyConfig');
+        const minApyInput = document.getElementById('minApyInput');
+        const maxApyInput = document.getElementById('maxApyInput');
+        const maxApyPlus = document.getElementById('maxApyPlus');
         if (minApySlider) minApySlider.value = this.config.minApy;
         if (maxApySlider) maxApySlider.value = this.config.maxApy;
+        if (minApyInput) minApyInput.value = this.config.minApy;
+        if (maxApyInput) maxApyInput.value = this.config.maxApy >= 500 ? 500 : this.config.maxApy;
+        if (maxApyPlus) maxApyPlus.textContent = this.config.maxApy >= 500 ? '%+' : '%';
+        this.config.maxApyUnlimited = this.config.maxApy >= 500;
         this.updateApyDisplay();
 
         // Drawdown
@@ -306,8 +313,22 @@ class AgentBuilderUI {
     updateApyDisplay() {
         const minDisp = document.getElementById('minApyDisplay');
         const maxDisp = document.getElementById('maxApyDisplay');
-        if (minDisp) minDisp.textContent = this.config.minApy + '%';
-        if (maxDisp) maxDisp.textContent = this.config.maxApy + '%';
+
+        // Show "500%+" when at max slider value (means unlimited)
+        if (minDisp) {
+            minDisp.textContent = this.config.minApy >= 500 ? '500%+' : this.config.minApy + '%';
+        }
+        if (maxDisp) {
+            // When max APY is 500, it means unlimited (500%+)
+            if (this.config.maxApy >= 500) {
+                maxDisp.textContent = '500%+';
+                // Set internal config to very high value for unlimited search
+                this.config.maxApyUnlimited = true;
+            } else {
+                maxDisp.textContent = this.config.maxApy + '%';
+                this.config.maxApyUnlimited = false;
+            }
+        }
     }
 
     bindConfigEvents() {
@@ -374,6 +395,23 @@ class AgentBuilderUI {
         // Min/Max APY sliders
         const minApySlider = document.getElementById('minApyConfig');
         const maxApySlider = document.getElementById('maxApyConfig');
+        const minApyInput = document.getElementById('minApyInput');
+        const maxApyInput = document.getElementById('maxApyInput');
+        const maxApyPlus = document.getElementById('maxApyPlus');
+
+        // Sync function for all APY controls
+        const syncApyControls = () => {
+            // Show "+" when at 500 (unlimited)
+            if (maxApyPlus) {
+                maxApyPlus.textContent = this.config.maxApy >= 500 ? '%+' : '%';
+            }
+            // Sync input fields with config
+            if (minApyInput) minApyInput.value = this.config.minApy;
+            if (maxApyInput) maxApyInput.value = this.config.maxApy >= 500 ? 500 : this.config.maxApy;
+            // Update unlimited flag
+            this.config.maxApyUnlimited = this.config.maxApy >= 500;
+        };
+
         if (minApySlider) {
             minApySlider.addEventListener('input', () => {
                 this.config.minApy = parseInt(minApySlider.value);
@@ -381,6 +419,7 @@ class AgentBuilderUI {
                     this.config.maxApy = this.config.minApy;
                     if (maxApySlider) maxApySlider.value = this.config.maxApy;
                 }
+                syncApyControls();
                 this.updateApyDisplay();
                 this.markCustom();
             });
@@ -392,6 +431,39 @@ class AgentBuilderUI {
                     this.config.minApy = this.config.maxApy;
                     if (minApySlider) minApySlider.value = this.config.minApy;
                 }
+                syncApyControls();
+                this.updateApyDisplay();
+                this.markCustom();
+            });
+        }
+
+        // Custom input fields - sync with sliders
+        if (minApyInput) {
+            minApyInput.addEventListener('change', () => {
+                let val = parseInt(minApyInput.value) || 0;
+                val = Math.max(0, Math.min(500, val));
+                this.config.minApy = val;
+                if (minApySlider) minApySlider.value = val;
+                if (this.config.minApy > this.config.maxApy) {
+                    this.config.maxApy = this.config.minApy;
+                    if (maxApySlider) maxApySlider.value = this.config.maxApy;
+                }
+                syncApyControls();
+                this.updateApyDisplay();
+                this.markCustom();
+            });
+        }
+        if (maxApyInput) {
+            maxApyInput.addEventListener('change', () => {
+                let val = parseInt(maxApyInput.value) || 0;
+                val = Math.max(0, Math.min(500, val));
+                this.config.maxApy = val;
+                if (maxApySlider) maxApySlider.value = val;
+                if (this.config.maxApy < this.config.minApy) {
+                    this.config.minApy = this.config.maxApy;
+                    if (minApySlider) minApySlider.value = this.config.minApy;
+                }
+                syncApyControls();
                 this.updateApyDisplay();
                 this.markCustom();
             });
@@ -682,11 +754,25 @@ What would you like to configure?`;
                 await terminal.runDeploymentSequence(this.config, proConfig);
             }
 
-            // Generate agent wallet address (in production, this would be from smart contract)
-            const address = '0x' + Array.from({ length: 40 }, () =>
-                '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+            // REQUEST SIGNATURE for ownership verification
+            // This proves the user owns this wallet and authorizes agent creation
+            const timestamp = Date.now();
+            const signMessage = `Deploy Techne Agent\nWallet: ${window.connectedWallet}\nTimestamp: ${timestamp}`;
+
+            let signature = null;
+            try {
+                signature = await window.ethereum.request({
+                    method: 'personal_sign',
+                    params: [signMessage, window.connectedWallet]
+                });
+                console.log('[AgentBuilder] User signed deploy message');
+            } catch (signError) {
+                console.warn('[AgentBuilder] Signature declined, continuing without:', signError);
+                // Continue anyway - signature is optional for MVP
+            }
 
             // Send deployment config to backend API
+            // NOTE: Backend generates agent wallet - we don't send agent_address
             const API_BASE = window.API_BASE || '';
             try {
                 const response = await fetch(`${API_BASE}/api/agent/deploy`, {
@@ -694,13 +780,15 @@ What would you like to configure?`;
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         user_address: window.connectedWallet,
-                        agent_address: address,
+                        // agent_address: generated by backend with private key
+                        signature: signature,
+                        sign_message: signMessage,
                         chain: this.config.chain,
                         preset: this.config.preset,
                         pool_type: this.config.poolType,
                         risk_level: this.config.riskLevel,
                         min_apy: this.config.minApy,
-                        max_apy: this.config.maxApy,
+                        max_apy: this.config.maxApyUnlimited ? 10000 : this.config.maxApy,
                         max_drawdown: this.config.maxDrawdown,
                         protocols: this.config.protocols,
                         preferred_assets: this.config.preferredAssets,
@@ -791,13 +879,20 @@ What would you like to configure?`;
                     const portfolioNav = document.querySelector('[data-section="portfolio"]');
                     if (portfolioNav) {
                         portfolioNav.click();
-                        // Refresh Portfolio data after navigation
-                        setTimeout(() => {
+                        // Force complete refresh after navigation
+                        setTimeout(async () => {
                             if (window.PortfolioDash) {
-                                console.log('[AgentBuilder] Refreshing Portfolio data...');
-                                window.PortfolioDash.loadPortfolioData();
+                                console.log('[AgentBuilder] Force refreshing Portfolio after deploy...');
+                                // First reload agents from localStorage
+                                await window.PortfolioDash.loadAgents();
+                                // Then refresh portfolio data (balances etc)
+                                await window.PortfolioDash.loadPortfolioData();
+                                // Also sync agent status display
+                                window.PortfolioDash.syncAgentStatus();
+                                window.PortfolioDash.updateUI();
+                                console.log('[AgentBuilder] Portfolio refresh complete');
                             }
-                        }, 500);
+                        }, 800);
                     }
                 }, 1500);
             }, 2000);

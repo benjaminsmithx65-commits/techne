@@ -1,3 +1,47 @@
 {
-  "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058": []
+  "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058": [
+    {
+      "id": "agent_1_1769337118",
+      "name": "Agent #1",
+      "user_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+      "agent_address": "0xe2654e4741a9f3f204c074288794b10290c79819",
+      "chain": "base",
+      "preset": "custom",
+      "pool_type": "dual",
+      "risk_level": "medium",
+      "min_apy": 50.0,
+      "max_apy": 500.0,
+      "max_drawdown": 20.0,
+      "protocols": [
+        "morpho",
+        "aave",
+        "moonwell",
+        "aerodrome",
+        "beefy"
+      ],
+      "preferred_assets": [
+        "USDC",
+        "WETH"
+      ],
+      "max_allocation": 20,
+      "vault_count": 5,
+      "auto_rebalance": true,
+      "only_audited": true,
+      "is_pro_mode": false,
+      "pro_config": null,
+      "rebalance_threshold": 5,
+      "max_gas_price": 50,
+      "slippage": 0.5,
+      "compound_frequency": 7,
+      "avoid_il": true,
+      "emergency_exit": true,
+      "min_pool_tvl": 10000000,
+      "duration": 30,
+      "deployed_at": "2026-01-25T11:31:58.446620",
+      "is_active": true,
+      "positions": [],
+      "total_deposited": 0,
+      "total_value": 0
+    }
+  ]
 }

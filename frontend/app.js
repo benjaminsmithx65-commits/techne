@@ -763,9 +763,7 @@ function updateWalletUI() {
             <span>Wallet Connected</span>
         `;
         connectBtn.classList.add('connected');
-
-        // Show history button
-        showPoolHistoryButton();
+        // History button removed from header
     }
 }
 
@@ -835,36 +833,8 @@ function disconnectWallet() {
     updateWalletGatedSections();
 }
 
-function showPoolHistoryButton() {
-    if (document.querySelector('.pool-history-btn')) return;
-
-    const headerRight = document.querySelector('.header-right');
-    if (!headerRight) return;
-
-    const btn = document.createElement('button');
-    btn.className = 'pool-history-btn';
-    btn.style.cssText = `
-        background: var(--bg-surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 12px;
-        color: var(--text);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-right: 8px;
-    `;
-    btn.innerHTML = '<span class="techne-icon">' + TechneIcons.history + '</span> <span>History</span>';
-    btn.onclick = showPoolHistory;
-
-    headerRight.insertBefore(btn, headerRight.firstChild);
-}
-
-// Show history button immediately on page load (no wallet required)
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(showPoolHistoryButton, 100);
-});
+// History button removed from header - functionality still available in Portfolio
+// function showPoolHistoryButton() { ... } - REMOVED
 
 // Pool order history storage
 const poolHistory = {

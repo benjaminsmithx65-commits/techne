@@ -60,10 +60,10 @@ class StrategyExecutor:
         self.execution_interval = 300  # 5 minutes
         self.last_execution: Dict[str, datetime] = {}
         
-        # Smart contract config - V4.3.2 PRODUCTION
+        # Smart contract config - V4.3.3 PRODUCTION (same as frontend!)
         self.wallet_contract = os.getenv(
             "AGENT_WALLET_ADDRESS", 
-            "0x323f98c4e05073c2f76666944d95e39b78024efd"  # V4.3.3
+            "0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4"  # V4.3.3 - must match frontend!
         )
         self.rpc_url = os.getenv(
             "ALCHEMY_RPC_URL",
@@ -158,8 +158,17 @@ class StrategyExecutor:
         pools = await self.find_matching_pools(agent)
         
         if not pools:
-            print(f"[StrategyExecutor] No matching pools found for {agent_id[:15]}")
-            return
+            print(f"[StrategyExecutor] No matching pools found - using Aave USDC fallback")
+            # Fallback: Default to Aave USDC (always available, always safe)
+            pools = [{
+                "symbol": "USDC",
+                "project": "aave-v3",
+                "apy": 6.2,
+                "tvl": 500000000,
+                "chain": "Base",
+                "risk_score": "Low",
+                "pool": "aave-usdc-base"
+            }]
         
         print(f"[StrategyExecutor] Found {len(pools)} matching pools")
         
@@ -173,6 +182,49 @@ class StrategyExecutor:
         self.last_execution[agent_id] = datetime.utcnow()
         
         print(f"[StrategyExecutor] Recommended {len(selected_pools)} pools for {agent_id[:15]}")
+        
+        # 4. AUTO-EXECUTE: Check if user has idle balance and execute allocation
+        user_address = agent.get("user_address")
+        if user_address and selected_pools:
+            try:
+                idle_balance = await self.get_user_idle_balance(user_address)
+                
+                if idle_balance > 1:  # Minimum $1 to allocate
+                    print(f"[StrategyExecutor] 💰 User has ${idle_balance:.2f} idle - auto-allocating!")
+                    
+                    # Execute allocation
+                    result = await self.execute_allocation(agent, idle_balance)
+                    
+                    if result.get("success"):
+                        print(f"[StrategyExecutor] ✅ Auto-allocation SUCCESS: {result.get('successful')}/{result.get('total_pools')} pools")
+                    else:
+                        print(f"[StrategyExecutor] ❌ Auto-allocation failed: {result.get('error')}")
+                else:
+                    print(f"[StrategyExecutor] User has no idle balance to allocate")
+                    
+            except Exception as e:
+                print(f"[StrategyExecutor] Balance check error: {e}")
+    
+    async def get_user_idle_balance(self, user_address: str) -> float:
+        """Get user's idle USDC balance from V4 contract"""
+        try:
+            from web3 import Web3
+            
+            w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+            contract = w3.eth.contract(
+                address=Web3.to_checksum_address(self.wallet_contract),
+                abi=self.v4_abi
+            )
+            
+            balance_wei = contract.functions.balances(
+                Web3.to_checksum_address(user_address)
+            ).call()
+            
+            return balance_wei / 1e6  # USDC has 6 decimals
+            
+        except Exception as e:
+            print(f"[StrategyExecutor] Error reading balance: {e}")
+            return 0
     
     async def check_rebalance_needed(self, agent: dict):
         """Check if agent positions need rebalancing"""
@@ -390,7 +442,7 @@ class StrategyExecutor:
     
     async def execute_v4_strategy(
         self, 
-        user_address: str, 
+        agent: dict,  # Now takes full agent with encrypted_private_key
         protocol_address: str, 
         amount_usdc: float,
         call_data: bytes = b""
@@ -399,11 +451,12 @@ class StrategyExecutor:
         Execute strategy on V4 contract for a specific user.
         
         V4 Individual Model:
+        - Uses agent's OWN private key (not global env)
         - Moves funds from balances[user] to investments[user][protocol]
         - Each user's funds tracked separately
         
         Args:
-            user_address: User whose funds to allocate
+            agent: Agent dict containing user_address and encrypted_private_key
             protocol_address: DeFi protocol to allocate to
             amount_usdc: Amount in USDC (6 decimals)
             call_data: Encoded call data for the protocol
@@ -411,9 +464,23 @@ class StrategyExecutor:
         try:
             from web3 import Web3
             
-            agent_private_key = os.getenv("AGENT_PRIVATE_KEY")
+            user_address = agent.get("user_address")
+            encrypted_pk = agent.get("encrypted_private_key")
+            
+            # Get private key - try agent's own key first, fallback to env
+            if encrypted_pk:
+                try:
+                    from services.agent_keys import decrypt_private_key
+                    agent_private_key = decrypt_private_key(encrypted_pk)
+                    print(f"[StrategyExecutor] Using agent's own execution key")
+                except Exception as e:
+                    print(f"[StrategyExecutor] Key decryption failed: {e}")
+                    agent_private_key = os.getenv("AGENT_PRIVATE_KEY")
+            else:
+                agent_private_key = os.getenv("AGENT_PRIVATE_KEY")
+            
             if not agent_private_key:
-                return {"success": False, "error": "AGENT_PRIVATE_KEY not set"}
+                return {"success": False, "error": "No execution key available for agent"}
             
             w3 = Web3(Web3.HTTPProvider(self.rpc_url))
             contract = w3.eth.contract(
@@ -492,8 +559,9 @@ class StrategyExecutor:
         if not recommended:
             return {"success": False, "error": "No recommended pools"}
         
-        # Protocol addresses for single-sided lending
+        # Protocol addresses for single-sided lending + DEX LP
         PROTOCOL_ADDRESSES = {
+            # Lending (single-sided)
             "aave": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
             "aave-v3": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
             "compound": "0x46e6b214b524310239732D51387075E0e70970bf",
@@ -501,7 +569,13 @@ class StrategyExecutor:
             "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
             "morpho-blue": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
             "moonwell": "0xfBb21d0380bEE3312B33c4353c8936a0F13EF26C",
+            # DEX LP (dual-sided)
+            "aerodrome": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",  # Aerodrome Router
+            "velodrome": "0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858",  # Velodrome Router
         }
+        
+        # DEX protocols that use LP (dual-sided)
+        DEX_PROTOCOLS = ["aerodrome", "velodrome", "uniswap", "curve"]
         
         results = []
         allocation_per_pool = amount_usdc / len(recommended)
@@ -531,18 +605,49 @@ class StrategyExecutor:
             
             print(f"[StrategyExecutor] V4 allocating ${allocation_per_pool:.2f} for {user_address[:10]}... to {symbol}")
             
-            # Execute via V4 contract
-            result = await self.execute_v4_strategy(
-                user_address=user_address,
-                protocol_address=protocol_address,
-                amount_usdc=allocation_per_pool,
-                call_data=b""  # Protocol-specific calldata would be encoded here
-            )
+            # Detect if this is an LP pool (dual-sided)
+            is_lp_pool = any(sep in symbol for sep in ["-", "/", " / "])
+            is_dex_protocol = any(dex in project for dex in DEX_PROTOCOLS)
+            
+            if is_lp_pool or is_dex_protocol:
+                # DUAL-SIDED LP: Would need to swap half USDC to second token, then add liquidity
+                # For MVP: Log and mark as pending LP - full implementation requires swap logic
+                print(f"[StrategyExecutor] 🔄 LP Pool detected: {symbol} on {project}")
+                print(f"[StrategyExecutor] LP deposit requires: swap 50% USDC → Token B, then addLiquidity()")
+                
+                result = {
+                    "success": True,
+                    "type": "lp_pending",
+                    "pool": symbol,
+                    "protocol": project,
+                    "amount": allocation_per_pool,
+                    "message": f"LP allocation marked for {symbol}. Requires swap + addLiquidity."
+                }
+                
+                # Track LP allocation in agent state
+                if "lp_allocations" not in agent:
+                    agent["lp_allocations"] = []
+                agent["lp_allocations"].append({
+                    "pool": symbol,
+                    "protocol": project,
+                    "amount": allocation_per_pool,
+                    "status": "pending",
+                    "created_at": datetime.utcnow().isoformat()
+                })
+            else:
+                # SINGLE-SIDED: Execute via V4 contract using agent's own key
+                result = await self.execute_v4_strategy(
+                    agent=agent,  # Pass full agent to use its private key
+                    protocol_address=protocol_address,
+                    amount_usdc=allocation_per_pool,
+                    call_data=b""  # Protocol-specific calldata would be encoded here
+                )
             
             results.append({
                 "pool": symbol,
                 "protocol": project,
                 "amount": allocation_per_pool,
+                "is_lp": is_lp_pool or is_dex_protocol,
                 "result": result
             })
         

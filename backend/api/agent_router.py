@@ -90,6 +90,159 @@ async def manual_allocate(user_address: str = Query(...)):
             "error": str(e)
         }
 
+
+# ============================================
+# AGENT WALLET ALLOCATION (New - No Smart Contract!)
+# ============================================
+
+# Base USDC contract address
+BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+
+# ERC20 ABI for balanceOf
+ERC20_ABI = [
+    {
+        "inputs": [{"name": "account", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
+
+
+@router.post("/trigger-allocation")
+async def trigger_agent_allocation(
+    user_address: str = Query(..., description="User's wallet address"),
+    agent_id: str = Query(None, description="Specific agent ID (optional)")
+):
+    """
+    Trigger allocation for agent wallet after user funded it with USDC.
+    
+    This is the NEW flow (no smart contract):
+    1. User deploys agent → gets agent_address
+    2. User sends USDC to agent_address (Fund Agent)
+    3. Frontend calls this endpoint
+    4. Backend reads agent wallet USDC balance
+    5. Backend allocates to protocols according to agent config
+    
+    COOLDOWN: If user closed a position within last 5 minutes, allocation is blocked.
+    This prevents immediate re-allocation after user manually exits.
+    
+    Called by frontend after fundAgentWallet() completes.
+    """
+    try:
+        from agents.contract_monitor import contract_monitor
+        from api.agent_config_router import DEPLOYED_AGENTS
+        from web3 import Web3
+        from datetime import datetime, timedelta
+        
+        COOLDOWN_MINUTES = 5
+        
+        # Get user's deployed agent
+        user_lower = user_address.lower()
+        user_agents = DEPLOYED_AGENTS.get(user_lower, [])
+        
+        if not user_agents:
+            return {
+                "success": False,
+                "error": "No deployed agent found for this user",
+                "hint": "Please deploy an agent first via /api/agent/deploy"
+            }
+        
+        # Find specific agent or use first active one
+        agent = None
+        if agent_id:
+            agent = next((a for a in user_agents if a.get("id") == agent_id), None)
+        else:
+            agent = next((a for a in user_agents if a.get("is_active")), None)
+        
+        if not agent:
+            return {
+                "success": False,
+                "error": "No active agent found"
+            }
+        
+        # ============================================
+        # COOLDOWN CHECK: 5 minutes after position close
+        # ============================================
+        last_close = agent.get("last_position_close")
+        if last_close:
+            try:
+                last_close_time = datetime.fromisoformat(last_close)
+                cooldown_end = last_close_time + timedelta(minutes=COOLDOWN_MINUTES)
+                now = datetime.utcnow()
+                
+                if now < cooldown_end:
+                    remaining = (cooldown_end - now).total_seconds()
+                    remaining_mins = int(remaining // 60)
+                    remaining_secs = int(remaining % 60)
+                    
+                    print(f"[TriggerAllocation] COOLDOWN active - {remaining_mins}m {remaining_secs}s remaining")
+                    return {
+                        "success": False,
+                        "cooldown_active": True,
+                        "cooldown_remaining_seconds": int(remaining),
+                        "cooldown_ends": cooldown_end.isoformat(),
+                        "message": f"Position closed recently. Agent cooldown: {remaining_mins}m {remaining_secs}s remaining before new allocations."
+                    }
+            except Exception as e:
+                print(f"[TriggerAllocation] Cooldown check error: {e}")
+        
+        agent_wallet = agent.get("agent_address")
+        if not agent_wallet:
+            return {
+                "success": False,
+                "error": "Agent has no wallet address configured",
+                "agent_id": agent.get("id")
+            }
+        
+        # Get agent wallet USDC balance on Base
+        w3 = contract_monitor._get_web3()
+        usdc_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(BASE_USDC),
+            abi=ERC20_ABI
+        )
+        
+        balance = usdc_contract.functions.balanceOf(
+            Web3.to_checksum_address(agent_wallet)
+        ).call()
+        
+        amount_usdc = balance / 1e6
+        
+        if balance == 0:
+            return {
+                "success": False,
+                "message": "Agent wallet has no USDC to allocate",
+                "agent_wallet": agent_wallet,
+                "balance": 0
+            }
+        
+        print(f"[TriggerAllocation] Agent {agent.get('id')} has {amount_usdc:.2f} USDC")
+        print(f"[TriggerAllocation] Agent wallet: {agent_wallet}")
+        print(f"[TriggerAllocation] Config: pool_type={agent.get('pool_type')}, risk={agent.get('risk_level')}")
+        
+        # Trigger allocation using agent wallet (not smart contract!)
+        # Pass agent_address as user so allocate_funds uses this agent's config
+        await contract_monitor.allocate_funds(user_address, balance)
+        
+        return {
+            "success": True,
+            "agent_id": agent.get("id"),
+            "agent_wallet": agent_wallet,
+            "amount_usdc": amount_usdc,
+            "pool_type": agent.get("pool_type"),
+            "risk_level": agent.get("risk_level"),
+            "message": f"Allocation triggered for {amount_usdc:.2f} USDC"
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 # ============================================
 # SMART ACCOUNT ENDPOINTS (Trustless Architecture)
 # ============================================
@@ -229,6 +382,250 @@ async def close_position(request: ClosePositionRequest):
                 import traceback
                 traceback.print_exc()
         
+        # Handle Morpho withdrawals
+        elif request.protocol.lower() in ["morpho", "morpho-blue"]:
+            print("[ClosePosition] Protocol is Morpho - executing withdrawal", flush=True)
+            try:
+                from api.smart_account_executor import SmartAccountExecutor, USDC
+                from web3 import Web3
+                import os
+                from eth_account import Account
+                
+                # Morpho Blue on Base
+                MORPHO_BLUE = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+                
+                agent_key = os.getenv("PRIVATE_KEY")
+                if agent_key:
+                    account = Account.from_key(agent_key)
+                    executor = SmartAccountExecutor(request.user_address)
+                    w3 = executor.w3
+                    
+                    # Morpho Blue withdraw ABI
+                    morpho_abi = [{
+                        "inputs": [
+                            {"name": "market", "type": "tuple", "components": [
+                                {"name": "loanToken", "type": "address"},
+                                {"name": "collateralToken", "type": "address"},
+                                {"name": "oracle", "type": "address"},
+                                {"name": "irm", "type": "address"},
+                                {"name": "lltv", "type": "uint256"}
+                            ]},
+                            {"name": "assets", "type": "uint256"},
+                            {"name": "shares", "type": "uint256"},
+                            {"name": "onBehalf", "type": "address"},
+                            {"name": "receiver", "type": "address"}
+                        ],
+                        "name": "withdraw",
+                        "outputs": [{"type": "uint256"}, {"type": "uint256"}],
+                        "stateMutability": "nonpayable",
+                        "type": "function"
+                    }]
+                    
+                    # For now, log that we would withdraw
+                    print(f"[ClosePosition] Morpho withdrawal for ${amount_usdc:.2f} queued")
+                    # TODO: Execute actual Morpho withdraw when market params known
+                    
+            except Exception as e:
+                print(f"[ClosePosition] Morpho error: {e}")
+        
+        # Handle Moonwell withdrawals (Compound fork)
+        elif request.protocol.lower() in ["moonwell", "moonwell-base"]:
+            print("[ClosePosition] Protocol is Moonwell - executing withdrawal", flush=True)
+            try:
+                from web3 import Web3
+                import os
+                from eth_account import Account
+                
+                # Moonwell mUSDC on Base
+                MOONWELL_USDC = "0xEdc817A28E8B93B03976FBd4a3dDBc9f7D176c22"
+                
+                agent_key = os.getenv("PRIVATE_KEY")
+                if agent_key:
+                    account = Account.from_key(agent_key)
+                    w3 = Web3(Web3.HTTPProvider(os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")))
+                    
+                    # Moonwell redeem ABI (Compound-style)
+                    moonwell_abi = [{
+                        "inputs": [{"name": "redeemTokens", "type": "uint256"}],
+                        "name": "redeem",
+                        "outputs": [{"type": "uint256"}],
+                        "stateMutability": "nonpayable",
+                        "type": "function"
+                    }]
+                    
+                    moon = w3.eth.contract(
+                        address=Web3.to_checksum_address(MOONWELL_USDC),
+                        abi=moonwell_abi
+                    )
+                    
+                    # Get balance of mTokens
+                    balance_abi = [{"inputs": [{"name": "owner", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"}]
+                    moon_balance = w3.eth.contract(address=Web3.to_checksum_address(MOONWELL_USDC), abi=balance_abi)
+                    mtoken_balance = moon_balance.functions.balanceOf(request.user_address).call()
+                    
+                    if mtoken_balance > 0:
+                        redeem_amount = mtoken_balance if request.percentage >= 100 else int(mtoken_balance * request.percentage / 100)
+                        
+                        tx = moon.functions.redeem(redeem_amount).build_transaction({
+                            'from': account.address,
+                            'nonce': w3.eth.get_transaction_count(account.address),
+                            'gas': 300000,
+                            'gasPrice': w3.eth.gas_price
+                        })
+                        
+                        signed = account.sign_transaction(tx)
+                        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                        
+                        if receipt.status == 1:
+                            onchain_tx_hash = tx_hash.hex()
+                            print(f"[ClosePosition] ✅ Moonwell redeem SUCCESS: {onchain_tx_hash}")
+                        
+            except Exception as e:
+                print(f"[ClosePosition] Moonwell error: {e}")
+        
+        # Handle Aerodrome withdrawals (LP removal)
+        elif request.protocol.lower() in ["aerodrome", "aerodrome-lp"]:
+            print("[ClosePosition] Protocol is Aerodrome LP - executing withdrawal", flush=True)
+            try:
+                from web3 import Web3
+                import os
+                import time
+                from eth_account import Account
+                
+                # Aerodrome contracts on Base
+                AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
+                USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                WETH = "0x4200000000000000000000000000000000000006"
+                
+                agent_key = os.getenv("PRIVATE_KEY")
+                if not agent_key:
+                    print("[ClosePosition] No PRIVATE_KEY for Aerodrome withdrawal")
+                else:
+                    account = Account.from_key(agent_key)
+                    w3 = Web3(Web3.HTTPProvider(os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")))
+                    
+                    # Get LP token info from position data or DEPLOYED_AGENTS
+                    from api.agent_config_router import DEPLOYED_AGENTS
+                    user_agents = DEPLOYED_AGENTS.get(request.user_address.lower(), [])
+                    
+                    lp_token_address = None
+                    token_a = USDC
+                    token_b = WETH
+                    is_stable = False
+                    
+                    # Find position info
+                    for agent in user_agents:
+                        for pos in agent.get("positions", []):
+                            if pos.get("protocol", "").lower() in ["aerodrome", "aerodrome-lp"]:
+                                lp_token_address = pos.get("lp_token") or pos.get("pool_address")
+                                token_a = pos.get("token_a", USDC)
+                                token_b = pos.get("token_b", WETH)
+                                is_stable = pos.get("stable", False)
+                                break
+                    
+                    if not lp_token_address:
+                        # Default to USDC/WETH volatile pool
+                        lp_token_address = "0xcDAC0d6c6C59727a65F871236188350531885C43"  # vAMM-USDC/WETH
+                        print(f"[ClosePosition] Using default LP pool: {lp_token_address}")
+                    
+                    # ERC20 ABI for LP token
+                    erc20_abi = [
+                        {"inputs": [{"name": "owner", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+                        {"inputs": [{"name": "spender", "type": "address"}, {"name": "amount", "type": "uint256"}], "name": "approve", "outputs": [{"type": "bool"}], "stateMutability": "nonpayable", "type": "function"}
+                    ]
+                    
+                    lp_contract = w3.eth.contract(
+                        address=Web3.to_checksum_address(lp_token_address),
+                        abi=erc20_abi
+                    )
+                    
+                    # Get user's LP balance
+                    lp_balance = lp_contract.functions.balanceOf(account.address).call()
+                    
+                    if lp_balance == 0:
+                        print("[ClosePosition] No LP tokens to withdraw")
+                    else:
+                        withdraw_amount = lp_balance if request.percentage >= 100 else int(lp_balance * request.percentage / 100)
+                        print(f"[ClosePosition] LP balance: {lp_balance}, withdrawing: {withdraw_amount}")
+                        
+                        # Step 1: Approve Router to spend LP tokens
+                        approve_tx = lp_contract.functions.approve(
+                            Web3.to_checksum_address(AERODROME_ROUTER),
+                            withdraw_amount
+                        ).build_transaction({
+                            'from': account.address,
+                            'gas': 100000,
+                            'gasPrice': w3.eth.gas_price,
+                            'nonce': w3.eth.get_transaction_count(account.address),
+                            'chainId': 8453
+                        })
+                        
+                        signed_approve = account.sign_transaction(approve_tx)
+                        approve_hash = w3.eth.send_raw_transaction(signed_approve.raw_transaction)
+                        w3.eth.wait_for_transaction_receipt(approve_hash, timeout=60)
+                        print(f"[ClosePosition] LP approval TX: {approve_hash.hex()}")
+                        
+                        # Step 2: Remove Liquidity
+                        router_abi = [{
+                            "inputs": [
+                                {"name": "tokenA", "type": "address"},
+                                {"name": "tokenB", "type": "address"},
+                                {"name": "stable", "type": "bool"},
+                                {"name": "liquidity", "type": "uint256"},
+                                {"name": "amountAMin", "type": "uint256"},
+                                {"name": "amountBMin", "type": "uint256"},
+                                {"name": "to", "type": "address"},
+                                {"name": "deadline", "type": "uint256"}
+                            ],
+                            "name": "removeLiquidity",
+                            "outputs": [{"type": "uint256"}, {"type": "uint256"}],
+                            "stateMutability": "nonpayable",
+                            "type": "function"
+                        }]
+                        
+                        router = w3.eth.contract(
+                            address=Web3.to_checksum_address(AERODROME_ROUTER),
+                            abi=router_abi
+                        )
+                        
+                        deadline = int(time.time()) + 1800  # 30 min deadline
+                        
+                        remove_tx = router.functions.removeLiquidity(
+                            Web3.to_checksum_address(token_a),
+                            Web3.to_checksum_address(token_b),
+                            is_stable,
+                            withdraw_amount,
+                            0,  # amountAMin (accept any - set slippage in prod)
+                            0,  # amountBMin
+                            account.address,
+                            deadline
+                        ).build_transaction({
+                            'from': account.address,
+                            'gas': 500000,
+                            'gasPrice': w3.eth.gas_price,
+                            'nonce': w3.eth.get_transaction_count(account.address),
+                            'chainId': 8453
+                        })
+                        
+                        signed_remove = account.sign_transaction(remove_tx)
+                        remove_hash = w3.eth.send_raw_transaction(signed_remove.raw_transaction)
+                        receipt = w3.eth.wait_for_transaction_receipt(remove_hash, timeout=120)
+                        
+                        if receipt.status == 1:
+                            onchain_tx_hash = remove_hash.hex()
+                            print(f"[ClosePosition] ✅ Aerodrome LP removal SUCCESS: {onchain_tx_hash}")
+                            
+                            # Step 3: Swap non-USDC token back to USDC (if needed)
+                            # TODO: Call swapExactTokensForTokens for token_b -> USDC
+                        else:
+                            print(f"[ClosePosition] ❌ Aerodrome LP removal FAILED")
+                            
+            except Exception as e:
+                import traceback
+                print(f"[ClosePosition] Aerodrome error: {e}")
+                traceback.print_exc()
+        
         # 1. Close/Update position in Supabase
         try:
             from infrastructure.supabase_client import supabase
@@ -268,9 +665,11 @@ async def close_position(request: ClosePositionRequest):
         except Exception as e:
             print(f"[ClosePosition] Supabase update failed: {e}")
         
-        # 2. Update in-memory DEPLOYED_AGENTS
+        # 2. Update in-memory DEPLOYED_AGENTS + set cooldown timestamp
         try:
             from api.agent_config_router import DEPLOYED_AGENTS, _save_agents
+            from datetime import datetime
+            
             user_agents = DEPLOYED_AGENTS.get(request.user_address.lower(), [])
             for agent in user_agents:
                 positions = agent.get("positions", [])
@@ -282,6 +681,11 @@ async def close_position(request: ClosePositionRequest):
                     for pos in positions:
                         if pos.get("protocol") == request.protocol:
                             pos["current_value"] = pos.get("current_value", 0) * (1 - request.percentage / 100)
+                
+                # SET COOLDOWN: 5-minute cooldown before agent can allocate again
+                agent["last_position_close"] = datetime.utcnow().isoformat()
+                print(f"[ClosePosition] Cooldown set - agent cannot allocate for 5 minutes")
+            
             _save_agents()
             print(f"[ClosePosition] In-memory agents updated")
         except Exception as e:

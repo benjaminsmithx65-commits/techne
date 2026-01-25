@@ -843,6 +843,50 @@ contract TechneAgentWalletV43 is AccessControl, ReentrancyGuard, Pausable, IFlas
         return balances[user] + totalInvested[user];
     }
     
+    // ============================================
+    // V4.3.5 NEW - Missing Frontend View Functions
+    // ============================================
+    
+    function getUserFreeBalance(address user) external view returns (uint256) {
+        return balances[user];
+    }
+    
+    function getUserInvestment(address user, address protocol) external view returns (uint256) {
+        return investments[user][protocol];
+    }
+    
+    function canWithdraw(address user) external view returns (bool available, uint256 timeLeft) {
+        uint256 cooldownEnd = lastDepositTime[user] + DEPOSIT_COOLDOWN;
+        if (block.timestamp >= cooldownEnd && block.number > lastDepositBlock[user]) {
+            return (true, 0);
+        }
+        if (block.timestamp < cooldownEnd) {
+            return (false, cooldownEnd - block.timestamp);
+        }
+        return (false, 1); // Same block protection
+    }
+    
+    function isWhitelisted(address user) external view returns (bool) {
+        return hasRole(WHITELISTED_ROLE, user) || hasRole(DEFAULT_ADMIN_ROLE, user);
+    }
+    
+    // ============================================
+    // V4.3.5 NEW - Withdraw All (Frontend expects this)
+    // ============================================
+    
+    function withdrawAll() external nonReentrant {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "Nothing to withdraw");
+        require(block.timestamp >= lastDepositTime[msg.sender] + DEPOSIT_COOLDOWN, "Cooldown");
+        require(block.number > lastDepositBlock[msg.sender], "Same block");
+        require(amount <= MAX_SINGLE_WITHDRAW, "Use partial withdraw");
+        
+        balances[msg.sender] = 0;
+        USDC.safeTransfer(msg.sender, amount);
+        
+        emit Withdrawn(msg.sender, amount);
+    }
+    
     function isSequencerHealthy() external view returns (bool healthy, string memory reason) {
         if (address(sequencerUptimeFeed) == address(0)) return (true, "No feed configured");
         

@@ -2003,9 +2003,11 @@
                                 <!-- STEADY Card -->
                                 <div class="strategy-card steady active" data-strategy="steady">
                                     <div class="strategy-icon"><svg width="32" height="32" viewBox="0 0 24 24"
-                                            fill="none" stroke="#eab308" stroke-width="2">
-                                            <path d="M12 2v4M4 10h16M7 10l5 12 5-12" />
-                                            <circle cx="12" cy="6" r="2" />
+                                            fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M3 3v18h18" />
+                                            <path d="M7 16l4-4 4 4 6-6" />
+                                            <circle cx="21" cy="10" r="2" fill="#eab308" />
                                         </svg></div>
                                     <h4>Steady</h4>
                                     <div class="strategy-apy">10-25% APY</div>
@@ -2038,14 +2040,34 @@
                                 </div>
                             </div>
 
-                            <!-- Amount Input -->
+                            <!-- Chain Selection (Instant Mode) -->
                             <div class="instant-amount-section">
-                                <label class="amount-label">Investment Amount</label>
-                                <div class="amount-input-wrapper">
-                                    <span class="currency-symbol">$</span>
-                                    <input type="number" id="instantAmount" class="instant-amount-input" value="1000"
-                                        min="100" max="1000000">
-                                    <span class="currency-name">USDC</span>
+                                <label class="amount-label">Target Chain</label>
+                                <div class="chain-selector-instant">
+                                    <button class="chain-btn-instant active" data-chain="base">
+                                        <img src="/icons/base.png" alt="Base"
+                                            style="width: 24px; height: 24px; border-radius: 50%;">
+                                        <span>Base</span>
+                                        <span class="chain-active-badge">✓</span>
+                                    </button>
+                                    <button class="chain-btn-instant disabled" data-chain="ethereum" disabled>
+                                        <img src="/icons/ethereum.png" alt="Ethereum"
+                                            style="width: 24px; height: 24px; border-radius: 50%;">
+                                        <span>Ethereum</span>
+                                        <span class="chain-soon-badge">Soon</span>
+                                    </button>
+                                    <button class="chain-btn-instant disabled" data-chain="solana" disabled>
+                                        <img src="/icons/solana.png" alt="Solana"
+                                            style="width: 24px; height: 24px; border-radius: 50%;">
+                                        <span>Solana</span>
+                                        <span class="chain-soon-badge">Soon</span>
+                                    </button>
+                                    <button class="chain-btn-instant disabled" data-chain="arbitrum" disabled>
+                                        <img src="/icons/arbitrum.png" alt="Arbitrum"
+                                            style="width: 24px; height: 24px; border-radius: 50%;">
+                                        <span>Arbitrum</span>
+                                        <span class="chain-soon-badge">Soon</span>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2455,7 +2477,7 @@
                                             Exit if APY drops below
                                         </label>
                                         <div class="input-with-unit">
-                                            <input type="number" id="apyTargetValue" value="5" min="0" max="100"
+                                            <input type="number" id="apyTargetValue" value="5" min="0" max="500"
                                                 disabled>
                                             <span class="unit">%</span>
                                         </div>
@@ -2793,14 +2815,26 @@
                                 <!-- APY Range -->
                                 <div class="config-group">
                                     <label>Target APY Range</label>
-                                    <div class="dual-range-display">
-                                        <span id="minApyDisplay">5%</span>
-                                        <span>—</span>
-                                        <span id="maxApyDisplay">50%</span>
+                                    <div class="dual-range-display apy-custom-inputs">
+                                        <div class="apy-input-group">
+                                            <input type="number" id="minApyInput" min="0" max="500" value="5"
+                                                class="apy-custom-input">
+                                            <span>%</span>
+                                        </div>
+                                        <span class="apy-separator">—</span>
+                                        <div class="apy-input-group">
+                                            <input type="number" id="maxApyInput" min="0" max="500" value="200"
+                                                class="apy-custom-input">
+                                            <span id="maxApyPlus">%</span>
+                                        </div>
                                     </div>
                                     <div class="apy-slider">
-                                        <input type="range" id="minApyConfig" min="0" max="100" value="5">
-                                        <input type="range" id="maxApyConfig" min="0" max="100" value="50">
+                                        <input type="range" id="minApyConfig" min="0" max="500" value="5">
+                                        <input type="range" id="maxApyConfig" min="0" max="500" value="200">
+                                    </div>
+                                    <div class="apy-hint"
+                                        style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; text-align: center;">
+                                        Slide to 500% for unlimited APY search
                                     </div>
                                 </div>
 
@@ -3351,7 +3385,8 @@
                             <div class="vault-positions" id="vaultPositions">
                                 <div class="table-empty" id="positionsEmpty">
                                     <p>No positions yet. Deposit funds to let your agent invest.</p>
-                                    <button onclick="AgentWalletUI?.showDepositModal()" class="btn-link">Fund Agent
+                                    <button onclick="window.AgentWalletUI?.showDepositModal()" class="btn-link">Fund
+                                        Agent
                                         →</button>
                                 </div>
                                 <!-- Position cards loaded dynamically by loadAgentPositions() -->
@@ -3544,7 +3579,8 @@
 
                             <div class="agent-info">
                                 <div class="agent-row">
-                                    <span class="label">Address</span>
+                                    <span class="label" title="Your ERC-4337 Smart Account - funds you control">Smart
+                                        Account <span style="font-size: 0.7em; opacity: 0.6;">🔐</span></span>
                                     <span class="value monospace" id="agentAddrDisplay">Not deployed</span>
                                 </div>
                                 <div class="agent-row">
@@ -3780,6 +3816,7 @@
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js"></script>
+    <script src="/network-utils.js"></script>
     <script src="/techne-icons.js"></script>
     <script src="/protocol-icons.js?v=20260116b"></script>
     <script src="/app.js"></script>
@@ -3793,6 +3830,7 @@
     <script src="/wallet-connect.js"></script>
     <script src="/agent-builder-ui.js"></script>
     <script src="/agent-builder-pro.js"></script>
+    <script src="/protocol-loader.js"></script>
     <script src="/neural-terminal.js"></script>
     <script src="/portfolio.js"></script>
     <script src="/defi-api.js"></script>

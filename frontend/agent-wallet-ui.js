@@ -327,10 +327,10 @@ const AgentWalletUI = {
                 </div>
                 
                 <div class="vault-actions">
-                    <button class="btn-vault-deposit" onclick="AgentWalletUI.showDepositModal()">
+                    <button class="btn-vault-deposit" onclick="window.AgentWalletUI.showDepositModal()">
                         <span class="techne-icon">${TechneIcons.deposit}</span> Deposit
                     </button>
-                    <button class="btn-vault-withdraw" onclick="AgentWalletUI.showWithdrawModal()">
+                    <button class="btn-vault-withdraw" onclick="window.AgentWalletUI.showWithdrawModal()">
                         <span class="techne-icon">${TechneIcons.withdraw}</span> Withdraw
                     </button>
                 </div>
@@ -426,41 +426,78 @@ const AgentWalletUI = {
 
                 <!-- Body -->
                 <div style="padding: 24px;">
+                    <!-- Agent Selector -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 0.7rem; color: rgba(255,255,255,0.5); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Select Agent</label>
+                        <select id="agentSelect" onchange="AgentWalletUI.onAgentSelect(this.value)" style="
+                            width: 100%;
+                            padding: 14px 16px;
+                            background: rgba(0,0,0,0.4);
+                            border: 1px solid rgba(255,255,255,0.12);
+                            border-radius: 12px;
+                            color: #fff;
+                            font-size: 0.95rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            appearance: none;
+                            background-image: url('data:image/svg+xml;utf8,<svg fill=\"white\" height=\"24\" viewBox=\"0 0 24 24\" width=\"24\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M7 10l5 5 5-5z\"/></svg>');
+                            background-repeat: no-repeat;
+                            background-position: right 12px center;
+                            background-size: 20px;
+                        ">
+                            <option value="">Loading agents...</option>
+                        </select>
+                    </div>
+
                     <!-- Token Selector -->
-                    <div style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Select Token</label>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 0.7rem; color: rgba(255,255,255,0.5); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Select Token</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <button id="tokenSelectUSDC" onclick="AgentWalletUI.selectToken('USDC')" style="
-                                padding: 12px;
-                                background: rgba(212, 168, 83, 0.15);
+                                padding: 14px 16px;
+                                background: rgba(212, 168, 83, 0.12);
                                 border: 2px solid #d4a853;
-                                border-radius: 10px;
+                                border-radius: 12px;
                                 color: #fff;
                                 font-weight: 600;
                                 cursor: pointer;
                                 display: flex;
                                 align-items: center;
                                 justify-content: center;
-                                gap: 8px;
+                                gap: 10px;
                                 transition: all 0.2s;
+                                font-size: 0.95rem;
                             ">
-                                💵 USDC
+                                <img src="/icons/usdc.png" alt="USDC" style="width: 22px; height: 22px; border-radius: 50%;">
+                                <span>USDC</span>
                             </button>
                             <button id="tokenSelectETH" onclick="AgentWalletUI.selectToken('ETH')" style="
-                                padding: 12px;
+                                padding: 14px 16px;
                                 background: rgba(255,255,255,0.03);
-                                border: 1px solid rgba(255,255,255,0.1);
-                                border-radius: 10px;
+                                border: 1px solid rgba(255,255,255,0.12);
+                                border-radius: 12px;
                                 color: rgba(255,255,255,0.7);
                                 font-weight: 600;
                                 cursor: pointer;
                                 display: flex;
                                 align-items: center;
                                 justify-content: center;
-                                gap: 8px;
+                                gap: 10px;
                                 transition: all 0.2s;
+                                font-size: 0.95rem;
                             ">
-                                ⟠ ETH
+                                <img src="/icons/ethereum.png" alt="ETH" style="width: 22px; height: 22px; border-radius: 50%;">
+                                <span>ETH</span>
+                                <span style="
+                                    background: rgba(99, 102, 241, 0.2);
+                                    color: #818cf8;
+                                    padding: 2px 6px;
+                                    border-radius: 4px;
+                                    font-size: 0.65rem;
+                                    font-weight: 700;
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.5px;
+                                ">Gas</span>
                             </button>
                         </div>
                     </div>
@@ -590,13 +627,67 @@ const AgentWalletUI = {
 
         // Load USDC balance
         this.loadUSDCBalance();
+
+        // Load agents for dropdown
+        this.loadAgentsForSelect();
+    },
+
+    /**
+     * Load deployed agents for the dropdown selector
+     */
+    async loadAgentsForSelect() {
+        const select = document.getElementById('agentSelect');
+        if (!select) return;
+
+        try {
+            // Get agents from localStorage or API
+            const agents = JSON.parse(localStorage.getItem('techne_deployed_agents') || '[]');
+
+            if (agents.length === 0) {
+                select.innerHTML = '<option value="">No agents deployed</option>';
+                return;
+            }
+
+            select.innerHTML = agents.map((agent, i) => `
+                <option value="${agent.address || agent.smartAccount}" ${i === 0 ? 'selected' : ''}>
+                    ${agent.name || agent.strategy || 'Agent'} - ${(agent.address || agent.smartAccount || '').slice(0, 10)}...
+                </option>
+            `).join('');
+
+            // Auto-select first agent
+            if (agents.length > 0) {
+                this.selectedAgent = agents[0];
+            }
+        } catch (e) {
+            console.warn('[AgentWallet] Failed to load agents:', e);
+            select.innerHTML = '<option value="">Error loading agents</option>';
+        }
+    },
+
+    /**
+     * Handle agent selection change
+     */
+    onAgentSelect(address) {
+        const agents = JSON.parse(localStorage.getItem('techne_deployed_agents') || '[]');
+        this.selectedAgent = agents.find(a => (a.address || a.smartAccount) === address) || null;
+        console.log('[AgentWallet] Selected agent:', this.selectedAgent);
     },
 
     /**
      * Show withdraw modal - Premium styled
      * @param {string} asset - Token symbol (USDC, ETH, WETH)
      */
-    showWithdrawModal(asset = 'USDC') {
+    async showWithdrawModal(asset = 'USDC') {
+        // CRITICAL: Refresh stats from contract BEFORE showing modal
+        // This ensures userValue is populated with actual vault balance
+        try {
+            await this.refreshStats();
+            console.log('[AgentWallet] Withdraw modal - userValue:', this.userValue);
+        } catch (e) {
+            console.warn('[AgentWallet] Failed to refresh stats before withdraw:', e);
+            // Continue anyway - show modal with whatever data we have
+        }
+
         // Store which token we're withdrawing
         this.withdrawToken = asset;
         document.getElementById('vaultModal')?.remove();
@@ -687,7 +778,7 @@ const AgentWalletUI = {
                             text-align: center;
                         ">
                             <div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 6px;">Your Position</div>
-                            <div style="font-size: 1.3rem; color: #22c55e; font-weight: 600;" id="withdrawPositionValue">$${(this.userValue / 1e6).toFixed(2)}</div>
+                            <div style="font-size: 1.3rem; color: #22c55e; font-weight: 600;" id="withdrawPositionValue">$${(Number(this.userValue) / 1e6).toFixed(2)}</div>
                         </div>
                         <div style="
                             background: rgba(255,255,255,0.03);
@@ -697,7 +788,7 @@ const AgentWalletUI = {
                             text-align: center;
                         ">
                             <div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 6px;">Available</div>
-                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${(this.userValue / 1e6).toFixed(2)} ${asset}</div>
+                            <div style="font-size: 1.3rem; color: #fff; font-weight: 600;">${(Number(this.userValue) / 1e6).toFixed(2)} ${asset}</div>
                         </div>
                     </div>
 
@@ -733,7 +824,7 @@ const AgentWalletUI = {
                             ">MAX</button>
                         </div>
                         <div style="margin-top: 8px; font-size: 0.75rem; color: rgba(255,255,255,0.4);">
-                            Available: ${(this.userValue / 1e6).toFixed(2)} ${asset}
+                            Available: ${(Number(this.userValue) / 1e6).toFixed(2)} ${asset}
                         </div>
                     </div>
 
@@ -891,7 +982,7 @@ const AgentWalletUI = {
      */
     setMaxWithdraw() {
         // userValue is in raw USDC units, convert to display
-        const maxUsdc = (this.userValue / 1e6).toFixed(2);
+        const maxUsdc = (Number(this.userValue) / 1e6).toFixed(2);
         document.getElementById('withdrawShares').value = maxUsdc;
         this.updateWithdrawEstimate(maxUsdc);
     },
@@ -907,7 +998,7 @@ const AgentWalletUI = {
 
         // Estimate: (shares / totalShares) * totalValue
         // Simplified - in reality would call contract
-        const estimate = (shares / Math.max(1, this.userShares)) * this.userValue;
+        const estimate = (shares / Math.max(1, Number(this.userShares))) * Number(this.userValue);
         document.getElementById('withdrawEstimate').textContent =
             '$' + (estimate / 1e6).toFixed(2);
     },
@@ -975,20 +1066,35 @@ const AgentWalletUI = {
 
             let depositTx;
 
-            // Handle native ETH - send directly to agent executor for gas
+            // Handle native ETH - send to user's Smart Account for gas
             if (token.isNative) {
-                // Agent executor address (controlled by AGENT_PRIVATE_KEY)
-                const AGENT_EXECUTOR_ADDRESS = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
-
                 btn.innerHTML = '<span>⏳</span> Funding Agent Gas...';
 
-                // Send ETH directly to agent executor for gas
+                // Get user's Smart Account address (ERC-4337)
+                let gasRecipient;
+                try {
+                    const saResult = await NetworkUtils.getSmartAccount(userAddress);
+                    if (saResult.success && saResult.smartAccount) {
+                        gasRecipient = saResult.smartAccount;
+                        console.log('[AgentWallet] Sending ETH to Smart Account:', gasRecipient);
+                    } else {
+                        // Fallback to shared executor if no Smart Account
+                        gasRecipient = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
+                        console.log('[AgentWallet] No Smart Account, using shared executor');
+                    }
+                } catch (e) {
+                    // Fallback to shared executor
+                    gasRecipient = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
+                    console.warn('[AgentWallet] Smart Account check failed, using fallback:', e);
+                }
+
+                // Send ETH to the appropriate address
                 depositTx = await signer.sendTransaction({
-                    to: AGENT_EXECUTOR_ADDRESS,
+                    to: gasRecipient,
                     value: amountWei
                 });
 
-                console.log('[AgentWallet] ETH sent to agent executor for gas');
+                console.log('[AgentWallet] ETH sent to:', gasRecipient);
             } else {
                 // For ERC20 tokens - approve first
                 btn.innerHTML = '<span>⏳</span> Approving...';

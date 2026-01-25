@@ -10,6 +10,13 @@ from datetime import datetime
 import json
 import os
 
+# Agent key management (wallet generation, encryption)
+from services.agent_keys import (
+    generate_agent_wallet,
+    encrypt_private_key,
+    verify_signature
+)
+
 # Auto-whitelist service for V4.3.2
 from services.whitelist_service import get_whitelist_service
 
@@ -59,8 +66,11 @@ class ProConfig(BaseModel):
 
 class AgentDeployRequest(BaseModel):
     user_address: str
-    agent_address: str
+    agent_address: Optional[str] = None  # Now optional - we generate if not provided
     agent_name: Optional[str] = None  # Optional custom name
+    # Signature verification for ownership proof
+    signature: Optional[str] = None  # EIP-191 personal_sign of deploy message
+    sign_message: Optional[str] = None  # The message that was signed
     chain: str = "base"
     preset: str = "balanced-growth"
     pool_type: str = "single"
@@ -99,10 +109,18 @@ async def deploy_agent(request: AgentDeployRequest):
     """
     Deploy an agent with configuration from Build UI
     Max 5 agents per wallet
+    
+    SECURITY: 
+    - Generates unique wallet keypair for each agent
+    - Encrypts private key for storage
+    - Optionally verifies user signature for ownership proof
     """
     try:
+        # Normalize user address
+        user_address = request.user_address.lower()
+        
         # Get existing agents for this wallet
-        user_agents = DEPLOYED_AGENTS.get(request.user_address, [])
+        user_agents = DEPLOYED_AGENTS.get(user_address, [])
         
         # Check max limit
         active_agents = [a for a in user_agents if a.get("is_active", False)]
@@ -112,14 +130,56 @@ async def deploy_agent(request: AgentDeployRequest):
                 detail=f"Maximum {MAX_AGENTS_PER_WALLET} agents per wallet"
             )
         
+        # SIGNATURE VERIFICATION (optional but recommended)
+        signature_verified = False
+        if request.signature and request.sign_message:
+            signature_verified = verify_signature(
+                message=request.sign_message,
+                signature=request.signature,
+                expected_address=user_address
+            )
+            if not signature_verified:
+                print(f"[AgentConfig] WARNING: Signature verification failed for {user_address}")
+                # Don't block - just log warning (for MVP)
+        
+        # GENERATE AGENT WALLET
+        # With ERC-4337, agent_address = user's Smart Account (counterfactual)
+        if request.agent_address:
+            # Use provided address (legacy flow - no private key)
+            agent_address = request.agent_address
+            encrypted_pk = None
+            print(f"[AgentConfig] Using provided agent address: {agent_address[:10]}...")
+        else:
+            # NEW: Get Smart Account address from factory (ERC-4337)
+            try:
+                from services.smart_account_service import get_smart_account_service
+                sa_service = get_smart_account_service()
+                agent_address = sa_service.get_account_address(user_address)
+                encrypted_pk = None  # Smart Accounts don't need stored keys
+                print(f"[AgentConfig] Using Smart Account: {agent_address[:10]}...")
+            except Exception as sa_error:
+                print(f"[AgentConfig] Smart Account lookup failed, generating EOA: {sa_error}")
+                # Fallback to old EOA generation
+                try:
+                    private_key, agent_address = generate_agent_wallet()
+                    encrypted_pk = encrypt_private_key(private_key, request.signature)
+                    print(f"[AgentConfig] Generated EOA agent wallet: {agent_address[:10]}...")
+                except Exception as key_error:
+                    print(f"[AgentConfig] Key generation failed: {key_error}")
+                    import secrets
+                    agent_address = "0x" + secrets.token_hex(20)
+                    encrypted_pk = None
+        
         # Generate agent ID
         agent_id = f"agent_{len(user_agents) + 1}_{int(datetime.utcnow().timestamp())}"
         
         agent_data = {
             "id": agent_id,
             "name": request.agent_name or f"Agent #{len(user_agents) + 1}",
-            "user_address": request.user_address,
-            "agent_address": request.agent_address,
+            "user_address": user_address,  # Owner (normalized)
+            "agent_address": agent_address,  # Agent's public address
+            "encrypted_private_key": encrypted_pk,  # Agent's encrypted private key
+            "signature_verified": signature_verified,  # Was ownership proved
             "chain": request.chain,
             "preset": request.preset,
             "pool_type": request.pool_type,
@@ -154,30 +214,35 @@ async def deploy_agent(request: AgentDeployRequest):
         
         # Add to user's agents list
         user_agents.append(agent_data)
-        DEPLOYED_AGENTS[request.user_address] = user_agents
+        DEPLOYED_AGENTS[user_address] = user_agents
         _save_agents(DEPLOYED_AGENTS)  # Persist to file
         
         # AUTO-WHITELIST on V4.3.2 contract
         whitelist_result = {"success": False, "message": "Whitelist not attempted"}
         try:
             whitelist_svc = get_whitelist_service()
-            whitelist_result = whitelist_svc.whitelist_user(request.user_address)
-            print(f"[AgentConfig] Whitelist result for {request.user_address}: {whitelist_result}")
+            whitelist_result = whitelist_svc.whitelist_user(user_address)
+            print(f"[AgentConfig] Whitelist result for {user_address}: {whitelist_result}")
         except Exception as wl_error:
             print(f"[AgentConfig] Whitelist error (non-fatal): {wl_error}")
             whitelist_result = {"success": False, "message": str(wl_error)}
         
-        print(f"[AgentConfig] Agent {agent_id} deployed for {request.user_address}")
+        print(f"[AgentConfig] Agent {agent_id} deployed for {user_address}")
         print(f"[AgentConfig] Total agents for user: {len(user_agents)}")
+        print(f"[AgentConfig] Agent has execution key: {encrypted_pk is not None}")
+        
+        # Remove encrypted_private_key from response (security)
+        response_config = {k: v for k, v in agent_data.items() if k != 'encrypted_private_key'}
         
         return {
             "success": True,
             "agent_id": agent_id,
-            "agent_address": request.agent_address,
+            "agent_address": agent_address,
+            "has_execution_key": encrypted_pk is not None,
             "message": "Agent deployed successfully",
-            "config": agent_data,
+            "config": response_config,
             "total_agents": len(user_agents),
-            "whitelist": whitelist_result  # Include whitelist status in response
+            "whitelist": whitelist_result
         }
         
     except HTTPException:

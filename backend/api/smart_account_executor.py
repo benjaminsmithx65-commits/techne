@@ -226,7 +226,7 @@ class SmartAccountExecutor:
         }
     
     async def _exit_via_legacy_wallet(self) -> Dict[str, Any]:
-        """Exit via legacy Techne Wallet (uses PRIVATE_KEY)."""
+        """Exit via legacy Techne Wallet, with direct Aave fallback."""
         agent_key = os.getenv("PRIVATE_KEY")
         if not agent_key:
             return {"success": False, "error": "No PRIVATE_KEY configured"}
@@ -234,49 +234,114 @@ class SmartAccountExecutor:
         try:
             account = Account.from_key(agent_key)
             
-            # Legacy exitPosition ABI (V4.3.4)
-            legacy_abi = [{
+            # Try legacy Techne Wallet first
+            try:
+                legacy_abi = [{
+                    "inputs": [
+                        {"name": "user", "type": "address"},
+                        {"name": "lendingProtocol", "type": "address"}
+                    ],
+                    "name": "exitPosition",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }]
+                
+                contract = self.w3.eth.contract(
+                    address=Web3.to_checksum_address(LEGACY_TECHNE_WALLET),
+                    abi=legacy_abi
+                )
+                
+                tx = contract.functions.exitPosition(
+                    self.user_address,
+                    Web3.to_checksum_address(AAVE_POOL)
+                ).build_transaction({
+                    'from': account.address,
+                    'nonce': self.w3.eth.get_transaction_count(account.address),
+                    'gas': 300000,
+                    'gasPrice': self.w3.eth.gas_price
+                })
+                
+                signed = account.sign_transaction(tx)
+                tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+                
+                print(f"[ExitPosition] Legacy TX sent: {tx_hash.hex()}")
+                
+                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                
+                if receipt.status == 1:
+                    return {
+                        "success": True,
+                        "mode": "legacy",
+                        "tx_hash": tx_hash.hex(),
+                        "block": receipt.blockNumber
+                    }
+                else:
+                    print("[ExitPosition] Legacy TX failed, trying direct Aave withdraw...")
+                    
+            except Exception as legacy_error:
+                print(f"[ExitPosition] Legacy wallet error: {legacy_error}")
+                print("[ExitPosition] Falling back to direct Aave Pool withdraw...")
+            
+            # FALLBACK: Direct Aave Pool withdraw
+            # This works if user has aTokens in their wallet (not via Techne contract)
+            return await self._direct_aave_withdraw(account)
+            
+        except Exception as e:
+            return {"success": False, "error": str(e), "mode": "legacy"}
+    
+    async def _direct_aave_withdraw(self, account) -> Dict[str, Any]:
+        """Direct withdraw from Aave Pool - fallback method."""
+        try:
+            # Aave Pool ABI for withdraw
+            aave_pool_abi = [{
                 "inputs": [
-                    {"name": "user", "type": "address"},
-                    {"name": "lendingProtocol", "type": "address"}
+                    {"name": "asset", "type": "address"},
+                    {"name": "amount", "type": "uint256"},
+                    {"name": "to", "type": "address"}
                 ],
-                "name": "exitPosition",
-                "outputs": [],
+                "name": "withdraw",
+                "outputs": [{"type": "uint256"}],
                 "stateMutability": "nonpayable",
                 "type": "function"
             }]
             
-            contract = self.w3.eth.contract(
-                address=Web3.to_checksum_address(LEGACY_TECHNE_WALLET),
-                abi=legacy_abi
+            pool = self.w3.eth.contract(
+                address=Web3.to_checksum_address(AAVE_POOL),
+                abi=aave_pool_abi
             )
             
-            tx = contract.functions.exitPosition(
-                self.user_address,
-                Web3.to_checksum_address(AAVE_POOL)
+            # Withdraw max (type(uint256).max)
+            MAX_UINT256 = 2**256 - 1
+            
+            tx = pool.functions.withdraw(
+                Web3.to_checksum_address(USDC),
+                MAX_UINT256,
+                self.user_address
             ).build_transaction({
                 'from': account.address,
                 'nonce': self.w3.eth.get_transaction_count(account.address),
-                'gas': 300000,
+                'gas': 350000,
                 'gasPrice': self.w3.eth.gas_price
             })
             
             signed = account.sign_transaction(tx)
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
             
-            print(f"[ExitPosition] Legacy TX sent: {tx_hash.hex()}")
+            print(f"[ExitPosition] Direct Aave withdraw TX: {tx_hash.hex()}")
             
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
             
             return {
                 "success": receipt.status == 1,
-                "mode": "legacy",
+                "mode": "direct_aave",
                 "tx_hash": tx_hash.hex(),
                 "block": receipt.blockNumber
             }
             
         except Exception as e:
-            return {"success": False, "error": str(e), "mode": "legacy"}
+            print(f"[ExitPosition] Direct Aave withdraw failed: {e}")
+            return {"success": False, "error": str(e), "mode": "direct_aave"}
     
     async def supply_to_aave(self, amount: int, asset: str = USDC) -> Dict[str, Any]:
         """

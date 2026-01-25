@@ -39,7 +39,30 @@ class PortfolioDashboard {
         this.syncAgentStatus();
         this.connectWebSocket();
         this.initPerformanceChart();
+        this.updateFundButtonState(); // Check if agents exist
         console.log('[Portfolio] Dashboard initialized');
+    }
+
+    /**
+     * Update Fund Agent button state based on deployed agents
+     */
+    updateFundButtonState() {
+        const btn = document.getElementById('btnFundAgent');
+        if (!btn) return;
+
+        const agents = JSON.parse(localStorage.getItem('techne_deployed_agents') || '[]');
+
+        if (agents.length === 0) {
+            btn.disabled = true;
+            btn.style.opacity = '0.4';
+            btn.style.cursor = 'not-allowed';
+            btn.title = 'Deploy an agent first in the Build section';
+        } else {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+            btn.title = 'Fund your deployed agent';
+        }
     }
 
 
@@ -291,22 +314,15 @@ class PortfolioDashboard {
         this.showLoadingState();
 
         try {
-            // Check localStorage for deployed agent first
+            // Check for deployed agents
             const deployedAgent = this.getDeployedAgent();
+            const isAgentActive = deployedAgent && (deployedAgent.isActive || deployedAgent.is_active);
 
-            // Also check VaultAgent for legacy compatibility
-            const agentStatus = window.VaultAgent?.getStatus?.();
-
-            if (deployedAgent?.isActive) {
+            if (isAgentActive) {
                 // Populate with deployed agent data
                 await this.populateFromDeployedAgent(deployedAgent);
-            } else if (agentStatus?.isActive && agentStatus.allocations?.length > 0) {
-                // Legacy: Populate with agent data
-                this.populateMockData(agentStatus);
-            } else {
-                // Show empty state
-                this.showEmptyState();
             }
+            // Note: Do NOT call showEmptyState here - loadContractBalances will show data anyway
 
             // ============================================
             // ALWAYS load contract balances from V4.3.2
@@ -408,54 +424,75 @@ class PortfolioDashboard {
                 });
             }
 
-            // Fetch and add ETH balance for agent executor
-            const AGENT_EXECUTOR_ADDRESS = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
-            const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
+            // Only show ETH/WETH for agent if user has a deployed agent
+            const deployedAgent = this.getDeployedAgent();
+            const hasAgent = deployedAgent && deployedAgent.address && deployedAgent.isActive;
 
-            try {
-                // Get agent executor ETH balance
-                const agentEthBalance = await provider.getBalance(AGENT_EXECUTOR_ADDRESS);
-                const agentEthFormatted = Number(agentEthBalance) / 1e18;
+            const ethPrice = 3000; // Approximate ETH price
 
-                // Get ETH price for USD value (approximate $3000)
-                const ethPrice = 3000;
+            // Show user's Smart Account ETH balance (ERC-4337)
+            // This is the user's own funds they can control
+            if (window.connectedWallet) {
+                try {
+                    const saResult = await NetworkUtils.getSmartAccount(window.connectedWallet);
+                    if (saResult.success && saResult.smartAccount) {
+                        const smartAccountEth = await provider.getBalance(saResult.smartAccount);
+                        const saEthFormatted = Number(smartAccountEth) / 1e18;
 
-                this.portfolio.holdings.push({
-                    asset: 'ETH (Agent Gas)',
-                    balance: agentEthFormatted.toFixed(4),
-                    value: (agentEthFormatted * ethPrice).toFixed(2),
-                    change: 0,
-                    label: 'Agent executor gas balance'
-                });
+                        if (saEthFormatted > 0.0001) {
+                            this.portfolio.holdings.push({
+                                asset: 'ETH (Smart Account)',
+                                balance: saEthFormatted.toFixed(4),
+                                value: (saEthFormatted * ethPrice).toFixed(2),
+                                change: 0,
+                                label: 'Your agent gas funds'
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Portfolio] Smart Account ETH fetch failed:', e.message);
+                }
+            }
 
-                // Get user WETH balance from contract
-                const wethContract = new ethers.Contract(WETH_ADDRESS, [
-                    'function balanceOf(address) view returns (uint256)'
-                ], provider);
-                const wethBalance = await wethContract.balanceOf(window.connectedWallet);
-                const wethFormatted = Number(wethBalance) / 1e18;
+            if (hasAgent) {
+                // Fetch agent's ETH balance (same as Smart Account when unified)
+                const AGENT_ADDRESS = deployedAgent.address;
+                const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
 
-                this.portfolio.holdings.push({
-                    asset: 'WETH',
-                    balance: wethFormatted.toFixed(4),
-                    value: (wethFormatted * ethPrice).toFixed(2),
-                    change: 0
-                });
-            } catch (e) {
-                console.warn('[Portfolio] ETH/WETH balance fetch failed:', e.message);
-                // Fallback to 0
-                this.portfolio.holdings.push({
-                    asset: 'ETH (Agent Gas)',
-                    balance: 0,
-                    value: 0,
-                    change: 0
-                });
-                this.portfolio.holdings.push({
-                    asset: 'WETH',
-                    balance: 0,
-                    value: 0,
-                    change: 0
-                });
+                try {
+                    // Get agent ETH balance (only if different from Smart Account)
+                    const agentEthBalance = await provider.getBalance(AGENT_ADDRESS);
+                    const agentEthFormatted = Number(agentEthBalance) / 1e18;
+
+                    // Only show if > 0 AND this is a legacy EOA agent (not Smart Account)
+                    if (agentEthFormatted > 0 && !AGENT_ADDRESS.startsWith('0x')) {
+                        this.portfolio.holdings.push({
+                            asset: 'ETH (Your Agent)',
+                            balance: agentEthFormatted.toFixed(4),
+                            value: (agentEthFormatted * ethPrice).toFixed(2),
+                            change: 0,
+                            label: 'Agent wallet balance'
+                        });
+                    }
+
+                    // Get agent WETH balance
+                    const wethContract = new ethers.Contract(WETH_ADDRESS, [
+                        'function balanceOf(address) view returns (uint256)'
+                    ], provider);
+                    const wethBalance = await wethContract.balanceOf(AGENT_ADDRESS);
+                    const wethFormatted = Number(wethBalance) / 1e18;
+
+                    if (wethFormatted > 0) {
+                        this.portfolio.holdings.push({
+                            asset: 'WETH',
+                            balance: wethFormatted.toFixed(4),
+                            value: (wethFormatted * ethPrice).toFixed(2),
+                            change: 0
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[Portfolio] Agent ETH/WETH balance fetch failed:', e.message);
+                }
             }
 
             // Load and render Agent Positions
@@ -635,8 +672,31 @@ class PortfolioDashboard {
     }
 
     getDeployedAgent() {
-        // Retrieve deployed agent from localStorage
+        // Return the currently selected agent from loaded agents array
+        // This prevents inconsistency with loadAgents() which uses the new format
+
+        // First, try to get from this.agents (already loaded)
+        if (this.agents && this.agents.length > 0) {
+            const selected = this.agents.find(a => a.id === this.selectedAgentId);
+            if (selected) return selected;
+            // Return first active agent
+            const active = this.agents.find(a => a.isActive || a.is_active);
+            if (active) return active;
+            // Return first agent
+            return this.agents[0];
+        }
+
+        // Fallback: Read from localStorage (new format first)
         try {
+            const savedArr = localStorage.getItem('techne_deployed_agents');
+            if (savedArr) {
+                const agents = JSON.parse(savedArr);
+                if (agents && agents.length > 0) {
+                    return agents.find(a => a.isActive || a.is_active) || agents[0];
+                }
+            }
+
+            // Last resort: old single-agent format
             const saved = localStorage.getItem('techne_deployed_agent');
             return saved ? JSON.parse(saved) : null;
         } catch (e) {
@@ -940,15 +1000,24 @@ class PortfolioDashboard {
         changeEl.textContent = `+${this.portfolio.pnlPercent}%`;
         changeEl.className = `stat-change ${this.portfolio.pnlPercent >= 0 ? 'positive' : 'negative'}`;
 
+        // Count only positions with REAL funds (deposited > 0)
+        const activePositions = this.portfolio.positions.filter(p => (p.deposited || 0) > 0);
+        const activeCount = activePositions.length;
+
+        // Show 0% APY if no real positions
+        const realAvgApy = activeCount > 0
+            ? activePositions.reduce((sum, p) => sum + (p.apy || 0), 0) / activeCount
+            : 0;
+
         document.getElementById('portfolioAvgApy').textContent =
-            `${this.portfolio.avgApy.toFixed(1)}%`;
+            `${realAvgApy.toFixed(1)}%`;
 
         document.getElementById('portfolioVaultCount').textContent =
-            this.portfolio.positions.length;
+            activeCount;
 
         // Update positions count
         document.getElementById('positionsCount').textContent =
-            `${this.portfolio.positions.length} Active`;
+            `${activeCount} Active`;
 
         // Render holdings
         this.renderHoldings();
@@ -991,7 +1060,7 @@ class PortfolioDashboard {
                     ${holding.change >= 0 ? '+' : ''}${holding.change.toFixed(2)}%
                 </span>
                 <div class="holding-actions">
-                    <button class="btn-sm" onclick="PortfolioDash.withdraw('${holding.asset}')">Withdraw</button>
+                    <button class="btn-sm" onclick="console.log('Withdraw clicked'); window.PortfolioDash?.withdraw('${holding.asset}')">Withdraw</button>
                 </div>
             `;
             container.appendChild(row);
@@ -1189,8 +1258,9 @@ class PortfolioDashboard {
 
 
     syncAgentStatus() {
-        // Check agent status and update sidebar
-        const agentStatus = window.VaultAgent?.getStatus?.();
+        // Check agent status and update sidebar using loaded agents (not deprecated VaultAgent)
+        const agent = this.getDeployedAgent();
+        const isActive = agent && (agent.isActive || agent.is_active);
 
         const badge = document.getElementById('agentStatusBadge');
         const addrEl = document.getElementById('agentAddrDisplay');
@@ -1198,22 +1268,46 @@ class PortfolioDashboard {
         const strategyEl = document.getElementById('agentStrategy');
         const lastActionEl = document.getElementById('agentLastAction');
 
-        if (agentStatus?.isActive) {
-            badge.textContent = 'Active';
-            badge.className = 'status-badge active';
+        if (isActive) {
+            if (badge) {
+                badge.textContent = 'Active';
+                badge.className = 'status-badge active';
+            }
 
-            addrEl.textContent = agentStatus.agentAddress ?
-                `${agentStatus.agentAddress.slice(0, 6)}...${agentStatus.agentAddress.slice(-4)}` :
-                'Not deployed';
+            if (addrEl) {
+                const addr = agent.address || agent.agent_address;
+                addrEl.textContent = addr ?
+                    `${addr.slice(0, 6)}...${addr.slice(-4)}` :
+                    'Deployed';
+            }
 
-            strategyEl.textContent = agentStatus.config?.preset?.replace(/-/g, ' ') || 'Custom';
+            if (strategyEl) {
+                strategyEl.textContent = agent.preset?.replace(/-/g, ' ') ||
+                    agent.name || 'Custom';
+            }
 
-            if (agentStatus.lastAction) {
-                lastActionEl.textContent = agentStatus.lastAction.action || '—';
+            if (lastActionEl) {
+                const deployedAt = agent.deployedAt || agent.deployed_at;
+                if (deployedAt) {
+                    const diff = Date.now() - new Date(deployedAt).getTime();
+                    const mins = Math.floor(diff / 60000);
+                    if (mins < 60) {
+                        lastActionEl.textContent = `Deployed ${mins}m ago`;
+                    } else {
+                        lastActionEl.textContent = `Deployed ${Math.floor(mins / 60)}h ago`;
+                    }
+                } else {
+                    lastActionEl.textContent = 'Just deployed';
+                }
             }
         } else {
-            badge.textContent = 'Inactive';
-            badge.className = 'status-badge inactive';
+            if (badge) {
+                badge.textContent = 'Inactive';
+                badge.className = 'status-badge inactive';
+            }
+            if (addrEl) addrEl.textContent = 'Not deployed';
+            if (strategyEl) strategyEl.textContent = '—';
+            if (lastActionEl) lastActionEl.textContent = '—';
         }
     }
 
@@ -1233,7 +1327,7 @@ class PortfolioDashboard {
             case 'deposit':
                 // Open Agent Wallet deposit modal
                 if (window.AgentWalletUI) {
-                    AgentWalletUI.showDepositModal();
+                    window.AgentWalletUI.showDepositModal();
                 } else {
                     this.showToast('Agent Wallet not initialized', 'warning');
                 }
@@ -1241,7 +1335,7 @@ class PortfolioDashboard {
             case 'withdraw':
                 // Open Agent Wallet withdraw modal
                 if (window.AgentWalletUI) {
-                    AgentWalletUI.showWithdrawModal();
+                    window.AgentWalletUI.showWithdrawModal();
                 } else {
                     this.showToast('Agent Wallet not initialized', 'warning');
                 }
@@ -1261,7 +1355,7 @@ class PortfolioDashboard {
     withdraw(asset) {
         console.log('[Portfolio] Withdraw requested for:', asset);
         if (window.AgentWalletUI) {
-            AgentWalletUI.showWithdrawModal(asset);  // Pass asset type
+            window.AgentWalletUI.showWithdrawModal(asset);  // Must use window. since const doesn't create global
         } else {
             this.showToast('Agent Wallet not initialized', 'warning');
         }
@@ -1404,9 +1498,17 @@ class PortfolioDashboard {
     }
 
     openFundModal() {
+        // Check if user has deployed agents
+        const agents = JSON.parse(localStorage.getItem('techne_deployed_agents') || '[]');
+
+        if (agents.length === 0) {
+            this.showToast('No agents deployed. Deploy an agent in Build section first!', 'warning');
+            return;
+        }
+
         // Open Agent Wallet deposit modal
         if (window.AgentWalletUI) {
-            AgentWalletUI.showDepositModal();
+            window.AgentWalletUI.showDepositModal();
         } else {
             this.showToast('Agent Wallet not initialized. Go to Build section first.', 'warning');
         }
@@ -1419,7 +1521,7 @@ class PortfolioDashboard {
         }
 
         if (confirm('Are you sure you want to withdraw all funds from the Agent Vault?')) {
-            AgentWalletUI.showWithdrawModal();
+            window.AgentWalletUI.showWithdrawModal();
         }
     }
 

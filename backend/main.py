@@ -406,6 +406,72 @@ async def metrics_dashboard():
 
 
 # ============================================
+# SMART ACCOUNT API ENDPOINT (ERC-4337)
+# ============================================
+
+@app.get("/api/smart-account/{user_address}")
+async def get_smart_account(user_address: str):
+    """
+    Get user's Smart Account address (ERC-4337).
+    Returns the counterfactual address from factory.
+    """
+    try:
+        from services.smart_account_service import get_smart_account_service
+        
+        sa_service = get_smart_account_service()
+        smart_account = sa_service.get_account_address(user_address)
+        is_deployed = sa_service.has_account(user_address)
+        
+        return {
+            "success": True,
+            "user_address": user_address,
+            "smart_account": smart_account,
+            "is_deployed": is_deployed,
+            "factory": sa_service.factory_address
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "smart_account": None
+        }
+
+
+@app.post("/api/smart-account/create")
+async def create_smart_account(user_address: str = Query(...)):
+    """
+    Deploy a Smart Account for user.
+    """
+    try:
+        from services.smart_account_service import get_smart_account_service
+        
+        sa_service = get_smart_account_service()
+        
+        # Check if already exists
+        if sa_service.has_account(user_address):
+            return {
+                "success": True,
+                "smart_account": sa_service.get_account_address(user_address),
+                "message": "Smart Account already exists"
+            }
+        
+        # Deploy new account
+        result = sa_service.deploy_smart_account(user_address)
+        
+        return {
+            "success": result.get("success", False),
+            "smart_account": result.get("account_address"),
+            "tx_hash": result.get("tx_hash"),
+            "message": result.get("message", "Smart Account created")
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ============================================
 # PORTFOLIO API ENDPOINT
 # ============================================
 
@@ -520,6 +586,76 @@ async def check_whitelist_status(user_address: str = Query(..., description="Use
             "user_address": user_address,
             "is_whitelisted": False,
             "error": str(e)
+        }
+
+
+# ============================================
+# SMART ACCOUNT ENDPOINTS (ERC-4337)
+# ============================================
+
+@app.get("/api/smart-account/{user_address}")
+async def get_smart_account(user_address: str):
+    """
+    Get user's smart account address (counterfactual or deployed).
+    Returns deterministic address even if not yet deployed.
+    """
+    try:
+        from services.smart_account_service import get_smart_account_service
+        
+        svc = get_smart_account_service()
+        
+        # Get counterfactual address
+        predicted_address = svc.get_account_address(user_address)
+        
+        # Check if actually deployed
+        deployed_address = svc.get_account(user_address)
+        
+        return {
+            "success": True,
+            "user_address": user_address,
+            "smart_account": predicted_address,
+            "is_deployed": deployed_address is not None,
+            "message": "Account deployed" if deployed_address else "Account not deployed (counterfactual)"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "user_address": user_address,
+            "smart_account": None,
+            "is_deployed": False,
+            "error": str(e)
+        }
+
+
+@app.post("/api/smart-account/create")
+async def create_smart_account(user_address: str = Query(..., description="User EOA to create account for")):
+    """
+    Deploy a new ERC-4337 Smart Account for user.
+    
+    - Account is owned by user's EOA
+    - Backend is added as SessionKey with limited permissions
+    - Default protocols (Aave, Aerodrome) are pre-whitelisted
+    """
+    try:
+        from services.smart_account_service import get_smart_account_service
+        
+        svc = get_smart_account_service()
+        result = svc.create_account(user_address)
+        
+        return {
+            "success": result["success"],
+            "user_address": user_address,
+            "smart_account": result.get("account_address"),
+            "tx_hash": result.get("tx_hash"),
+            "message": result.get("message")
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "user_address": user_address,
+            "message": str(e)
         }
 
 

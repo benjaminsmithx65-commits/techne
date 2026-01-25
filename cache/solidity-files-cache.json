@@ -543,8 +543,8 @@
       ]
     },
     "C:\\Users\\Dell\\.gemini\\antigravity\\scratch\\techne-finance\\contracts\\TechneAgentWalletV43.sol": {
-      "lastModificationDate": 1769111901541,
-      "contentHash": "1a7707209c6c514bc911b2110283aba8",
+      "lastModificationDate": 1769345742247,
+      "contentHash": "56484f8b558bf3e37bf552f0a816dc2e",
       "sourceName": "contracts/TechneAgentWalletV43.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1127,8 +1127,8 @@
       ]
     },
     "C:\\Users\\Dell\\.gemini\\antigravity\\scratch\\techne-finance\\contracts\\TechneAgentAccount.sol": {
-      "lastModificationDate": 1769121635744,
-      "contentHash": "b789da3351829fd9bced9d730b13b6d2",
+      "lastModificationDate": 1769364455795,
+      "contentHash": "f00488ae2f2d3c03f06241a36270c517",
       "sourceName": "contracts/TechneAgentAccount.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1320,6 +1320,47 @@
       ],
       "artifacts": [
         "Errors"
+      ]
+    },
+    "C:\\Users\\Dell\\.gemini\\antigravity\\scratch\\techne-finance\\contracts\\TechneAgentFactory.sol": {
+      "lastModificationDate": 1769363836645,
+      "contentHash": "e1d529a7a5fcc67c9750e385bcdccc99",
+      "sourceName": "contracts/TechneAgentFactory.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/proxy/Clones.sol",
+        "@openzeppelin/contracts/access/Ownable.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ITechneAgentAccount",
+        "TechneAgentFactory"
       ]
     }
   }

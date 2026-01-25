@@ -31,8 +31,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# V4.3.2 Contract Address
-CONTRACT_ADDRESS = "0x323f98c4e05073c2f76666944d95e39b78024efd"
+# V4.3.3 Contract Address (deployed 2026-01-25)
+CONTRACT_ADDRESS = "0x1ff18a7b56d7fd3b07ce789e47ac587de2f14e0d"
 
 # Contract ABI (only what we need) - V4.3.3 compatible
 CONTRACT_ABI = [
@@ -777,6 +777,22 @@ class ContractMonitor:
         
         # Trigger allocation
         await self.allocate_funds(user, received)
+        
+        # Check and refill gas (ETH) if needed
+        if HAS_GAS_MANAGER:
+            try:
+                gas_mgr = get_gas_manager()
+                gas_result = await gas_mgr.check_and_refill(
+                    agent_address=user,
+                    eth_price_usd=3000,  # TODO: get real price
+                    dry_run=False
+                )
+                if gas_result.get("refilled"):
+                    print(f"[ContractMonitor] ⛽ Gas refilled: {gas_result.get('refill_eth'):.4f} ETH")
+                else:
+                    print(f"[ContractMonitor] ⛽ Gas OK: {gas_result.get('remaining_tx', 'N/A')} TX remaining")
+            except Exception as e:
+                logger.warning(f"[ContractMonitor] Gas refill check failed: {e}")
     
     def _select_best_protocol(self, agent_config: dict = None) -> str:
         """Select best protocol based on agent config and APY"""
@@ -1021,16 +1037,12 @@ class ContractMonitor:
         elif protocol_key in ["aerodrome", "uniswap"]:
             # ==========================================
             # WETH-FIRST STRATEGY for Dual-Sided LP
-            # 1. 100% USDC → WETH (deep liquidity)
-            # 2. 50% WETH → target token
-            # 3. addLiquidity(WETH + target)
+            # Uses AerodromeDualLPBuilder for calldata
             # ==========================================
-            router = protocol.get("router")
-            asset_pair = protocol.get("asset", "USDC/WETH")
+            from artisan.aerodrome_dual import AerodromeDualLPBuilder
             
-            # Parse target token from asset pair (e.g., "WETH/VIRTUALS" → VIRTUALS)
-            tokens = [t.strip() for t in asset_pair.replace(" ", "").split("/")]
-            target_token = tokens[1] if tokens[0] == "WETH" else tokens[0]
+            asset_pair = protocol.get("asset", "USDC/WETH")
+            slippage_pct = agent_config.get("slippage", 0.5) if agent_config else 0.5
             
             # ==========================================
             # RULE: TWAP Oracle Protection
@@ -1042,37 +1054,42 @@ class ContractMonitor:
                     f"Potential sandwich attack - skipping LP."
                 )
             
-            # ==========================================
-            # RULE: Slippage from agent config
-            # ==========================================
-            slippage_pct = agent_config.get("slippage", 0.5) if agent_config else 0.5
-            slippage_mult = (100 - slippage_pct) / 100
-            
-            # WETH-First: Swap 100% USDC → WETH first
             print(f"[ContractMonitor] WETH-First LP Strategy for {protocol_key}")
-            print(f"[ContractMonitor] Step 1: 100% USDC → WETH (deep liquidity)")
-            print(f"[ContractMonitor] Step 2: 50% WETH → {target_token}")
-            print(f"[ContractMonitor] Step 3: addLiquidity(WETH + {target_token})")
-            print(f"[ContractMonitor] Slippage tolerance: {slippage_pct}%")
+            print(f"[ContractMonitor] Pool: {asset_pair}, Slippage: {slippage_pct}%")
             
-            deadline = int(datetime.utcnow().timestamp()) + 3600
+            # Build multi-step LP calldata
+            builder = AerodromeDualLPBuilder()
             
-            # For now, return swap calldata for USDC→WETH
-            # Full flow will be multicall: swap + swap + addLiquidity
-            calldata = selector + self.w3.codec.encode(
-                ['address', 'address', 'bool', 'uint256', 'uint256', 'uint256', 'uint256', 'address', 'uint256'],
-                [
-                    Web3.to_checksum_address(WETH_ADDRESS),  # tokenA (WETH)
-                    Web3.to_checksum_address(USDC_ADDRESS),  # tokenB placeholder
-                    False,  # stable = false (volatile pair)
-                    amount,  # Full amount goes to WETH first
-                    0,
-                    int(amount * slippage_mult),
-                    0,
-                    Web3.to_checksum_address(CONTRACT_ADDRESS),
-                    deadline
-                ]
-            )
+            # For USDC/WETH pairs, we need WETH in the pair name
+            # Convert "USDC/WETH" → "WETH/USDC" for builder
+            tokens = [t.strip() for t in asset_pair.replace(" ", "").split("/")]
+            if "WETH" in tokens:
+                target_pair = asset_pair if tokens[0] == "WETH" else f"WETH/{tokens[0]}"
+            else:
+                # Non-WETH pair - need to route through WETH
+                target_pair = f"WETH/{tokens[1]}" if tokens[1] != "USDC" else f"WETH/{tokens[0]}"
+            
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            steps = loop.run_until_complete(builder.build_dual_lp_flow(
+                usdc_amount=amount,
+                target_pair=target_pair,
+                recipient=CONTRACT_ADDRESS,
+                slippage=slippage_pct
+            ))
+            
+            print(f"[ContractMonitor] Generated {len(steps)} LP steps")
+            for s in steps:
+                print(f"   Step {s['step']}: {s['description']}")
+            
+            # Return list of calldata tuples: [(protocol_addr, calldata), ...]
+            # This signals caller to execute multiple transactions
+            return [(s["protocol"], s["calldata"]) for s in steps]
         else:
             # Fallback to Aave-style
             calldata = selector + self.w3.codec.encode(

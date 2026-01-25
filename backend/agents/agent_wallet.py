@@ -283,7 +283,7 @@ class AgentWalletManager:
         destination: Optional[str] = None
     ) -> Dict:
         """
-        Request withdrawal from agent wallet
+        Request withdrawal from agent wallet - EXECUTES REAL ON-CHAIN TRANSFER
         User has 24/7 access to their funds
         """
         wallet = self.wallets.get(user_address.lower())
@@ -297,7 +297,104 @@ class AgentWalletManager:
                 "error": f"Insufficient balance. Have: {current_balance}, Requested: {amount}"
             }
         
-        # Deduct from balance
+        tx_hash = None
+        dest_address = destination or user_address
+        
+        # ============================================
+        # EXECUTE REAL ON-CHAIN TRANSFER
+        # ============================================
+        try:
+            from web3 import Web3
+            from eth_account import Account
+            
+            rpc_url = os.environ.get("ALCHEMY_RPC_URL", "https://mainnet.base.org")
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+            
+            # Get agent private key for signing
+            agent_key = self._get_agent_private_key(user_address)
+            if not agent_key:
+                return {"success": False, "error": "Cannot access agent private key"}
+            
+            agent_account = Account.from_key(agent_key)
+            
+            # Token addresses on Base
+            TOKEN_ADDRESSES = {
+                "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                "WETH": "0x4200000000000000000000000000000000000006",
+                "ETH": None  # Native ETH
+            }
+            
+            token_upper = token.upper()
+            token_address = TOKEN_ADDRESSES.get(token_upper)
+            
+            if token_upper == "ETH":
+                # Native ETH transfer
+                amount_wei = int(amount * 1e18)
+                tx = {
+                    'to': Web3.to_checksum_address(dest_address),
+                    'value': amount_wei,
+                    'gas': 21000,
+                    'gasPrice': w3.eth.gas_price,
+                    'nonce': w3.eth.get_transaction_count(agent_account.address),
+                    'chainId': 8453  # Base
+                }
+                
+                signed = agent_account.sign_transaction(tx)
+                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                
+                if receipt.status != 1:
+                    return {"success": False, "error": "ETH transfer failed on-chain"}
+                    
+            elif token_address:
+                # ERC20 transfer
+                decimals = 6 if token_upper == "USDC" else 18
+                amount_units = int(amount * (10 ** decimals))
+                
+                erc20_abi = [{
+                    "inputs": [
+                        {"name": "recipient", "type": "address"},
+                        {"name": "amount", "type": "uint256"}
+                    ],
+                    "name": "transfer",
+                    "outputs": [{"type": "bool"}],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                }]
+                
+                contract = w3.eth.contract(
+                    address=Web3.to_checksum_address(token_address),
+                    abi=erc20_abi
+                )
+                
+                tx = contract.functions.transfer(
+                    Web3.to_checksum_address(dest_address),
+                    amount_units
+                ).build_transaction({
+                    'from': agent_account.address,
+                    'gas': 100000,
+                    'gasPrice': w3.eth.gas_price,
+                    'nonce': w3.eth.get_transaction_count(agent_account.address),
+                    'chainId': 8453
+                })
+                
+                signed = agent_account.sign_transaction(tx)
+                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                
+                if receipt.status != 1:
+                    return {"success": False, "error": f"{token} transfer failed on-chain"}
+            else:
+                return {"success": False, "error": f"Unknown token: {token}"}
+            
+            tx_hash = tx_hash.hex() if tx_hash else None
+            logger.info(f"✅ On-chain transfer SUCCESS: {tx_hash}")
+            
+        except Exception as e:
+            logger.error(f"On-chain transfer failed: {e}")
+            return {"success": False, "error": f"On-chain transfer failed: {str(e)}"}
+        
+        # Deduct from balance AFTER successful on-chain transfer
         wallet.balances[token] -= amount
         
         # Record transaction
@@ -305,25 +402,43 @@ class AgentWalletManager:
             "type": TransactionType.WITHDRAW.value,
             "token": token,
             "amount": amount,
-            "destination": destination or user_address,
+            "destination": dest_address,
             "timestamp": datetime.now().isoformat(),
-            "status": "pending"
+            "status": "completed",
+            "tx_hash": tx_hash
         }
         wallet.transactions.append(tx_record)
         
         self._save_wallet(wallet)
         
-        logger.info(f"📤 Withdrawal requested: {amount} {token} for {user_address[:10]}...")
+        logger.info(f"📤 Withdrawal completed: {amount} {token} for {user_address[:10]}...")
         
         return {
             "success": True,
             "withdrawal": tx_record,
-            "remaining_balance": wallet.balances[token]
+            "remaining_balance": wallet.balances[token],
+            "tx_hash": tx_hash
         }
+    
+    def _get_agent_private_key(self, user_address: str) -> Optional[str]:
+        """Get agent's private key for transaction signing"""
+        # Try to get from environment (for hot wallet)
+        agent_key = os.environ.get("AGENT_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY")
+        if agent_key:
+            return agent_key
+        
+        # Fallback: Try to decrypt from wallet data
+        wallet = self.wallets.get(user_address.lower())
+        if wallet and wallet.encrypted_private_key:
+            # Note: This requires the encryption key which user provides
+            # For automated operations, use AGENT_PRIVATE_KEY env var
+            pass
+        
+        return None
     
     def emergency_drain(self, user_address: str) -> Dict:
         """
-        Emergency: Withdraw all funds to user's wallet
+        Emergency: Withdraw all funds to user's wallet - EXECUTES REAL ON-CHAIN TRANSFERS
         Always available 24/7
         """
         wallet = self.wallets.get(user_address.lower())
@@ -336,32 +451,50 @@ class AgentWalletManager:
         # Set wallet to draining mode
         wallet.status = WalletStatus.DRAINING
         
-        # Queue all balances for withdrawal
+        # Execute real withdrawals for each token
         withdrawals = []
-        for token, balance in wallet.balances.items():
+        tx_hashes = []
+        
+        for token, balance in list(wallet.balances.items()):
             if balance > 0:
-                withdrawals.append({
-                    "token": token,
-                    "amount": balance,
-                    "destination": user_address
-                })
-                wallet.balances[token] = 0
+                # Use request_withdrawal which now does real on-chain transfer
+                result = self.request_withdrawal(
+                    user_address=user_address,
+                    token=token,
+                    amount=balance,
+                    destination=user_address
+                )
+                
+                if result.get("success"):
+                    withdrawals.append({
+                        "token": token,
+                        "amount": balance,
+                        "destination": user_address,
+                        "tx_hash": result.get("tx_hash")
+                    })
+                    tx_hashes.append(result.get("tx_hash"))
+                else:
+                    logger.error(f"Emergency drain failed for {token}: {result.get('error')}")
         
         # Record emergency drain
         wallet.transactions.append({
             "type": "emergency_drain",
             "withdrawals": withdrawals,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "tx_hashes": tx_hashes
         })
         
+        # Reset wallet status
+        wallet.status = WalletStatus.ACTIVE
         self._save_wallet(wallet)
         
-        logger.warning(f"🚨 Emergency drain initiated for {user_address[:10]}...")
+        logger.warning(f"🚨 Emergency drain completed for {user_address[:10]}... {len(withdrawals)} tokens transferred")
         
         return {
             "success": True,
             "withdrawals": withdrawals,
-            "message": "All funds queued for withdrawal to your wallet"
+            "tx_hashes": tx_hashes,
+            "message": f"All funds ({len(withdrawals)} tokens) transferred to your wallet"
         }
     
     # ===========================================

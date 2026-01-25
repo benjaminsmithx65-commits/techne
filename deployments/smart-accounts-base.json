@@ -1,0 +1,47 @@
+{
+  "network": "Base",
+  "chainId": 8453,
+  "timestamp": "2026-01-25T18:09:06.266Z",
+  "deployer": "0xa30A689ec0F9D717C5bA1098455B031b868B720f",
+  "contracts": {
+    "implementation": "0xe185c5ffadf51425509ce4186f7328d8bcdbc6cd",
+    "factory": "0xc1ee3090330ad3f946eee995f975e9fe541aa676"
+  },
+  "defaultProtocols": [
+    {
+      "address": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+      "selectors": [
+        "0x617ba037",
+        "0x69328dec",
+        "0xa415bcad",
+        "0x573ade81"
+      ]
+    },
+    {
+      "address": "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43",
+      "selectors": [
+        "0xcac88ea9",
+        "0x5a47ddc3",
+        "0x0dede6c4"
+      ]
+    },
+    {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "selectors": [
+        "0x095ea7b3",
+        "0xa9059cbb"
+      ]
+    },
+    {
+      "address": "0x4200000000000000000000000000000000000006",
+      "selectors": [
+        "0x095ea7b3",
+        "0xa9059cbb"
+      ]
+    }
+  ],
+  "gasUsed": {
+    "implementation": "1812231",
+    "factory": "1172097"
+  }
+}

@@ -43,7 +43,7 @@ class WhitelistService:
         self.private_key = os.getenv("PRIVATE_KEY")
         self.contract_address = os.getenv(
             "AGENT_WALLET_V43_ADDRESS",
-            "0x323f98c4e05073c2f76666944d95e39b78024efd"
+            "0x1ff18a7b56d7fd3b07ce789e47ac587de2f14e0d"  # V4.3.3 (2026-01-25)
         )
         
         self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))

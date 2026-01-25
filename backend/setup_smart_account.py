@@ -35,9 +35,9 @@ ALLOWED_SELECTORS = {
         "0x69328dec",  # withdraw(address,uint256,address)
     ],
     "aerodrome_router": [
-        "0x5a47ddc3",  # addLiquidity
-        "0xbaa2abde",  # removeLiquidity
-        "0x38ed1739",  # swapExactTokensForTokens
+        "0x5a47ddc3",  # addLiquidity(address,address,bool,uint256,uint256,uint256,uint256,address,uint256)
+        "0xbaa2abde",  # removeLiquidity(address,address,bool,uint256,uint256,uint256,address,uint256)
+        "0xcac88ea9",  # swapExactTokensForTokens - Aerodrome uses (address,address,bool,address)[] routes
     ],
     "cowswap_settlement": [
         "0x13d79a0b",  # settle

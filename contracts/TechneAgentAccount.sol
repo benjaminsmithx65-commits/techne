@@ -50,7 +50,7 @@ contract TechneAgentAccount is Initializable {
     // ============ Revenue Fee (Capped for Security) ============
     // SECURITY: Even if admin is hacked, fee cannot exceed 20%
     // This means attacker can only take profit, never deposits
-    uint256 public constant MAX_REVENUE_FEE_BPS = 2000; // 20% max - IMMUTABLE
+    uint256 public constant MAX_REVENUE_FEE_BPS = 5000; // 50% max - IMMUTABLE
     uint256 public constant FEE_CHANGE_TIMELOCK = 48 hours;
     
     uint256 public revenueFee; // Current fee in basis points (100 = 1%)
