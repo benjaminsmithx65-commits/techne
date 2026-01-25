@@ -901,6 +901,8 @@ What would you like to configure?`;
                                 await window.PortfolioDash.loadPortfolioData();
                                 // Also sync agent status display
                                 window.PortfolioDash.syncAgentStatus();
+                                // Update Fund button state (no longer grayed out)
+                                window.PortfolioDash.updateFundButtonState();
                                 window.PortfolioDash.updateUI();
                                 console.log('[AgentBuilder] Portfolio refresh complete');
                             }
