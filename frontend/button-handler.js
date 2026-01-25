@@ -3,7 +3,7 @@
  * Ensures every button on the page leads to proper functionality
  */
 
-const BTN_API_BASE = window.API_BASE || 'http://localhost:8080';
+const BTN_API_BASE = window.API_BASE || 'http://localhost:8000';
 
 const ButtonHandler = {
     /**

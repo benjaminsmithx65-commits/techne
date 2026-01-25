@@ -362,7 +362,7 @@ class PortfolioDashboard {
             // This allows Close Position to actually update the displayed amount
             let investedUSDC = 0;
             try {
-                const API_BASE = window.API_BASE || 'http://localhost:8080';
+                const API_BASE = window.API_BASE || 'http://localhost:8000';
                 const posResponse = await fetch(`${API_BASE}/api/position/${window.connectedWallet}`);
                 const posData = await posResponse.json();
                 if (posData.success && posData.positions) {
@@ -599,7 +599,7 @@ class PortfolioDashboard {
 
         try {
             // Fetch real positions from backend
-            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const API_BASE = window.API_BASE || 'http://localhost:8000';
             const response = await fetch(`${API_BASE}/api/position/${walletAddress}`);
             const data = await response.json();
 
@@ -1170,7 +1170,7 @@ class PortfolioDashboard {
         }
 
         try {
-            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const API_BASE = window.API_BASE || 'http://localhost:8000';
             const wallet = window.connectedWallet;
 
             // Call backend to withdraw
@@ -1465,7 +1465,7 @@ class PortfolioDashboard {
         console.log(`[Portfolio] Closing position ${positionId}: ${percentage}% = $${closeAmount.toFixed(2)}`);
 
         try {
-            const API_BASE = window.API_BASE || 'http://localhost:8080';
+            const API_BASE = window.API_BASE || 'http://localhost:8000';
             const response = await fetch(`${API_BASE}/api/position/close`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

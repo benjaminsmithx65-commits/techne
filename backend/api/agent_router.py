@@ -188,23 +188,27 @@ async def trigger_agent_allocation(
             except Exception as e:
                 print(f"[TriggerAllocation] Cooldown check error: {e}")
         
-        agent_wallet = agent.get("agent_address")
-        if not agent_wallet:
-            return {
-                "success": False,
-                "error": "Agent has no wallet address configured",
-                "agent_id": agent.get("id")
+        # V4.3.3 Contract - same as frontend portfolio reads from
+        V4_CONTRACT = "0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4"
+        V4_ABI = [
+            {
+                "inputs": [{"name": "user", "type": "address"}],
+                "name": "balances",
+                "outputs": [{"type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
             }
+        ]
         
-        # Get agent wallet USDC balance on Base
+        # Get user's USDC balance from V4 contract (same source as portfolio frontend!)
         w3 = contract_monitor._get_web3()
-        usdc_contract = w3.eth.contract(
-            address=Web3.to_checksum_address(BASE_USDC),
-            abi=ERC20_ABI
+        v4_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(V4_CONTRACT),
+            abi=V4_ABI
         )
         
-        balance = usdc_contract.functions.balanceOf(
-            Web3.to_checksum_address(agent_wallet)
+        balance = v4_contract.functions.balances(
+            Web3.to_checksum_address(user_address)
         ).call()
         
         amount_usdc = balance / 1e6
@@ -212,23 +216,24 @@ async def trigger_agent_allocation(
         if balance == 0:
             return {
                 "success": False,
-                "message": "Agent wallet has no USDC to allocate",
-                "agent_wallet": agent_wallet,
+                "message": "No USDC deposited in contract to allocate",
+                "user_address": user_address,
+                "contract": V4_CONTRACT,
                 "balance": 0
             }
         
-        print(f"[TriggerAllocation] Agent {agent.get('id')} has {amount_usdc:.2f} USDC")
-        print(f"[TriggerAllocation] Agent wallet: {agent_wallet}")
-        print(f"[TriggerAllocation] Config: pool_type={agent.get('pool_type')}, risk={agent.get('risk_level')}")
+        print(f"[TriggerAllocation] User {user_address[:10]}... has {amount_usdc:.2f} USDC in V4 contract", flush=True)
+        print(f"[TriggerAllocation] Agent: {agent.get('id')}, pool_type={agent.get('pool_type')}, risk={agent.get('risk_level')}", flush=True)
         
-        # Trigger allocation using agent wallet (not smart contract!)
-        # Pass agent_address as user so allocate_funds uses this agent's config
+        # Trigger allocation using V4 contract balance
+        print(f"[TriggerAllocation] >>> CALLING allocate_funds...", flush=True)
         await contract_monitor.allocate_funds(user_address, balance)
+        print(f"[TriggerAllocation] <<< allocate_funds RETURNED", flush=True)
         
         return {
             "success": True,
             "agent_id": agent.get("id"),
-            "agent_wallet": agent_wallet,
+            "user_address": user_address,
             "amount_usdc": amount_usdc,
             "pool_type": agent.get("pool_type"),
             "risk_level": agent.get("risk_level"),

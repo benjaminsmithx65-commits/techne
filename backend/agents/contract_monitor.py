@@ -1171,8 +1171,10 @@ class ContractMonitor:
     
     async def allocate_funds(self, user: str, amount: int):
         """Allocate user funds to best protocol using Node.js signer for correct signatures"""
+        print(f"[ContractMonitor] >>> allocate_funds ENTRY: user={user[:15]}..., amount=${amount/1e6:.2f}", flush=True)
+        
         if not self.agent_key:
-            print("[ContractMonitor] No agent key configured - cannot allocate")
+            print("[ContractMonitor] No agent key configured - cannot allocate", flush=True)
             return
         
         try:
@@ -1362,16 +1364,20 @@ class ContractMonitor:
                 )
                 
                 # Build transaction with tuple
+                # Use 'pending' nonce to avoid "replacement transaction underpriced" error
+                current_nonce = self.w3.eth.get_transaction_count(self.agent_account.address, 'pending')
+                base_gas = self.w3.eth.gas_price
+                
                 tx = self.contract.functions.executeStrategySigned(
                     execute_params,
                     signature,
                     calldata
                 ).build_transaction({
                     'from': self.agent_account.address,
-                    'nonce': self.w3.eth.get_transaction_count(self.agent_account.address),
+                    'nonce': current_nonce,
                     'gas': 500000,
-                    'maxFeePerGas': self.w3.eth.gas_price * 2,
-                    'maxPriorityFeePerGas': self.w3.to_wei(0.001, 'gwei'),
+                    'maxFeePerGas': int(base_gas * 2.5),  # Higher multiplier
+                    'maxPriorityFeePerGas': self.w3.to_wei(0.01, 'gwei'),  # Higher priority
                     'chainId': 8453
                 })
                 

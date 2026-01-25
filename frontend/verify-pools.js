@@ -7,7 +7,7 @@
 const VerifyPools = {
     VERIFY_COST: 10,
     STORAGE_KEY: 'techne_verify_history',
-    API_BASE: window.API_BASE || 'http://localhost:8080',
+    API_BASE: window.API_BASE || 'http://localhost:8000',
 
     // Initialize module
     init() {

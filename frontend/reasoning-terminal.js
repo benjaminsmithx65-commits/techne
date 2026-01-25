@@ -14,7 +14,7 @@ class ReasoningTerminal {
         this.options = {
             refreshInterval: options.refreshInterval || 5000,
             maxLogs: options.maxLogs || 10,
-            apiUrl: options.apiUrl || 'http://localhost:8080/api/audit/reasoning-logs',
+            apiUrl: options.apiUrl || `${window.API_BASE || 'http://localhost:8000'}/api/audit/reasoning-logs`,
             userAddress: options.userAddress || null
         };
         this.intervalId = null;

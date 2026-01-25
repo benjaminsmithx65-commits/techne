@@ -1038,7 +1038,7 @@ const AgentWalletUI = {
 
             try {
                 const whitelistResp = await fetch(
-                    `http://localhost:8080/api/whitelist?user_address=${userAddress}`,
+                    `${window.API_BASE || 'http://localhost:8000'}/api/whitelist?user_address=${userAddress}`,
                     { method: 'POST' }
                 );
                 const whitelistResult = await whitelistResp.json();
@@ -1096,42 +1096,39 @@ const AgentWalletUI = {
 
                 console.log('[AgentWallet] ETH sent to:', gasRecipient);
             } else {
-                // For ERC20 tokens (WETH, etc.) - transfer directly to user's Smart Account
-                // V4.3.3 doesn't have depositToken, so we use direct transfer
+                // For ERC20 tokens - different handling for USDC vs other tokens
                 btn.innerHTML = '<span>⏳</span> Approving...';
                 const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
 
-                // Get user's Smart Account address for receiving tokens
-                let recipient;
-                try {
-                    const saResult = await NetworkUtils.getSmartAccount(userAddress);
-                    if (saResult.success && saResult.smartAccount) {
-                        recipient = saResult.smartAccount;
-                        console.log('[AgentWallet] Sending token to Smart Account:', recipient);
-                    } else {
-                        // Fallback to V4 contract if no Smart Account
-                        recipient = this.contractAddress;
-                        console.log('[AgentWallet] No Smart Account, using V4 contract');
-                    }
-                } catch (e) {
-                    recipient = this.contractAddress;
-                    console.warn('[AgentWallet] Smart Account check failed, using V4 contract:', e);
-                }
-
                 if (this.selectedToken === 'USDC') {
-                    // USDC deposits to V4 contract require approve + deposit
+                    // USDC goes to V4 contract via approve+deposit
+                    // This is where backend reads balance from: contract.balances(user)
                     const approveTx = await tokenContract.approve(this.contractAddress, amountWei);
                     await approveTx.wait();
 
-                    btn.innerHTML = '<span>⏳</span> Depositing...';
+                    btn.innerHTML = '<span>⏳</span> Depositing to V4...';
                     const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
                     depositTx = await wallet.deposit(amountWei);
+                    console.log('[AgentWallet] USDC deposited to V4 contract:', this.contractAddress);
                 } else {
-                    // For WETH and other tokens, direct transfer to Smart Account
+                    // For WETH and other tokens - direct transfer to Smart Account
+                    let recipient;
+                    try {
+                        const saResult = await NetworkUtils.getSmartAccount(userAddress);
+                        if (saResult.success && saResult.smartAccount) {
+                            recipient = saResult.smartAccount;
+                        } else {
+                            recipient = this.contractAddress;
+                        }
+                    } catch (e) {
+                        recipient = this.contractAddress;
+                    }
+
                     btn.innerHTML = '<span>⏳</span> Transferring...';
                     const TRANSFER_ABI = ['function transfer(address to, uint256 amount) returns (bool)'];
                     const tokenWithTransfer = new ethers.Contract(token.address, TRANSFER_ABI, signer);
                     depositTx = await tokenWithTransfer.transfer(recipient, amountWei);
+                    console.log(`[AgentWallet] ${this.selectedToken} transferred to:`, recipient);
                 }
             }
             await depositTx.wait();
@@ -1295,8 +1292,9 @@ const AgentWalletUI = {
 
         console.log('[AgentWallet] Connecting WebSocket for allocation updates...');
 
-        // Connect to backend WebSocket
-        const wsUrl = `ws://localhost:8080/ws/allocation/${window.connectedWallet}`;
+        // Connect to backend WebSocket using global WS_BASE
+        const wsBase = window.WS_BASE || 'ws://localhost:8000';
+        const wsUrl = `${wsBase}/ws/allocation/${window.connectedWallet}`;
 
         try {
             this._allocationWs = new WebSocket(wsUrl);

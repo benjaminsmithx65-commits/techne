@@ -17,9 +17,22 @@
     <!-- Styles -->
     <link rel="stylesheet" href="/styles.css?v=5">
 
-    <!-- Global Config -->
+    <!-- Global Config - Intelligent API detection -->
     <script>
-        window.API_BASE = 'http://localhost:8080';
+        // Local development: backend on port 8000, frontend on 8080
+        // Production (Vercel): backend served from same origin via /api routes
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            // Local development - backend is on port 8000
+            window.API_BASE = 'http://localhost:8000';
+            window.WS_BASE = 'ws://localhost:8000';
+        } else {
+            // Production - Vercel serverless or same origin
+            window.API_BASE = '';  // Same origin
+            window.WS_BASE = window.location.protocol === 'https:'
+                ? 'wss://' + window.location.host
+                : 'ws://' + window.location.host;
+        }
+        console.log('[Techne] API_BASE:', window.API_BASE, 'WS_BASE:', window.WS_BASE);
     </script>
 </head>
 
@@ -3857,9 +3870,9 @@
     <script>
         // Initialize Reasoning Terminal
         document.addEventListener('DOMContentLoaded', function () {
-            // Portfolio terminal (main)
+            // Portfolio terminal (main) - fetches real logs from backend
             const portfolioTerminal = new ReasoningTerminal('portfolio-reasoning-terminal');
-            portfolioTerminal.addDemoLogs();
+            // NO demo logs - show real agent reasoning from /api/audit/reasoning-logs
             portfolioTerminal.start();
             window.reasoningTerminal = portfolioTerminal;
         });

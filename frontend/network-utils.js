@@ -162,7 +162,8 @@ function getTechneVaultContract(signer) {
  */
 async function getAgentAddress(userAddress) {
     try {
-        const response = await fetch(`/api/agent/status/${userAddress}`);
+        const API_BASE = window.API_BASE || '';
+        const response = await fetch(`${API_BASE}/api/agent/status/${userAddress}`);
         const data = await response.json();
 
         if (data.success && data.agents && data.agents.length > 0) {
@@ -229,8 +230,9 @@ async function fundAgentWallet(amountUSDC, userAddress) {
 
         // Step 6: Trigger allocation on backend (NO smart contract needed!)
         console.log('[NetworkUtils] Triggering allocation...');
+        const API_ALLOC = window.API_BASE || '';
         try {
-            const allocResponse = await fetch(`/api/agent/trigger-allocation?user_address=${userAddress}`, {
+            const allocResponse = await fetch(`${API_ALLOC}/api/agent/trigger-allocation?user_address=${userAddress}`, {
                 method: 'POST'
             });
             const allocData = await allocResponse.json();
@@ -280,7 +282,8 @@ async function fundAgentWallet(amountUSDC, userAddress) {
  */
 async function getSmartAccount(userAddress) {
     try {
-        const response = await fetch(`/api/smart-account/${userAddress}`);
+        const API_BASE = window.API_BASE || '';
+        const response = await fetch(`${API_BASE}/api/smart-account/${userAddress}`);
         const data = await response.json();
 
         if (data.success) {
@@ -305,7 +308,8 @@ async function getSmartAccount(userAddress) {
  */
 async function createSmartAccount(userAddress) {
     try {
-        const response = await fetch(`/api/smart-account/create?user_address=${userAddress}`, {
+        const API_BASE = window.API_BASE || '';
+        const response = await fetch(`${API_BASE}/api/smart-account/create?user_address=${userAddress}`, {
             method: 'POST'
         });
         const data = await response.json();
