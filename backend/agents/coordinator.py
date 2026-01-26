@@ -20,8 +20,8 @@ except ImportError:
         def decorator(func): return func
         return decorator
 
-# Core Agents
-from .scout_agent import scout
+# Core Agents - scout is in artisan/, rest in agents/
+from artisan.scout_agent import scout_agent as scout
 from .appraiser_agent import appraiser
 from .merchant_agent import merchant
 from .concierge_agent import concierge

@@ -1,0 +1,29 @@
+﻿python : Traceback (most recent call last):
+At line:1 char:26
++ .\venv\Scripts\activate; python test_scout.py 2>&1 | Out-File 
+-FilePa ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most re 
+   cent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\Dell\.gemini\antigravity\scratch\techne-finance
+\backend\test_scout.py", line 35, in test_scout
+    weth_usdc = [p for p in pools if "WETH" in p.get("symbol", "
+").upper() or "USDC" in p.get("symbol", "").upper()]
+                                               ^^^^^
+AttributeError: 'str' object has no attribute 'get'
+======================================================================
+Testing Scout Agent - get_scout_pools()
+======================================================================
+
+Agent config:
+  min_apy: 50%
+  min_tvl: $500,000
+  protocols: aerodrome
+  chain: Base
+
+[*] Calling get_scout_pools()...
+
+[OK] get_scout_pools returned 5 pools
+ERROR: 'str' object has no attribute 'get'

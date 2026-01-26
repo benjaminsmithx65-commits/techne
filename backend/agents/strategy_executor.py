@@ -43,6 +43,12 @@ except ImportError:
     risk_manager = None
     check_position_risk = None
 
+# Import audit logger for Neural Terminal live updates
+try:
+    from api.audit_router import log_audit_entry
+except ImportError:
+    log_audit_entry = None
+
 
 class StrategyExecutor:
     """
@@ -146,6 +152,7 @@ class StrategyExecutor:
     async def execute_agent_strategy(self, agent: dict):
         """Execute strategy for a single agent"""
         agent_id = agent.get("id", "unknown")
+        user_address = agent.get("user_address", "")
         
         # Check if we should execute (rate limit)
         last = self.last_execution.get(agent_id)
@@ -154,11 +161,31 @@ class StrategyExecutor:
         
         print(f"[StrategyExecutor] Executing for agent {agent_id[:15]}...")
         
+        # Log: Starting scan
+        if log_audit_entry:
+            log_audit_entry(
+                action="POOL_SCAN_START",
+                wallet=user_address,
+                details={
+                    "agent_id": agent_id[:15],
+                    "protocols": agent.get("protocols", []),
+                    "min_apy": agent.get("min_apy", 50),
+                    "pool_type": agent.get("pool_type", "all")
+                }
+            )
+        
         # 1. Find matching pools
         pools = await self.find_matching_pools(agent)
         
         if not pools:
             print(f"[StrategyExecutor] No matching pools found - using Aave USDC fallback")
+            # Log: No pools found
+            if log_audit_entry:
+                log_audit_entry(
+                    action="PARKING_ENGAGED",
+                    wallet=user_address,
+                    details={"apy": 6.2, "reason": "No matching pools found"}
+                )
             # Fallback: Default to Aave USDC (always available, always safe)
             pools = [{
                 "symbol": "USDC",
@@ -172,6 +199,20 @@ class StrategyExecutor:
         
         print(f"[StrategyExecutor] Found {len(pools)} matching pools")
         
+        # Log: Pools found
+        if log_audit_entry and pools:
+            top_pool = pools[0] if pools else {}
+            log_audit_entry(
+                action="POOL_EVALUATION",
+                wallet=user_address,
+                details={
+                    "pools_found": len(pools),
+                    "top_pool": top_pool.get("symbol", "Unknown"),
+                    "top_apy": top_pool.get("apy", 0),
+                    "top_tvl": top_pool.get("tvl", 0)
+                }
+            )
+        
         # 2. Rank and select top pools
         selected_pools = self.rank_and_select(pools, agent)
         
@@ -183,65 +224,113 @@ class StrategyExecutor:
         
         print(f"[StrategyExecutor] Recommended {len(selected_pools)} pools for {agent_id[:15]}")
         
+        # Log: Recommendations ready
+        if log_audit_entry and selected_pools:
+            log_audit_entry(
+                action="SCAN_COMPLETE",
+                wallet=user_address,
+                details={
+                    "selected_count": len(selected_pools),
+                    "pools": [p.get("symbol", "?") for p in selected_pools[:3]]
+                }
+            )
+        
         # 4. AUTO-EXECUTE: Check if user has idle balance and execute allocation
-        user_address = agent.get("user_address")
         if user_address and selected_pools:
             try:
                 idle_balance = await self.get_user_idle_balance(user_address, agent)
                 
                 if idle_balance > 1:  # Minimum $1 to allocate
-                    print(f"[StrategyExecutor] 💰 User has ${idle_balance:.2f} idle - auto-allocating!")
+                    print(f"[StrategyExecutor] User has ${idle_balance:.2f} idle - auto-allocating!")
+                    
+                    # Log: Starting allocation
+                    if log_audit_entry:
+                        log_audit_entry(
+                            action="ALLOCATION_START",
+                            wallet=user_address,
+                            details={"amount": idle_balance, "pools": len(selected_pools)}
+                        )
                     
                     # Execute allocation
                     result = await self.execute_allocation(agent, idle_balance)
                     
                     if result.get("success"):
-                        print(f"[StrategyExecutor] ✅ Auto-allocation SUCCESS: {result.get('successful')}/{result.get('total_pools')} pools")
+                        print(f"[StrategyExecutor] Auto-allocation SUCCESS: {result.get('successful')}/{result.get('total_pools')} pools")
+                        if log_audit_entry:
+                            log_audit_entry(
+                                action="ALLOCATION_SUCCESS",
+                                wallet=user_address,
+                                details={
+                                    "amount": idle_balance,
+                                    "pools_executed": result.get('successful', 0)
+                                }
+                            )
                     else:
-                        print(f"[StrategyExecutor] ❌ Auto-allocation failed: {result.get('error')}")
+                        print(f"[StrategyExecutor] Auto-allocation failed: {result.get('error')}")
+                        if log_audit_entry:
+                            log_audit_entry(
+                                action="ALLOCATION_FAILED",
+                                wallet=user_address,
+                                details={"error": str(result.get('error', 'Unknown'))}
+                            )
                 else:
                     print(f"[StrategyExecutor] User has no idle balance to allocate")
+                    if log_audit_entry:
+                        log_audit_entry(
+                            action="IDLE_CAPITAL",
+                            wallet=user_address,
+                            details={"balance": idle_balance, "reason": "Waiting for deposit"}
+                        )
                     
             except Exception as e:
                 print(f"[StrategyExecutor] Balance check error: {e}")
     
     async def get_user_idle_balance(self, user_address: str, agent: dict = None) -> float:
         """
-        Get user's idle USDC balance.
+        Get user's idle USDC balance from BOTH sources:
+        1. V4 contract balances(user_address)
+        2. Agent EOA wallet USDC balance
         
-        For EOA agents (with encrypted_private_key): check agent wallet USDC balance
-        For V4 contract mode: check contract balances(user)
+        Returns the sum of both.
         """
         try:
             from web3 import Web3
             
             w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+            USDC = Web3.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+            usdc_abi = [{'inputs': [{'name': 'account', 'type': 'address'}], 'name': 'balanceOf', 'outputs': [{'type': 'uint256'}], 'stateMutability': 'view', 'type': 'function'}]
+            usdc = w3.eth.contract(address=USDC, abi=usdc_abi)
             
-            # EOA Mode: Check agent's own wallet USDC balance
-            if agent and agent.get("encrypted_private_key") and agent.get("agent_address"):
-                USDC = Web3.to_checksum_address("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
-                agent_address = Web3.to_checksum_address(agent.get("agent_address"))
-                
-                usdc_abi = [{'inputs': [{'name': 'account', 'type': 'address'}], 'name': 'balanceOf', 'outputs': [{'type': 'uint256'}], 'stateMutability': 'view', 'type': 'function'}]
-                usdc = w3.eth.contract(address=USDC, abi=usdc_abi)
-                
-                balance_wei = usdc.functions.balanceOf(agent_address).call()
-                balance = balance_wei / 1e6
-                
-                print(f"[StrategyExecutor] EOA agent {agent_address[:10]}... has {balance:.2f} USDC")
-                return balance
+            total_balance = 0
             
-            # V4 Contract Mode: Check contract balance
-            contract = w3.eth.contract(
-                address=Web3.to_checksum_address(self.wallet_contract),
-                abi=self.v4_abi
-            )
+            # Source 1: V4 Contract balance (user's deposited funds)
+            try:
+                contract = w3.eth.contract(
+                    address=Web3.to_checksum_address(self.wallet_contract),
+                    abi=self.v4_abi
+                )
+                v4_balance_wei = contract.functions.balances(
+                    Web3.to_checksum_address(user_address)
+                ).call()
+                v4_balance = v4_balance_wei / 1e6
+                total_balance += v4_balance
+                print(f"[StrategyExecutor] V4 contract balance: ${v4_balance:.2f}")
+            except Exception as e:
+                print(f"[StrategyExecutor] V4 balance check failed: {e}")
             
-            balance_wei = contract.functions.balances(
-                Web3.to_checksum_address(user_address)
-            ).call()
+            # Source 2: Agent EOA USDC balance (agent's own wallet)
+            if agent and agent.get("agent_address"):
+                try:
+                    agent_address = Web3.to_checksum_address(agent.get("agent_address"))
+                    eoa_balance_wei = usdc.functions.balanceOf(agent_address).call()
+                    eoa_balance = eoa_balance_wei / 1e6
+                    total_balance += eoa_balance
+                    print(f"[StrategyExecutor] Agent EOA balance: ${eoa_balance:.2f}")
+                except Exception as e:
+                    print(f"[StrategyExecutor] Agent EOA balance check failed: {e}")
             
-            return balance_wei / 1e6  # USDC has 6 decimals
+            print(f"[StrategyExecutor] Total idle balance: ${total_balance:.2f}")
+            return total_balance
             
         except Exception as e:
             print(f"[StrategyExecutor] Error reading balance: {e}")
@@ -342,9 +431,9 @@ class StrategyExecutor:
             
             result = await get_scout_pools(
                 chain=normalized_chain,
-                min_tvl=100000,  # $100k minimum
-                min_apy=agent.get("min_apy", 5),
-                max_apy=agent.get("max_apy", 200),
+                min_tvl=agent.get("min_tvl", 500000),  # $500k minimum (user wants quality)
+                min_apy=agent.get("min_apy", 50),  # 50% minimum APY
+                max_apy=agent.get("max_apy", 50000),  # Allow high APY
                 protocols=agent.get("protocols", []),
                 stablecoin_only=agent.get("pool_type") == "stablecoin"
             )
@@ -385,13 +474,14 @@ class StrategyExecutor:
                 if preferred_assets and not any(a in symbol for a in preferred_assets):
                     continue
                 
-                # Check pool type
-                pool_type = agent.get("pool_type", "single")
+                # Check pool type (default: allow ALL pools)
+                pool_type = agent.get("pool_type", "all")
                 is_lp = any(sep in symbol for sep in ["-", "/", " / "])
                 if pool_type == "single" and is_lp:
                     continue
                 if pool_type == "dual" and not is_lp:
                     continue
+                # pool_type == "all" allows everything
                 
                 # Check risk score (from Scout)
                 risk_score = pool.get("risk_score", "Medium")

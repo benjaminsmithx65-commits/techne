@@ -1235,8 +1235,8 @@ class ContractMonitor:
                 print(f"[ContractMonitor] Failed to decrypt agent key: {decrypt_error}", flush=True)
                 return {"success": False, "error": "Key decryption failed"}
             
-            # Use public RPC for allocation (avoid Alchemy mempool cache issues)
-            w3 = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
+            # Use LlamaNodes RPC for allocation 
+            w3 = Web3(Web3.HTTPProvider('https://base.llamarpc.com'))
             
             # Check if agent has USDC balance
             USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -1268,7 +1268,7 @@ class ContractMonitor:
                 'from': agent_account.address,
                 'nonce': w3.eth.get_transaction_count(agent_account.address, 'pending'),  # Fresh nonce
                 'gas': 150000,  # Unique gas to avoid duplicate TX hash
-                'gasPrice': int(w3.eth.gas_price * 10),  # Legacy format works better on Base
+                'gasPrice': int(w3.eth.gas_price * 15),  # Higher multiplier to avoid underpriced error
                 'chainId': 8453
             })
             
@@ -1307,7 +1307,7 @@ class ContractMonitor:
                 'from': agent_account.address,
                 'nonce': w3.eth.get_transaction_count(agent_account.address, 'pending'),  # Fresh nonce after approve
                 'gas': 350000,  # Unique gas to avoid duplicate TX hash
-                'gasPrice': int(w3.eth.gas_price * 10),  # Legacy format works better on Base
+                'gasPrice': int(w3.eth.gas_price * 15),  # Higher multiplier to avoid underpriced error
                 'chainId': 8453
             })
             

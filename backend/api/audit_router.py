@@ -124,6 +124,40 @@ REASON_MAPPINGS = {
         "category": "GAS",
         "icon": "✓",
         "template": "Gas level OK. {remaining_tx} transactions available."
+    },
+    
+    # [SCAN] - Strategy Executor Scanning
+    "POOL_SCAN_START": {
+        "category": "SCAN",
+        "icon": "🔍",
+        "template": "Scanning pools: {protocols} (min APY: {min_apy}%)"
+    },
+    "POOL_EVALUATION": {
+        "category": "SCAN",
+        "icon": "📊",
+        "template": "Found {pools_found} pools. Top: {top_pool} ({top_apy:.1f}% APY)"
+    },
+    "SCAN_COMPLETE": {
+        "category": "SCAN",
+        "icon": "✅",
+        "template": "Scan complete. Selected {selected_count} pools: {pools}"
+    },
+    
+    # [ALLOCATION] - Capital Deployment
+    "ALLOCATION_START": {
+        "category": "ALLOCATION",
+        "icon": "💰",
+        "template": "Allocating ${amount:.2f} to {pools} pools..."
+    },
+    "ALLOCATION_SUCCESS": {
+        "category": "ALLOCATION",
+        "icon": "✅",
+        "template": "Allocation complete! ${amount:.2f} deployed to {pools_executed} pools."
+    },
+    "ALLOCATION_FAILED": {
+        "category": "ALLOCATION",
+        "icon": "❌",
+        "template": "Allocation failed: {error}"
     }
 }
 
@@ -141,11 +175,24 @@ def map_technical_to_friendly(entry: Dict[str, Any]) -> Dict[str, Any]:
         "template": action
     })
     
-    # Format template with available data
+    # Format template with available data - use safe formatting
     try:
+        # First try direct formatting
         message = mapping["template"].format(**details)
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, IndexError):
+        # Fallback: replace what we can, keep rest as-is
         message = mapping["template"]
+        for key, value in details.items():
+            placeholder = "{" + key + "}"
+            if placeholder in message:
+                # Format value appropriately
+                if isinstance(value, float):
+                    value_str = f"{value:.2f}" if abs(value) < 1000 else f"{value:.0f}"
+                elif isinstance(value, list):
+                    value_str = ", ".join(str(v) for v in value[:3])
+                else:
+                    value_str = str(value)
+                message = message.replace(placeholder, value_str)
     
     # Determine severity color
     category = mapping["category"]
@@ -288,9 +335,13 @@ def log_audit_entry(
     """
     Add an entry to the audit log.
     Call this from other modules to record actions.
+    Writes to both in-memory and Supabase for Neural Terminal.
     """
+    import uuid
+    
+    entry_id = str(uuid.uuid4())
     entry = {
-        "id": len(_audit_entries) + 1,
+        "id": entry_id,
         "timestamp": datetime.now().isoformat(),
         "action": action,
         "wallet": wallet,
@@ -302,6 +353,49 @@ def log_audit_entry(
     # Keep only last 1000 entries
     if len(_audit_entries) > 1000:
         _audit_entries.pop(0)
+    
+    # Also write to Supabase for Neural Terminal
+    try:
+        import requests
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        
+        if url and key:
+            headers = {
+                'apikey': key,
+                'Authorization': f'Bearer {key}',
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal'
+            }
+            
+            supabase_entry = {
+                "id": entry_id,
+                "action": action,
+                "user_address": wallet,
+                "event_type": action,
+                "reason": details.get("reason", "") if details else "",
+                "gas_cost": details.get("gas_cost", 0) if details else 0,
+                "apy": details.get("apy", 0) if details else 0,
+                "amount_usd": details.get("amount", 0) if details else 0,
+                "profit_usd": details.get("profit", 0) if details else 0,
+                "risk_score": details.get("risk_score", 0) if details else 0,
+                "protocol": details.get("protocol", "") if details else "",
+            }
+            
+            response = requests.post(
+                f"{url}/rest/v1/audit_trail",
+                headers=headers,
+                json=supabase_entry,
+                timeout=5
+            )
+            
+            if response.status_code in [200, 201]:
+                print(f"[Audit] Logged to Supabase: {action}")
+            else:
+                print(f"[Audit] Supabase write failed: {response.status_code}")
+                
+    except Exception as e:
+        print(f"[Audit] Supabase write error: {e}")
     
     return entry
 

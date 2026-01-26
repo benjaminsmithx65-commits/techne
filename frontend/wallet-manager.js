@@ -348,17 +348,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Connect button is handled by app.js (with showWalletMenu when connected)
     // Don't add another listener here to avoid conflicts
 
-    // Fund agent button
+    // Fund agent button - opens the deposit modal
     document.getElementById('btnFundAgent')?.addEventListener('click', async () => {
-        const agentAddr = window.VaultAgent?.agentAddress;
+        // Check if agent exists
+        const agentAddr = window.AgentWallet?.agentAddress
+            || window.VaultAgent?.agentAddress;
+
         if (!agentAddr) {
-            window.Notifications?.warning('Deploy an agent first from the Build section');
+            window.Notifications?.warning('No agent deployed. Deploy from Build section first.');
             return;
         }
 
-        const amount = prompt('Enter amount of ETH to fund agent:');
-        if (amount && !isNaN(parseFloat(amount))) {
-            await WalletMgr.fundAgent(agentAddr, parseFloat(amount));
+        // Open the Fund Agent Vault modal (handles ETH/USDC selection)
+        if (window.AgentWalletUI?.showDepositModal) {
+            window.AgentWalletUI.showDepositModal();
+        } else {
+            window.Notifications?.error('Deposit modal not available');
         }
     });
 });

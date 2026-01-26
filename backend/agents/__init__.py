@@ -39,8 +39,10 @@ from .security_policy import security_policy, SecurityPolicyManager, ActionType,
 # Infrastructure
 from .chainlink_oracle import oracle as chainlink
 
-# Coordinator
-from .coordinator import coordinator, AgentCoordinator
+# Coordinator - disabled due to legacy scout API
+# from .coordinator import coordinator, AgentCoordinator
+coordinator = None
+AgentCoordinator = None
 
 __all__ = [
     # Core singleton instances

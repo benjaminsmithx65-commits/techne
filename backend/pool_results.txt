@@ -1,0 +1,70 @@
+======================================================================
+Finding Aerodrome pools for Agent Allocation
+Criteria: TVL $500k+, APY >50%, contains WETH or USDC
+======================================================================
+
+Total Aerodrome pools on Base: 451
+
+======================================================================
+MATCHING POOLS: 30
+======================================================================
+ 1. USDC-VFY                                 TVL: $     914,632 | APY: 28557.0%
+    Pool: 1600b5d3-9014-46a6-ac9b-e0abfbca7123
+ 2. AVNT-USDC                                TVL: $   1,352,701 | APY: 10179.7%
+    Pool: eb27d0be-9de4-4ed9-8d36-a754e18d3358
+ 3. WETH-USDC                                TVL: $   1,513,916 | APY: 9319.9%
+    Pool: dfbc5d80-9b09-4810-b55b-a52dea7af4aa
+ 4. WETH-CBBTC                               TVL: $     740,990 | APY: 3235.7%
+    Pool: 34784097-cd3b-4643-b349-641f84817cd7
+ 5. SOL-USDC                                 TVL: $   9,470,183 | APY: 1090.7%
+    Pool: 1ffdffd8-385c-4054-ac06-02ed13846fdf
+ 6. FUN-USDC                                 TVL: $     722,556 | APY:  638.5%
+    Pool: 18674a4f-57ea-4c91-99ce-ea1a2b37aa3d
+ 7. USDC-CBBTC                               TVL: $   6,026,477 | APY:  528.0%
+    Pool: bf599ba2-97ae-48bb-9fd0-4f647ad7a832
+ 8. USDC-TITN                                TVL: $   1,036,660 | APY:  258.1%
+    Pool: 5b9e4e99-b003-4990-b852-73c77c0fe533
+ 9. FLOCK-USDC                               TVL: $     527,892 | APY:  239.9%
+    Pool: d6b2f728-4a37-49d4-b0e2-d2f755f90303
+10. WETH-REI                                 TVL: $   1,880,891 | APY:  196.5%
+    Pool: 4b4071bc-944d-4838-b696-624e21a3a383
+11. WETH-USDC                                TVL: $  18,662,453 | APY:  153.8%
+    Pool: 10137e20-efbc-4e15-a733-17ecb52c48e8
+12. USDC-LMTS                                TVL: $     508,658 | APY:  136.1%
+    Pool: e606cbde-282e-44c6-b498-bfa85acc262d
+13. SIRE-USDC                                TVL: $     719,935 | APY:  120.9%
+    Pool: eff94230-e0a9-4189-8e9a-4a30efb1f569
+14. VIRTUAL-WETH                             TVL: $   1,412,038 | APY:  119.0%
+    Pool: d87275b5-c6f2-48be-bcf0-23a87cab80ec
+15. USDC-USDT                                TVL: $   1,995,800 | APY:  114.1%
+    Pool: ba557f7e-f287-45a9-bc37-8f3a24ca05c7
+16. WETH-CBXRP                               TVL: $   1,565,763 | APY:   81.6%
+    Pool: 16f57370-96da-46f5-af56-febc5f3296aa
+17. TIG-USDC                                 TVL: $     723,081 | APY:   80.0%
+    Pool: b92ea731-821e-4c73-9057-de72697118f4
+18. WETH-B3                                  TVL: $     702,992 | APY:   79.1%
+    Pool: 877ebb7b-2328-40e3-bbfb-ca6d86cb8e18
+19. USDC-CBBTC                               TVL: $  11,806,790 | APY:   69.5%
+    Pool: ff82c362-dea1-4946-b3b1-92ebd5100b1e
+20. SUMR-USDC                                TVL: $   1,475,703 | APY:   67.8%
+    Pool: 3588f64d-7632-441d-8435-edd4e7349018
+21. WETH-ZEN                                 TVL: $   3,604,032 | APY:   66.0%
+    Pool: 6e7d0984-9a39-4619-86e2-13b9aae221b8
+22. WETH-USOL                                TVL: $     535,250 | APY:   64.1%
+    Pool: a09feb82-76db-4291-aea9-dc6e88343e09
+23. KVCM-USDC                                TVL: $     678,908 | APY:   59.8%
+    Pool: 527362e9-16b1-48d5-9f22-ec4f245d6ed6
+24. WETH-CBBTC                               TVL: $  16,818,097 | APY:   58.3%
+    Pool: 4943b6d2-aad2-4f4d-b56e-93f41ef043aa
+25. WETH-MCADE                               TVL: $     686,475 | APY:   58.0%
+    Pool: 0be3c255-7025-4c48-b80f-32c8c1da8ebf
+26. EURC-USDC                                TVL: $     680,643 | APY:   56.2%
+    Pool: 4c6728fb-173a-43c5-9916-1d7cb0871173
+27. WETH-VEIL                                TVL: $     870,483 | APY:   54.6%
+    Pool: dbbc6ff4-72c5-43cf-aa5c-46e393cdd97e
+28. SYND-WETH                                TVL: $     808,260 | APY:   54.2%
+    Pool: 34e9c2c8-8289-42a9-8e3c-0ea3239b1bda
+29. WETH-VVV                                 TVL: $   2,792,404 | APY:   52.3%
+    Pool: ebbea9be-5a51-4e12-a113-d8524b3fc2dd
+30. WETH-EURC                                TVL: $     634,167 | APY:   50.8%
+    Pool: 209767d1-1e76-4d5c-a824-7b6bb9008bb3

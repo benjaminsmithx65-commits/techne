@@ -336,8 +336,8 @@ class PortfolioDashboard {
     }
 
     /**
-     * Load actual contract balances from V4.3.3 smart contract
-     * Falls back to agent's EOA wallet USDC balance for new EOA flow
+     * Load contract balances from agent EOA wallet ONLY
+     * Portfolio tracks the agent's wallet, not V4 contract
      */
     async loadContractBalances() {
         if (!window.ethereum || typeof ethers === 'undefined' || !window.connectedWallet) {
@@ -349,50 +349,54 @@ class PortfolioDashboard {
             const provider = new ethers.BrowserProvider(window.ethereum);
             let balanceUSDC = 0;
             let agentAddress = null;
+            let v4Balance = 0; // Track V4 separately for "Fund Agent" awareness
 
-            // First: Try V4.3.3 contract
-            const CONTRACT_ADDRESS = '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4';
-            const ABI = [
-                'function balances(address user) view returns (uint256)',
-                'function totalInvested(address user) view returns (uint256)',
-                'function getUserTotalValue(address user) view returns (uint256)'
-            ];
-
+            // Step 1: Get agent address from backend
+            // Step 2: Get USDC balance of agent's EOA wallet
             try {
+                const API_BASE = window.API_BASE || 'http://localhost:8000';
+                const statusResp = await fetch(`${API_BASE}/api/agent/status/${window.connectedWallet}`);
+                const statusData = await statusResp.json();
+
+                if (statusData.agents && statusData.agents.length > 0) {
+                    agentAddress = statusData.agents[0].agent_address;
+
+                    if (agentAddress) {
+                        // Get USDC balance of agent's EOA
+                        const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+                        const usdc = new ethers.Contract(USDC_ADDRESS, ['function balanceOf(address) view returns (uint256)'], provider);
+                        const agentBalance = await usdc.balanceOf(agentAddress);
+                        balanceUSDC = Number(agentBalance) / 1e6;
+
+                        // Store agent address for later use
+                        if (!window.AgentWallet) window.AgentWallet = {};
+                        window.AgentWallet.agentAddress = agentAddress;
+
+                        console.log('[Portfolio] Agent EOA USDC balance:', balanceUSDC, 'Address:', agentAddress);
+                    }
+                }
+            } catch (e) {
+                console.warn('[Portfolio] Agent balance check failed:', e.message);
+            }
+
+            // Step 3: Also check V4 contract balance (for Fund Agent awareness)
+            try {
+                const CONTRACT_ADDRESS = '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4';
+                const ABI = ['function balances(address user) view returns (uint256)'];
                 const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-                const balance = await contract.balances(window.connectedWallet);
-                balanceUSDC = Number(balance) / 1e6;
+                const v4Raw = await contract.balances(window.connectedWallet);
+                v4Balance = Number(v4Raw) / 1e6;
+
+                if (v4Balance > 0) {
+                    console.log('[Portfolio] V4 contract has $' + v4Balance.toFixed(2) + ' - needs transfer to agent!');
+                    // Store for Fund Agent button to show
+                    this.v4ContractBalance = v4Balance;
+                }
             } catch (e) {
                 console.warn('[Portfolio] V4 contract read failed:', e.message);
             }
 
-            // Second: If V4 is 0, check agent's EOA wallet USDC balance
-            if (balanceUSDC === 0) {
-                try {
-                    const API_BASE = window.API_BASE || 'http://localhost:8000';
-                    const statusResp = await fetch(`${API_BASE}/api/agent/status/${window.connectedWallet}`);
-                    const statusData = await statusResp.json();
-
-                    if (statusData.agents && statusData.agents.length > 0) {
-                        agentAddress = statusData.agents[0].agent_address;
-
-                        if (agentAddress) {
-                            // Get USDC balance of agent's EOA
-                            const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-                            const usdc = new ethers.Contract(USDC_ADDRESS, ['function balanceOf(address) view returns (uint256)'], provider);
-                            const agentBalance = await usdc.balanceOf(agentAddress);
-                            balanceUSDC = Number(agentBalance) / 1e6;
-
-                            console.log('[Portfolio] Agent EOA USDC balance:', balanceUSDC, 'Address:', agentAddress);
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[Portfolio] Agent balance check failed:', e.message);
-                }
-            }
-
             // Get invested amount from BACKEND (Supabase) instead of contract
-            // This allows Close Position to actually update the displayed amount
             let investedUSDC = 0;
             try {
                 const API_BASE = window.API_BASE || 'http://localhost:8000';
@@ -489,18 +493,18 @@ class PortfolioDashboard {
                 const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
 
                 try {
-                    // Get agent ETH balance (only if different from Smart Account)
+                    // Get agent ETH balance (gas funds)
                     const agentEthBalance = await provider.getBalance(AGENT_ADDRESS);
                     const agentEthFormatted = Number(agentEthBalance) / 1e18;
 
-                    // Only show if > 0 AND this is a legacy EOA agent (not Smart Account)
-                    if (agentEthFormatted > 0 && !AGENT_ADDRESS.startsWith('0x')) {
+                    // Always show agent ETH if > 0 (for gas)
+                    if (agentEthFormatted > 0.0001) {
                         this.portfolio.holdings.push({
-                            asset: 'ETH (Your Agent)',
+                            asset: 'ETH (Gas)',
                             balance: agentEthFormatted.toFixed(4),
                             value: (agentEthFormatted * ethPrice).toFixed(2),
                             change: 0,
-                            label: 'Agent wallet balance'
+                            label: 'Agent gas balance'
                         });
                     }
 

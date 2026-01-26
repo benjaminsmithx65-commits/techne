@@ -308,6 +308,105 @@ async def trigger_agent_allocation(
         }
 
 # ============================================
+# FUND AGENT FROM V4 CONTRACT
+# Transfers user's USDC from V4 contract to agent EOA
+# ============================================
+
+@router.post("/fund-from-v4")
+async def fund_agent_from_v4(
+    user_address: str = Query(..., description="User's wallet address"),
+    amount_usdc: float = Query(None, description="Amount to transfer (optional, defaults to full balance)")
+):
+    """
+    Transfer USDC from V4 contract to user's agent EOA wallet.
+    
+    This is needed because:
+    - User deposited to V4 contract ($40 USDC)
+    - Agent EOA is empty
+    - Strategy executor needs funds in agent EOA to allocate
+    
+    Flow:
+    1. Call V4 contract withdraw(amount) - sends USDC to user's wallet
+    2. User needs to approve agent, or we use agent key to transfer
+    
+    NOTE: V4 withdraw sends to msg.sender (the signer).
+    So we use backend agent key to call V4.withdrawFor() if available,
+    or tell user to withdraw manually.
+    """
+    import os
+    
+    try:
+        from api.agent_config_router import DEPLOYED_AGENTS
+        from web3 import Web3
+        
+        # Get user's deployed agent
+        user_lower = user_address.lower()
+        user_agents = DEPLOYED_AGENTS.get(user_lower, [])
+        
+        if not user_agents or not user_agents[0].get("agent_address"):
+            return {
+                "success": False,
+                "error": "No deployed agent found. Deploy an agent first."
+            }
+        
+        agent = user_agents[0]
+        agent_address = agent.get("agent_address")
+        
+        # V4 Contract info
+        V4_CONTRACT = "0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4"
+        USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        
+        # Get RPC
+        rpc_url = os.getenv("ALCHEMY_RPC_URL") or "https://mainnet.base.org"
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        
+        # Check V4 balance
+        v4_abi = [
+            {"inputs": [{"name": "user", "type": "address"}], "name": "balances", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"}
+        ]
+        v4 = w3.eth.contract(address=Web3.to_checksum_address(V4_CONTRACT), abi=v4_abi)
+        v4_balance = v4.functions.balances(Web3.to_checksum_address(user_address)).call()
+        
+        if v4_balance == 0:
+            return {
+                "success": False,
+                "error": "No USDC in V4 contract to transfer",
+                "v4_balance": 0
+            }
+        
+        v4_balance_usdc = v4_balance / 1e6
+        transfer_amount = int(amount_usdc * 1e6) if amount_usdc else v4_balance
+        
+        print(f"[FundFromV4] V4 balance: ${v4_balance_usdc:.2f}, transferring: ${transfer_amount/1e6:.2f}")
+        print(f"[FundFromV4] Agent EOA: {agent_address}")
+        
+        # NOTE: V4 contract withdraw() sends to msg.sender
+        # We need user to sign this transaction from frontend
+        # OR we need a withdrawTo(user, to, amount) function on V4
+        
+        # For now, return the info needed for frontend to execute
+        return {
+            "success": True,
+            "action_required": "frontend_withdraw",
+            "message": f"Please withdraw ${v4_balance_usdc:.2f} from V4 contract to your wallet, then fund agent",
+            "v4_contract": V4_CONTRACT,
+            "v4_balance": v4_balance_usdc,
+            "agent_address": agent_address,
+            "instructions": [
+                f"1. Click 'Withdraw' on V4 to get ${v4_balance_usdc:.2f} USDC to your wallet",
+                f"2. Click 'Fund Agent' and send USDC to agent: {agent_address[:10]}..."
+            ]
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+# ============================================
 # SMART ACCOUNT ENDPOINTS (Trustless Architecture)
 # ============================================
 
@@ -1072,7 +1171,7 @@ async def get_user_positions(user_address: str):
                     
                     ausdc_balance = ausdc.functions.balanceOf(Web3.to_checksum_address(agent_address)).call()
                     
-                    if ausdc_balance > 0:
+                    if ausdc_balance > 10000:  # Minimum $0.01 to show (filter dust)
                         ausdc_amount = ausdc_balance / 1e6
                         
                         # Check if Aave position already exists from Supabase/memory
@@ -1099,8 +1198,12 @@ async def get_user_positions(user_address: str):
                             weighted_apy_sum += 3.5 * ausdc_amount
                             
                         print(f"[Position API] Found {ausdc_amount:.2f} aUSDC on-chain for agent {agent_address[:10]}...")
+                    
+                    # NOTE: Agent's raw USDC balance is shown in Asset Holdings, not here
+                    # Positions should only show INVESTED funds (Aave, Morpho, etc.)
+                    
         except Exception as e:
-            print(f"[Position API] On-chain aUSDC check failed: {e}")
+            print(f"[Position API] On-chain balance check failed: {e}")
         
         # Recalculate average APY including on-chain
         avg_apy = (weighted_apy_sum / total_value) if total_value > 0 else 0
