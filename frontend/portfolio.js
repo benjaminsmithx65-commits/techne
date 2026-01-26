@@ -337,6 +337,7 @@ class PortfolioDashboard {
 
     /**
      * Load actual contract balances from V4.3.3 smart contract
+     * Falls back to agent's EOA wallet USDC balance for new EOA flow
      */
     async loadContractBalances() {
         if (!window.ethereum || typeof ethers === 'undefined' || !window.connectedWallet) {
@@ -345,7 +346,11 @@ class PortfolioDashboard {
         }
 
         try {
-            // V4.3.3 contract address
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            let balanceUSDC = 0;
+            let agentAddress = null;
+
+            // First: Try V4.3.3 contract
             const CONTRACT_ADDRESS = '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4';
             const ABI = [
                 'function balances(address user) view returns (uint256)',
@@ -353,10 +358,38 @@ class PortfolioDashboard {
                 'function getUserTotalValue(address user) view returns (uint256)'
             ];
 
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+            try {
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+                const balance = await contract.balances(window.connectedWallet);
+                balanceUSDC = Number(balance) / 1e6;
+            } catch (e) {
+                console.warn('[Portfolio] V4 contract read failed:', e.message);
+            }
 
-            const balance = await contract.balances(window.connectedWallet);
+            // Second: If V4 is 0, check agent's EOA wallet USDC balance
+            if (balanceUSDC === 0) {
+                try {
+                    const API_BASE = window.API_BASE || 'http://localhost:8000';
+                    const statusResp = await fetch(`${API_BASE}/api/agent/status/${window.connectedWallet}`);
+                    const statusData = await statusResp.json();
+
+                    if (statusData.agents && statusData.agents.length > 0) {
+                        agentAddress = statusData.agents[0].agent_address;
+
+                        if (agentAddress) {
+                            // Get USDC balance of agent's EOA
+                            const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+                            const usdc = new ethers.Contract(USDC_ADDRESS, ['function balanceOf(address) view returns (uint256)'], provider);
+                            const agentBalance = await usdc.balanceOf(agentAddress);
+                            balanceUSDC = Number(agentBalance) / 1e6;
+
+                            console.log('[Portfolio] Agent EOA USDC balance:', balanceUSDC, 'Address:', agentAddress);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Portfolio] Agent balance check failed:', e.message);
+                }
+            }
 
             // Get invested amount from BACKEND (Supabase) instead of contract
             // This allows Close Position to actually update the displayed amount
@@ -370,20 +403,16 @@ class PortfolioDashboard {
                     investedUSDC = posData.positions.reduce((sum, pos) => sum + pos.current_value, 0);
                 }
             } catch (e) {
-                console.warn('[Portfolio] Backend positions fetch failed, falling back to contract:', e.message);
-                // Fallback to contract if backend fails
-                const invested = await contract.totalInvested(window.connectedWallet);
-                investedUSDC = Number(invested) / 1e6;
+                console.warn('[Portfolio] Backend positions fetch failed:', e.message);
             }
 
-            // Convert from wei (6 decimals for USDC)
-            const balanceUSDC = Number(balance) / 1e6;
             const totalUSDC = balanceUSDC + investedUSDC;
 
-            console.log('[Portfolio] Contract balances:', {
+            console.log('[Portfolio] Balances:', {
                 idle: balanceUSDC,
                 invested: investedUSDC,
-                total: totalUSDC
+                total: totalUSDC,
+                source: agentAddress ? 'agent_eoa' : 'v4_contract'
             });
 
             // Update portfolio with TOTAL value (idle + invested)
@@ -518,6 +547,10 @@ class PortfolioDashboard {
         const legendEl = document.getElementById('allocationLegend');
 
         if (!chartEl) return;
+
+        // Guard against NaN values
+        idleAmount = isNaN(idleAmount) ? 0 : Number(idleAmount) || 0;
+        investedAmount = isNaN(investedAmount) ? 0 : Number(investedAmount) || 0;
 
         const total = idleAmount + investedAmount;
 
@@ -816,17 +849,23 @@ class PortfolioDashboard {
         }
 
         if (lastActionEl) {
-            const deployedTime = new Date(agent.deployedAt);
-            const now = new Date();
-            const diffMs = now - deployedTime;
-            const diffMins = Math.floor(diffMs / 60000);
-
-            if (diffMins < 1) {
-                lastActionEl.textContent = 'Just deployed';
-            } else if (diffMins < 60) {
-                lastActionEl.textContent = `Deployed ${diffMins}m ago`;
+            if (!agent.deployedAt) {
+                lastActionEl.textContent = 'Active';
             } else {
-                lastActionEl.textContent = `Deployed ${Math.floor(diffMins / 60)}h ago`;
+                const deployedTime = new Date(agent.deployedAt);
+                const now = new Date();
+                const diffMs = now - deployedTime;
+                const diffMins = Math.floor(diffMs / 60000);
+
+                if (isNaN(diffMins) || diffMins < 0) {
+                    lastActionEl.textContent = 'Active';
+                } else if (diffMins < 1) {
+                    lastActionEl.textContent = 'Just deployed';
+                } else if (diffMins < 60) {
+                    lastActionEl.textContent = `Deployed ${diffMins}m ago`;
+                } else {
+                    lastActionEl.textContent = `Deployed ${Math.floor(diffMins / 60)}h ago`;
+                }
             }
         }
     }

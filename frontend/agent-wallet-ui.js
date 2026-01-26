@@ -1066,50 +1066,85 @@ const AgentWalletUI = {
 
             let depositTx;
 
-            // Handle native ETH - send to user's Smart Account for gas
+            // Handle native ETH - send to agent's EOA for gas
             if (token.isNative) {
                 btn.innerHTML = '<span>⏳</span> Funding Agent Gas...';
 
-                // Get user's Smart Account address (ERC-4337)
+                // Get agent's EOA address from API (same as USDC)
                 let gasRecipient;
                 try {
-                    const saResult = await NetworkUtils.getSmartAccount(userAddress);
-                    if (saResult.success && saResult.smartAccount) {
-                        gasRecipient = saResult.smartAccount;
-                        console.log('[AgentWallet] Sending ETH to Smart Account:', gasRecipient);
-                    } else {
-                        // Fallback to shared executor if no Smart Account
-                        gasRecipient = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
-                        console.log('[AgentWallet] No Smart Account, using shared executor');
+                    const resp = await fetch(`${window.API_BASE || 'http://localhost:8000'}/api/agent/status/${userAddress}`);
+                    const data = await resp.json();
+                    if (data.agents && data.agents.length > 0) {
+                        gasRecipient = data.agents[0].agent_address;
+                        console.log('[AgentWallet] Sending ETH to agent EOA:', gasRecipient);
                     }
                 } catch (e) {
-                    // Fallback to shared executor
-                    gasRecipient = '0xEe95B8114b144f48A742BA96Dc6c167a35829Fe1';
-                    console.warn('[AgentWallet] Smart Account check failed, using fallback:', e);
+                    console.error('[AgentWallet] Failed to get agent address:', e);
                 }
 
-                // Send ETH to the appropriate address
+                if (!gasRecipient) {
+                    throw new Error('No agent deployed. Please deploy an agent first.');
+                }
+
+                // Send ETH to agent's EOA
                 depositTx = await signer.sendTransaction({
                     to: gasRecipient,
                     value: amountWei
                 });
 
-                console.log('[AgentWallet] ETH sent to:', gasRecipient);
+                console.log('[AgentWallet] ETH sent to agent:', gasRecipient);
             } else {
                 // For ERC20 tokens - different handling for USDC vs other tokens
                 btn.innerHTML = '<span>⏳</span> Approving...';
                 const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
 
                 if (this.selectedToken === 'USDC') {
-                    // USDC goes to V4 contract via approve+deposit
-                    // This is where backend reads balance from: contract.balances(user)
-                    const approveTx = await tokenContract.approve(this.contractAddress, amountWei);
-                    await approveTx.wait();
+                    // EOA Flow: Transfer USDC directly to agent's wallet (not V4 contract)
+                    // Agent's private key will be used by backend for allocation
 
-                    btn.innerHTML = '<span>⏳</span> Depositing to V4...';
-                    const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
-                    depositTx = await wallet.deposit(amountWei);
-                    console.log('[AgentWallet] USDC deposited to V4 contract:', this.contractAddress);
+                    // Get agent's wallet address - try API first (most reliable)
+                    let agentAddress;
+
+                    // First try: Get from API (always up to date)
+                    try {
+                        const resp = await fetch(`${window.API_BASE || 'http://localhost:8000'}/api/agent/status/${userAddress}`);
+                        const data = await resp.json();
+                        if (data.agents && data.agents.length > 0) {
+                            agentAddress = data.agents[0].agent_address;
+                            console.log('[AgentWallet] Got agent address from API:', agentAddress);
+                        }
+                    } catch (e) {
+                        console.warn('[AgentWallet] API agent lookup failed:', e);
+                    }
+
+                    // Second try: Use cached agents if API failed
+                    if (!agentAddress && this.agents && this.agents.length > 0) {
+                        const agentSelector = document.getElementById('agentSelect');
+                        if (agentSelector && agentSelector.value) {
+                            const selectedAgent = this.agents.find(a => a.id === agentSelector.value);
+                            if (selectedAgent && selectedAgent.agent_address) {
+                                agentAddress = selectedAgent.agent_address;
+                            }
+                        }
+                        if (!agentAddress) {
+                            agentAddress = this.agents[0].agent_address;
+                        }
+                    }
+
+                    if (!agentAddress) {
+                        throw new Error('No agent deployed. Please deploy an agent first.');
+                    }
+
+                    console.log('[AgentWallet] Transferring USDC to agent EOA:', agentAddress);
+                    btn.innerHTML = '<span>⏳</span> Transferring to Agent...';
+
+                    // Direct transfer to agent's wallet
+                    const TRANSFER_ABI = ['function transfer(address to, uint256 amount) returns (bool)'];
+                    const tokenWithTransfer = new ethers.Contract(token.address, TRANSFER_ABI, signer);
+                    depositTx = await tokenWithTransfer.transfer(agentAddress, amountWei);
+
+                    console.log('[AgentWallet] USDC transferred to agent:', agentAddress);
                 } else {
                     // For WETH and other tokens - direct transfer to Smart Account
                     let recipient;
@@ -1182,27 +1217,41 @@ const AgentWalletUI = {
         btn.disabled = true;
 
         try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
+            // Get selected agent
+            let agentId = null;
+            const agentSelector = document.getElementById('withdrawAgentSelect');
+            if (agentSelector && agentSelector.value) {
+                agentId = agentSelector.value;
+            }
 
-            // Convert to USDC units (6 decimals)
-            const amountUsdc = BigInt(Math.floor(parseFloat(amountInput) * 1e6));
-            console.log('[AgentWallet] Withdrawing:', amountInput, 'USDC (', amountUsdc.toString(), 'raw units)');
+            // Call backend EOA withdraw endpoint
+            const resp = await fetch(`${window.API_BASE || 'http://localhost:8000'}/api/agent/eoa-withdraw`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_address: window.connectedWallet,
+                    amount_usdc: parseFloat(amountInput),
+                    agent_id: agentId
+                })
+            });
 
-            const wallet = new ethers.Contract(this.contractAddress, this.WALLET_ABI, signer);
-            const tx = await wallet.withdraw(amountUsdc);
-            await tx.wait();
+            const result = await resp.json();
 
-            btn.innerHTML = '<span class="techne-icon">' + TechneIcons.success + '</span> Withdrawn!';
-            btn.style.background = 'var(--success)';
+            if (result.success) {
+                btn.innerHTML = '<span class="techne-icon">' + TechneIcons.success + '</span> Withdrawn!';
+                btn.style.background = 'var(--success)';
 
-            Toast?.show('Successfully withdrawn from Agent Vault!', 'success');
+                Toast?.show(`Successfully withdrawn $${amountInput} USDC!`, 'success');
+                console.log('[AgentWallet] Withdraw TX:', result.tx_hash);
 
-            await this.refreshStats();
+                await this.refreshStats();
 
-            setTimeout(() => {
-                document.getElementById('vaultModal')?.remove();
-            }, 2000);
+                setTimeout(() => {
+                    document.getElementById('vaultModal')?.remove();
+                }, 2000);
+            } else {
+                throw new Error(result.error || 'Withdraw failed');
+            }
 
         } catch (e) {
             console.error('[AgentWallet] Withdraw error:', e);

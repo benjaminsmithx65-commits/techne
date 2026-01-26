@@ -143,32 +143,25 @@ async def deploy_agent(request: AgentDeployRequest):
                 # Don't block - just log warning (for MVP)
         
         # GENERATE AGENT WALLET
-        # With ERC-4337, agent_address = user's Smart Account (counterfactual)
+        # EOA mode: Generate new wallet with private key that backend can use for signing
+        # (Smart Account / ERC-4337 disabled for now - will enable with Pimlico later)
         if request.agent_address:
             # Use provided address (legacy flow - no private key)
             agent_address = request.agent_address
             encrypted_pk = None
             print(f"[AgentConfig] Using provided agent address: {agent_address[:10]}...")
         else:
-            # NEW: Get Smart Account address from factory (ERC-4337)
+            # Generate EOA wallet with private key for backend signing
             try:
-                from services.smart_account_service import get_smart_account_service
-                sa_service = get_smart_account_service()
-                agent_address = sa_service.get_account_address(user_address)
-                encrypted_pk = None  # Smart Accounts don't need stored keys
-                print(f"[AgentConfig] Using Smart Account: {agent_address[:10]}...")
-            except Exception as sa_error:
-                print(f"[AgentConfig] Smart Account lookup failed, generating EOA: {sa_error}")
-                # Fallback to old EOA generation
-                try:
-                    private_key, agent_address = generate_agent_wallet()
-                    encrypted_pk = encrypt_private_key(private_key, request.signature)
-                    print(f"[AgentConfig] Generated EOA agent wallet: {agent_address[:10]}...")
-                except Exception as key_error:
-                    print(f"[AgentConfig] Key generation failed: {key_error}")
-                    import secrets
-                    agent_address = "0x" + secrets.token_hex(20)
-                    encrypted_pk = None
+                private_key, agent_address = generate_agent_wallet()
+                encrypted_pk = encrypt_private_key(private_key, request.signature)
+                print(f"[AgentConfig] Generated EOA agent wallet: {agent_address[:10]}...")
+                print(f"[AgentConfig] Private key encrypted and stored for allocation signing")
+            except Exception as key_error:
+                print(f"[AgentConfig] Key generation failed: {key_error}")
+                import secrets
+                agent_address = "0x" + secrets.token_hex(20)
+                encrypted_pk = None
         
         # Generate agent ID
         agent_id = f"agent_{len(user_agents) + 1}_{int(datetime.utcnow().timestamp())}"

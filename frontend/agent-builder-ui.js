@@ -891,12 +891,14 @@ What would you like to configure?`;
                     const portfolioNav = document.querySelector('[data-section="portfolio"]');
                     if (portfolioNav) {
                         portfolioNav.click();
-                        // Force complete refresh after navigation
+                        // Force complete refresh after navigation - longer delay for backend sync
                         setTimeout(async () => {
                             if (window.PortfolioDash) {
                                 console.log('[AgentBuilder] Force refreshing Portfolio after deploy...');
-                                // First reload agents from localStorage
+                                // First reload agents from backend/localStorage
                                 await window.PortfolioDash.loadAgents();
+                                // Wait extra for data propagation
+                                await new Promise(r => setTimeout(r, 500));
                                 // Then refresh portfolio data (balances etc)
                                 await window.PortfolioDash.loadPortfolioData();
                                 // Also sync agent status display
@@ -904,9 +906,9 @@ What would you like to configure?`;
                                 // Update Fund button state (no longer grayed out)
                                 window.PortfolioDash.updateFundButtonState();
                                 window.PortfolioDash.updateUI();
-                                console.log('[AgentBuilder] Portfolio refresh complete');
+                                console.log('[AgentBuilder] Portfolio refresh complete - Fund button should be active');
                             }
-                        }, 800);
+                        }, 1500);  // Increased from 800ms to 1500ms for backend sync
                     }
                 }, 1500);
             }, 2000);

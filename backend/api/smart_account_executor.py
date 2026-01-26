@@ -493,3 +493,121 @@ def get_user_smart_account(user_address: str) -> Optional[str]:
     """Get user's Smart Account address."""
     executor = SmartAccountExecutor(user_address)
     return executor.smart_account
+
+
+# ============================================
+# SMART ACCOUNT ALLOCATION (ERC-4337)
+# ============================================
+
+async def allocate_via_smart_account(
+    user_address: str,
+    amount_usdc: int,
+    protocol: str = "aave"
+) -> Dict[str, Any]:
+    """
+    Allocate USDC to protocol via Smart Account UserOperation.
+    
+    This is the ERC-4337 path:
+    1. Build calldata for approve + supply
+    2. Create UserOperation
+    3. Get paymaster sponsorship
+    4. Sign with session key
+    5. Submit to bundler
+    
+    Args:
+        user_address: User's EOA (owner of Smart Account)
+        amount_usdc: Amount in USDC smallest units (6 decimals)
+        protocol: Target protocol (aave, morpho, etc.)
+    """
+    from api.session_key_signer import SessionKeySigner, SmartAccountExecutor as SAExecutorFromSigner
+    from services.paymaster_service import get_paymaster_service
+    
+    executor = SmartAccountExecutor(user_address)
+    
+    if not executor.smart_account:
+        return {
+            "success": False,
+            "error": "User has no Smart Account",
+            "user_address": user_address
+        }
+    
+    print(f"[SmartAccountAllocation] User: {user_address[:10]}...")
+    print(f"[SmartAccountAllocation] Smart Account: {executor.smart_account}")
+    print(f"[SmartAccountAllocation] Amount: ${amount_usdc / 1e6:.2f} USDC to {protocol}")
+    
+    try:
+        # Build supply calldata
+        supply_result = await executor.supply_to_aave(amount_usdc, USDC)
+        
+        if not supply_result.get("success"):
+            return supply_result
+        
+        # Get the steps (approve + supply)
+        steps = supply_result.get("steps", [])
+        
+        if not steps:
+            return {"success": False, "error": "No calldata generated"}
+        
+        # For single call, use first step (combined approve is handled by Aave permit)
+        # In production, use executeBatch for multi-step
+        first_step = steps[-1]  # Supply step
+        
+        # Get agent ID for session key
+        from api.agent_config_router import DEPLOYED_AGENTS
+        user_lower = user_address.lower()
+        agents = DEPLOYED_AGENTS.get(user_lower, [])
+        agent_id = agents[0].get("id") if agents else None
+        
+        if not agent_id:
+            return {"success": False, "error": "No agent found for session key"}
+        
+        # Create session key signer
+        signer = SessionKeySigner(agent_id, user_address)
+        print(f"[SmartAccountAllocation] Session key: {signer.address}")
+        
+        # Create Smart Account executor with signer
+        w3 = Web3(Web3.HTTPProvider(RPC_URL))
+        sa_executor = SAExecutorFromSigner(signer, executor.smart_account, w3)
+        
+        # Create UserOperation
+        user_op = sa_executor.create_user_operation(
+            target=first_step["target"],
+            value=first_step["value"],
+            data=bytes.fromhex(first_step["data"]),
+            estimated_value_usd=int(amount_usdc / 1e6)
+        )
+        
+        # Get paymaster sponsorship
+        paymaster = get_paymaster_service()
+        paymaster_data = await paymaster.sponsor_user_operation(user_op, executor.smart_account)
+        
+        if paymaster_data:
+            user_op["paymasterAndData"] = paymaster_data
+            print("[SmartAccountAllocation] Gas sponsored by paymaster!")
+        else:
+            print("[SmartAccountAllocation] No sponsorship - user pays gas")
+        
+        # Submit to bundler
+        user_op_hash = await sa_executor.send_user_operation(user_op)
+        print(f"[SmartAccountAllocation] UserOp submitted: {user_op_hash}")
+        
+        return {
+            "success": True,
+            "mode": "smart_account",
+            "user_op_hash": user_op_hash,
+            "smart_account": executor.smart_account,
+            "amount_usdc": amount_usdc / 1e6,
+            "protocol": protocol,
+            "sponsored": paymaster_data is not None,
+            "message": f"Allocation submitted via ERC-4337"
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "mode": "smart_account",
+            "error": str(e)
+        }
+

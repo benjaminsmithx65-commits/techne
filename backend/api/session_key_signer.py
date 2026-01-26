@@ -214,10 +214,34 @@ class SmartAccountExecutor:
         return selector + params
     
     def _get_nonce(self) -> str:
-        """Get the next nonce for the Smart Account."""
-        # Query from EntryPoint.getNonce(sender, key)
-        # For simplicity, using key=0
-        return "0x0"  # TODO: Implement proper nonce tracking
+        """Get the next nonce for the Smart Account from EntryPoint."""
+        try:
+            # EntryPoint ABI for getNonce
+            entrypoint_abi = [{
+                "inputs": [
+                    {"name": "sender", "type": "address"},
+                    {"name": "key", "type": "uint192"}
+                ],
+                "name": "getNonce",
+                "outputs": [{"type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            }]
+            
+            entrypoint = self.w3.eth.contract(
+                address=Web3.to_checksum_address(self.entrypoint),
+                abi=entrypoint_abi
+            )
+            
+            nonce = entrypoint.functions.getNonce(
+                Web3.to_checksum_address(self.smart_account_address),
+                0  # key = 0 for default nonce space
+            ).call()
+            
+            return hex(nonce)
+        except Exception as e:
+            print(f"[SmartAccountExecutor] Nonce query failed: {e}, using 0")
+            return "0x0"
     
     def _get_gas_price(self) -> str:
         """Get current gas price."""

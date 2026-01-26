@@ -213,6 +213,39 @@ async def trigger_agent_allocation(
         
         amount_usdc = balance / 1e6
         
+        # If no V4 balance, check agent's EOA wallet USDC balance
+        if balance == 0:
+            try:
+                # Get agent's EOA address from DEPLOYED_AGENTS
+                agent_address = agent.get("agent_address")
+                
+                if agent_address:
+                    # Get USDC balance directly from agent's EOA wallet
+                    USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                    erc20_abi = [{
+                        "inputs": [{"name": "account", "type": "address"}],
+                        "name": "balanceOf",
+                        "outputs": [{"type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }]
+                    
+                    usdc = w3.eth.contract(
+                        address=Web3.to_checksum_address(USDC_ADDRESS),
+                        abi=erc20_abi
+                    )
+                    
+                    agent_balance = usdc.functions.balanceOf(
+                        Web3.to_checksum_address(agent_address)
+                    ).call()
+                    
+                    if agent_balance > 0:
+                        balance = agent_balance
+                        amount_usdc = balance / 1e6
+                        print(f"[TriggerAllocation] Found {amount_usdc:.2f} USDC in agent EOA: {agent_address}", flush=True)
+            except Exception as agent_err:
+                print(f"[TriggerAllocation] Agent balance check error: {agent_err}", flush=True)
+        
         if balance == 0:
             return {
                 "success": False,
@@ -225,20 +258,46 @@ async def trigger_agent_allocation(
         print(f"[TriggerAllocation] User {user_address[:10]}... has {amount_usdc:.2f} USDC in V4 contract", flush=True)
         print(f"[TriggerAllocation] Agent: {agent.get('id')}, pool_type={agent.get('pool_type')}, risk={agent.get('risk_level')}", flush=True)
         
-        # Trigger allocation using V4 contract balance
-        print(f"[TriggerAllocation] >>> CALLING allocate_funds...", flush=True)
-        await contract_monitor.allocate_funds(user_address, balance)
-        print(f"[TriggerAllocation] <<< allocate_funds RETURNED", flush=True)
+        # Debug: Check if contract_monitor has agent_key
+        has_key = bool(contract_monitor.agent_key)
+        print(f"[TriggerAllocation] contract_monitor.agent_key exists: {has_key}", flush=True)
         
-        return {
-            "success": True,
-            "agent_id": agent.get("id"),
-            "user_address": user_address,
-            "amount_usdc": amount_usdc,
-            "pool_type": agent.get("pool_type"),
-            "risk_level": agent.get("risk_level"),
-            "message": f"Allocation triggered for {amount_usdc:.2f} USDC"
-        }
+        # Trigger allocation using agent's USDC balance
+        print(f"[TriggerAllocation] >>> CALLING allocate_funds...", flush=True)
+        try:
+            result = await contract_monitor.allocate_funds(user_address, balance)
+            print(f"[TriggerAllocation] <<< allocate_funds RETURNED: {result}", flush=True)
+        except Exception as alloc_error:
+            import traceback
+            traceback.print_exc()
+            print(f"[TriggerAllocation] !!! allocate_funds ERROR: {alloc_error}", flush=True)
+            return {
+                "success": False,
+                "error": str(alloc_error),
+                "stage": "allocate_funds"
+            }
+        
+        # Check if allocation succeeded
+        if result and result.get("success"):
+            return {
+                "success": True,
+                "agent_id": agent.get("id"),
+                "user_address": user_address,
+                "amount_usdc": amount_usdc,
+                "pool_type": agent.get("pool_type"),
+                "risk_level": agent.get("risk_level"),
+                "tx_hash": result.get("tx_hash"),
+                "message": f"Allocation SUCCESS - {amount_usdc:.2f} USDC to {result.get('protocol', 'aave')}"
+            }
+        else:
+            return {
+                "success": False,
+                "agent_id": agent.get("id"),
+                "user_address": user_address,
+                "amount_usdc": amount_usdc,
+                "error": result.get("error") if result else "No result from allocate_funds",
+                "message": f"Allocation triggered but failed"
+            }
         
     except Exception as e:
         import traceback
@@ -358,8 +417,108 @@ async def close_position(request: ClosePositionRequest):
         # 0. Execute ON-CHAIN withdrawal via SmartAccountExecutor
         # Supports both Smart Account mode and legacy Techne Wallet fallback
         onchain_tx_hash = None
-        if request.protocol.lower() in ["aave", "aave-v3", "aave v3"]:
-            print("[ClosePosition] Protocol is Aave - using SmartAccountExecutor", flush=True)
+        if request.protocol.lower() in ["aave", "aave-v3", "aave v3", "aave_v3"]:
+            print("[ClosePosition] Protocol is Aave - checking for EOA agent first", flush=True)
+            
+            # Check if user has EOA agent (new flow)
+            try:
+                from api.agent_config_router import DEPLOYED_AGENTS
+                from services.agent_keys import decrypt_private_key
+                from web3 import Web3
+                from eth_account import Account
+                
+                user_addr_lower = request.user_address.lower()
+                user_agents = DEPLOYED_AGENTS.get(user_addr_lower, [])
+                
+                if user_agents and user_agents[0].get("encrypted_private_key"):
+                    print("[ClosePosition] Found EOA agent - using direct Aave withdrawal", flush=True)
+                    
+                    agent_info = user_agents[0]
+                    agent_address = agent_info.get("agent_address")
+                    encrypted_key = agent_info.get("encrypted_private_key")
+                    
+                    # Decrypt agent private key
+                    pk = decrypt_private_key(encrypted_key)
+                    agent_account = Account.from_key(pk)
+                    
+                    # Use public RPC
+                    w3 = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
+                    
+                    USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                    aUSDC = "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB"
+                    AAVE_POOL = "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"
+                    
+                    # Check aUSDC balance
+                    erc20_abi = [{"inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"}]
+                    ausdc_contract = w3.eth.contract(address=Web3.to_checksum_address(aUSDC), abi=erc20_abi)
+                    ausdc_balance = ausdc_contract.functions.balanceOf(Web3.to_checksum_address(agent_address)).call()
+                    
+                    print(f"[ClosePosition] Agent aUSDC balance: {ausdc_balance / 1e6}", flush=True)
+                    
+                    if ausdc_balance > 0:
+                        # Calculate withdrawal amount based on percentage
+                        withdraw_amount = int(ausdc_balance * request.percentage / 100)
+                        print(f"[ClosePosition] Withdrawing {withdraw_amount / 1e6} USDC ({request.percentage}%)", flush=True)
+                        
+                        # Aave Pool withdraw ABI
+                        aave_abi = [{
+                            "inputs": [
+                                {"name": "asset", "type": "address"},
+                                {"name": "amount", "type": "uint256"},
+                                {"name": "to", "type": "address"}
+                            ],
+                            "name": "withdraw",
+                            "outputs": [{"type": "uint256"}],
+                            "stateMutability": "nonpayable",
+                            "type": "function"
+                        }]
+                        
+                        aave_pool = w3.eth.contract(address=Web3.to_checksum_address(AAVE_POOL), abi=aave_abi)
+                        
+                        # Build withdraw TX
+                        withdraw_tx = aave_pool.functions.withdraw(
+                            Web3.to_checksum_address(USDC),
+                            withdraw_amount,
+                            agent_account.address  # Send to agent wallet (user can Withdraw All later)
+                        ).build_transaction({
+                            'from': agent_account.address,
+                            'nonce': w3.eth.get_transaction_count(agent_account.address, 'pending'),
+                            'gas': 300000,
+                            'gasPrice': int(w3.eth.gas_price * 10),
+                            'chainId': 8453
+                        })
+                        
+                        # Sign and send
+                        signed_tx = agent_account.sign_transaction(withdraw_tx)
+                        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                        print(f"[ClosePosition] Withdraw TX sent: {tx_hash.hex()}", flush=True)
+                        
+                        # Wait for confirmation
+                        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                        
+                        if receipt.status == 1:
+                            onchain_tx_hash = tx_hash.hex()
+                            print(f"[ClosePosition] ✅ EOA Aave withdrawal SUCCESS: {onchain_tx_hash}", flush=True)
+                            
+                            return {
+                                "success": True,
+                                "message": f"Withdrew ${withdraw_amount / 1e6:.2f} USDC from Aave",
+                                "tx_hash": onchain_tx_hash,
+                                "amount_usdc": withdraw_amount / 1e6
+                            }
+                        else:
+                            print(f"[ClosePosition] ❌ Withdraw TX failed", flush=True)
+                            return {"success": False, "error": "Transaction reverted"}
+                    else:
+                        return {"success": False, "error": "No aUSDC balance to withdraw"}
+                        
+            except Exception as eoa_error:
+                print(f"[ClosePosition] EOA withdrawal failed: {eoa_error}", flush=True)
+                import traceback
+                traceback.print_exc()
+            
+            # Fallback to SmartAccountExecutor
+            print("[ClosePosition] Falling back to SmartAccountExecutor", flush=True)
             try:
                 from api.smart_account_executor import SmartAccountExecutor
                 
@@ -797,6 +956,43 @@ async def get_user_positions(user_address: str):
                     
                     print(f"[Position API] Loaded {len(result_positions)} positions from Supabase for {user_addr[:10]}...")
                     
+                    # Also check on-chain aUSDC even if Supabase has positions
+                    try:
+                        from api.agent_config_router import DEPLOYED_AGENTS
+                        user_agents_sp = DEPLOYED_AGENTS.get(user_addr, [])
+                        if user_agents_sp:
+                            agent_addr_sp = user_agents_sp[0].get("agent_address")
+                            if agent_addr_sp:
+                                w3_sp = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
+                                aUSDC_sp = "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB"
+                                abi_sp = [{"inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"}]
+                                ausdc_contract = w3_sp.eth.contract(address=Web3.to_checksum_address(aUSDC_sp), abi=abi_sp)
+                                ausdc_bal = ausdc_contract.functions.balanceOf(Web3.to_checksum_address(agent_addr_sp)).call()
+                                
+                                if ausdc_bal > 10000:  # Minimum $0.01 to show position (filter dust)
+                                    ausdc_usd = ausdc_bal / 1e6
+                                    aave_exists = any(p.get("protocol") == "aave_v3" for p in result_positions)
+                                    if not aave_exists:
+                                        result_positions.append({
+                                            "id": hash(f"{user_address}aave_v3_usdc") % 1000000,
+                                            "protocol": "aave_v3",
+                                            "protocol_name": "Aave V3",
+                                            "vaultName": "Aave V3 USDC",
+                                            "asset": "aUSDC",
+                                            "pool_type": "lending",
+                                            "deposited": ausdc_usd,
+                                            "current": ausdc_usd,
+                                            "pnl": 0,
+                                            "apy": 3.5,
+                                            "entry_time": "",
+                                            "source": "onchain",
+                                            "agent_address": agent_addr_sp
+                                        })
+                                        total_value += ausdc_usd
+                                        print(f"[Position API] Added on-chain aUSDC position: ${ausdc_usd:.2f}")
+                    except Exception as e_sp:
+                        print(f"[Position API] On-chain check in Supabase path failed: {e_sp}")
+                    
                     return {
                         "success": True,
                         "user_address": user_address,
@@ -806,7 +1002,7 @@ async def get_user_positions(user_address: str):
                             "position_count": len(result_positions),
                             "avg_apy": round(avg_apy, 2)
                         },
-                        "source": "supabase"
+                        "source": "supabase+onchain"
                     }
             except Exception as e:
                 print(f"[Position API] Supabase read failed: {e}")
@@ -818,8 +1014,8 @@ async def get_user_positions(user_address: str):
         
         if not positions:
             try:
-                user_addr = Web3.to_checksum_address(user_address)
-                positions = contract_monitor.user_positions.get(user_addr, {})
+                user_addr_checksum = Web3.to_checksum_address(user_address)
+                positions = contract_monitor.user_positions.get(user_addr_checksum, {})
             except:
                 pass
         
@@ -852,16 +1048,73 @@ async def get_user_positions(user_address: str):
         
         avg_apy = (weighted_apy_sum / total_value) if total_value > 0 else 0
         
+        # =============================================
+        # STEP 3: On-chain Aave aUSDC balance (ALWAYS CHECK)
+        # =============================================
+        try:
+            from api.agent_config_router import DEPLOYED_AGENTS
+            
+            print(f"[Position API] STEP 3: Checking on-chain aUSDC for {user_addr[:15]}...", flush=True)
+            
+            # Get user's agent address
+            user_agents = DEPLOYED_AGENTS.get(user_addr, [])
+            print(f"[Position API] Found {len(user_agents)} agents for user", flush=True)
+            
+            if user_agents:
+                agent_address = user_agents[0].get("agent_address")
+                if agent_address:
+                    # Check on-chain aUSDC balance
+                    w3 = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
+                    aUSDC_ADDRESS = "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB"  # Aave aUSDC on Base
+                    
+                    abi = [{"inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"}]
+                    ausdc = w3.eth.contract(address=Web3.to_checksum_address(aUSDC_ADDRESS), abi=abi)
+                    
+                    ausdc_balance = ausdc.functions.balanceOf(Web3.to_checksum_address(agent_address)).call()
+                    
+                    if ausdc_balance > 0:
+                        ausdc_amount = ausdc_balance / 1e6
+                        
+                        # Check if Aave position already exists from Supabase/memory
+                        aave_exists = any(p.get("protocol") == "aave_v3" for p in result_positions)
+                        
+                        if not aave_exists:
+                            result_positions.append({
+                                "id": hash(f"{user_address}aave_v3_usdc") % 1000000,
+                                "protocol": "aave_v3",
+                                "protocol_name": "Aave V3",
+                                "vaultName": "Aave V3 USDC",
+                                "asset": "aUSDC",
+                                "pool_type": "lending",
+                                "deposited": ausdc_amount,
+                                "current": ausdc_amount,  # aTokens auto-compound
+                                "pnl": 0,  # Calculate from entry if tracked
+                                "apy": 3.5,  # Aave USDC base APY
+                                "entry_time": "",
+                                "source": "onchain",
+                                "agent_address": agent_address
+                            })
+                            
+                            total_value += ausdc_amount
+                            weighted_apy_sum += 3.5 * ausdc_amount
+                            
+                        print(f"[Position API] Found {ausdc_amount:.2f} aUSDC on-chain for agent {agent_address[:10]}...")
+        except Exception as e:
+            print(f"[Position API] On-chain aUSDC check failed: {e}")
+        
+        # Recalculate average APY including on-chain
+        avg_apy = (weighted_apy_sum / total_value) if total_value > 0 else 0
+        
         return {
             "success": True,
             "user_address": user_address,
             "positions": result_positions,
             "summary": {
-                "total_value": total_value / 1e6,
+                "total_value": total_value if isinstance(total_value, float) else total_value / 1e6,
                 "position_count": len(result_positions),
                 "avg_apy": round(avg_apy, 2)
             },
-            "source": "memory"
+            "source": "memory+onchain"
         }
         
     except Exception as e:
@@ -872,6 +1125,113 @@ async def get_user_positions(user_address: str):
             "positions": [],
             "error": str(e)
         }
+
+# ============================================
+# EOA WITHDRAW ENDPOINT
+# ============================================
+
+class EOAWithdrawRequest(BaseModel):
+    user_address: str
+    amount_usdc: float  # Amount in USDC (e.g. 10.5 for $10.50)
+    agent_id: str = None
+
+
+@router.post("/eoa-withdraw")
+async def eoa_withdraw(request: EOAWithdrawRequest):
+    """
+    Withdraw USDC from agent's EOA wallet back to user.
+    
+    Uses agent's encrypted private key to sign the transfer.
+    """
+    try:
+        from api.agent_config_router import DEPLOYED_AGENTS
+        from services.agent_keys import decrypt_private_key
+        from eth_account import Account
+        from web3 import Web3
+        
+        user_lower = request.user_address.lower()
+        agents = DEPLOYED_AGENTS.get(user_lower, [])
+        
+        if not agents:
+            return {"success": False, "error": "No agents found for user"}
+        
+        # Find specific agent or use first
+        agent = None
+        if request.agent_id:
+            agent = next((a for a in agents if a.get("id") == request.agent_id), None)
+        if not agent:
+            agent = agents[0]
+        
+        agent_address = agent.get("agent_address")
+        encrypted_pk = agent.get("encrypted_private_key")
+        
+        if not encrypted_pk:
+            return {"success": False, "error": "Agent has no private key - cannot withdraw"}
+        
+        # Decrypt agent's private key
+        try:
+            private_key = decrypt_private_key(encrypted_pk)
+            agent_account = Account.from_key(private_key)
+        except Exception as e:
+            return {"success": False, "error": f"Key decryption failed: {e}"}
+        
+        # Get web3
+        RPC_URL = os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")
+        w3 = Web3(Web3.HTTPProvider(RPC_URL))
+        
+        # USDC contract
+        USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        transfer_abi = [{
+            "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
+            "name": "transfer",
+            "outputs": [{"type": "bool"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }]
+        
+        usdc = w3.eth.contract(address=Web3.to_checksum_address(USDC), abi=transfer_abi)
+        
+        # Convert amount to units (6 decimals)
+        amount_units = int(request.amount_usdc * 1e6)
+        
+        # Build transfer TX
+        tx = usdc.functions.transfer(
+            Web3.to_checksum_address(request.user_address),
+            amount_units
+        ).build_transaction({
+            'from': agent_account.address,
+            'nonce': w3.eth.get_transaction_count(agent_account.address),
+            'gas': 100000,
+            'maxFeePerGas': w3.eth.gas_price * 2,
+            'maxPriorityFeePerGas': w3.to_wei(0.001, 'gwei'),
+            'chainId': 8453
+        })
+        
+        # Sign and send
+        signed = agent_account.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        
+        print(f"[EOAWithdraw] TX sent: {tx_hash.hex()}")
+        
+        # Wait for receipt
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        
+        if receipt.status == 1:
+            return {
+                "success": True,
+                "tx_hash": tx_hash.hex(),
+                "amount_usdc": request.amount_usdc,
+                "from_agent": agent_address,
+                "to_user": request.user_address
+            }
+        else:
+            return {"success": False, "error": "Transaction failed"}
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
 
 # ============================================
 # RECOMMENDATIONS ENDPOINT

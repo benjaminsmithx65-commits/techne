@@ -610,30 +610,108 @@ class StrategyExecutor:
             is_dex_protocol = any(dex in project for dex in DEX_PROTOCOLS)
             
             if is_lp_pool or is_dex_protocol:
-                # DUAL-SIDED LP: Would need to swap half USDC to second token, then add liquidity
-                # For MVP: Log and mark as pending LP - full implementation requires swap logic
+                # DUAL-SIDED LP: Execute via AerodromeDualLPBuilder for EOA agents
                 print(f"[StrategyExecutor] 🔄 LP Pool detected: {symbol} on {project}")
-                print(f"[StrategyExecutor] LP deposit requires: swap 50% USDC → Token B, then addLiquidity()")
                 
-                result = {
-                    "success": True,
-                    "type": "lp_pending",
-                    "pool": symbol,
-                    "protocol": project,
-                    "amount": allocation_per_pool,
-                    "message": f"LP allocation marked for {symbol}. Requires swap + addLiquidity."
-                }
-                
-                # Track LP allocation in agent state
-                if "lp_allocations" not in agent:
-                    agent["lp_allocations"] = []
-                agent["lp_allocations"].append({
-                    "pool": symbol,
-                    "protocol": project,
-                    "amount": allocation_per_pool,
-                    "status": "pending",
-                    "created_at": datetime.utcnow().isoformat()
-                })
+                # Check if this is an EOA agent with private key
+                encrypted_pk = agent.get("encrypted_private_key")
+                if encrypted_pk and "aerodrome" in project:
+                    try:
+                        from artisan.aerodrome_dual import AerodromeDualLPBuilder
+                        from services.agent_keys import decrypt_private_key
+                        from eth_account import Account
+                        from web3 import Web3
+                        
+                        # Decrypt agent private key
+                        pk = decrypt_private_key(encrypted_pk)
+                        agent_account = Account.from_key(pk)
+                        
+                        # Build LP flow
+                        builder = AerodromeDualLPBuilder()
+                        usdc_wei = int(allocation_per_pool * 1e6)
+                        
+                        # Parse LP pair from symbol (e.g., "WETH/AERO" or "WETH-AERO")
+                        pair = symbol.replace("-", "/").replace(" / ", "/")
+                        if "WETH" not in pair.upper():
+                            # Default to WETH/AERO if no WETH in pair
+                            pair = "WETH/AERO"
+                        
+                        print(f"[StrategyExecutor] Building LP flow for {pair} with ${allocation_per_pool:.2f}")
+                        
+                        steps = await builder.build_dual_lp_flow(
+                            usdc_amount=usdc_wei,
+                            target_pair=pair,
+                            recipient=agent_account.address,
+                            slippage=agent.get("slippage", 0.5)
+                        )
+                        
+                        print(f"[StrategyExecutor] Got {len(steps)} LP steps, executing...")
+                        
+                        # Execute each step
+                        w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+                        tx_hashes = []
+                        
+                        for step in steps:
+                            target = step.get("protocol")
+                            calldata = step.get("calldata")
+                            desc = step.get("description", f"Step {step.get('step')}")
+                            
+                            print(f"[StrategyExecutor] Executing: {desc}")
+                            
+                            tx = {
+                                'to': Web3.to_checksum_address(target),
+                                'data': calldata.hex() if isinstance(calldata, bytes) else calldata,
+                                'from': agent_account.address,
+                                'nonce': w3.eth.get_transaction_count(agent_account.address, 'pending'),
+                                'gas': 300000,
+                                'gasPrice': int(w3.eth.gas_price * 1.5),
+                                'chainId': 8453
+                            }
+                            
+                            signed_tx = agent_account.sign_transaction(tx)
+                            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                            print(f"[StrategyExecutor] TX sent: {tx_hash.hex()}")
+                            
+                            # Wait for confirmation
+                            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                            if receipt.status != 1:
+                                print(f"[StrategyExecutor] ❌ Step failed: {desc}")
+                                result = {"success": False, "error": f"Step failed: {desc}"}
+                                break
+                            
+                            tx_hashes.append(tx_hash.hex())
+                        else:
+                            # All steps succeeded
+                            result = {"success": True, "tx_hashes": tx_hashes, "steps": len(steps)}
+                            print(f"[StrategyExecutor] ✅ LP deposit complete: {len(tx_hashes)} TXs")
+                            
+                        # Track LP allocation in agent state
+                        if "lp_allocations" not in agent:
+                            agent["lp_allocations"] = []
+                        agent["lp_allocations"].append({
+                            "pool": symbol,
+                            "protocol": project,
+                            "amount": allocation_per_pool,
+                            "pair": pair,
+                            "status": "completed" if result.get("success") else "failed",
+                            "tx_hashes": tx_hashes,
+                            "created_at": datetime.utcnow().isoformat()
+                        })
+                        
+                    except Exception as lp_error:
+                        print(f"[StrategyExecutor] LP execution error: {lp_error}")
+                        import traceback
+                        traceback.print_exc()
+                        result = {"success": False, "error": str(lp_error)}
+                else:
+                    # Fallback: Execute TX for LP pool via V4 contract
+                    print(f"[StrategyExecutor] No EOA key for LP, using V4 contract fallback")
+                    result = await self.execute_v4_strategy(
+                        agent=agent,
+                        protocol_address=protocol_address,
+                        amount_usdc=allocation_per_pool,
+                        call_data=b""
+                    )
             else:
                 # SINGLE-SIDED: Execute via V4 contract using agent's own key
                 result = await self.execute_v4_strategy(

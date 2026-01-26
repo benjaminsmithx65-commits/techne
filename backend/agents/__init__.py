@@ -21,7 +21,7 @@ Infrastructure:
 """
 
 # Core Agents
-from .scout_agent import scout, ScoutAgent
+from artisan.scout_agent import scout_agent as scout, ScoutAgent
 from .appraiser_agent import appraiser, AppraiserAgent, RiskLevel, VerificationStatus
 from .merchant_agent import merchant, MerchantAgent, PaymentType, PaymentStatus
 from .concierge_agent import concierge, ConciergeAgent

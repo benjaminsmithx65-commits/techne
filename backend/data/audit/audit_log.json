@@ -247,5 +247,39 @@
     "value_usd": 10.0,
     "success": true,
     "error": null
+  },
+  {
+    "timestamp": "2026-01-26T00:24:45.588397",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 200946,
+      "protocol": "aave_v3",
+      "percentage": 100,
+      "amount_usdc": 40.000051
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 40.000051,
+    "success": true,
+    "error": null
+  },
+  {
+    "timestamp": "2026-01-26T00:25:18.007467",
+    "action_type": "withdraw",
+    "agent_id": "system",
+    "wallet_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+    "details": {
+      "position_id": 200946,
+      "protocol": "aave_v3",
+      "percentage": 100,
+      "amount_usdc": 40.000053
+    },
+    "tx_hash": null,
+    "gas_used": null,
+    "value_usd": 40.000053,
+    "success": true,
+    "error": null
   }
 ]
