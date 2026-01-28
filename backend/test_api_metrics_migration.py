@@ -5,9 +5,15 @@ Execute this script to create the required tables.
 import httpx
 import os
 import asyncio
+from dotenv import load_dotenv
+load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://qbsllpllbulbocuypsjy.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFic2xscGxsYnVsYm9jdXlwc2p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5ODIwMjgsImV4cCI6MjA4NDU1ODAyOH0.iZzL6e8Eqc_eOoxvOWq3JXFhAzfHwSUWJ4S8XfcBviY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("❌ SUPABASE_URL and SUPABASE_KEY must be set in .env")
+    exit(1)
 
 # Test by inserting a sample record
 async def test_insert():

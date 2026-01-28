@@ -6,8 +6,12 @@ import httpx
 import asyncio
 
 async def test_insert_and_read():
-    url = "https://qbsllpllbulbocuypsjy.supabase.co"
-    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFic2xscGxsYnVsYm9jdXlwc2p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5ODIwMjgsImV4cCI6MjA4NDU1ODAyOH0.iZzL6e8Eqc_eOoxvOWq3JXFhAzfHwSUWJ4S8XfcBviY"
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    
+    if not url or not key:
+        print("❌ SUPABASE_URL and SUPABASE_KEY must be set in environment")
+        return
     
     headers = {
         "apikey": key,

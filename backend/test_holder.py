@@ -1,6 +1,11 @@
 import asyncio
 import os
-os.environ["MORALIS_API_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjVjNmI2NmFkLWQ3YmUtNDQxMS1iY2FiLWYzMDI2ZWM4NTdlZiIsIm9yZ0lkIjoiNDg5NzIxIiwidXNlcklkIjoiNTAzODU5IiwidHlwZUlkIjoiZTFhZGM2MjItYTljMS00MWJkLWI4N2MtZWI0ZjQyZWYwYWY1IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NjgxNTgxNjgsImV4cCI6NDkyMzkxODE2OH0.a7XidjregAGEXjdo_Auf-y9DgrHxLlnmFPT4LSpCrLU"
+
+# Load from env - do NOT hardcode API keys
+if not os.getenv("MORALIS_API_KEY"):
+    print("⚠️ MORALIS_API_KEY not set - using dotenv")
+    from dotenv import load_dotenv
+    load_dotenv()
 
 from data_sources.holder_analysis import holder_analyzer
 

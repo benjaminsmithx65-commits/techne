@@ -772,106 +772,121 @@ class StrategyExecutor:
                         
                         print(f"[StrategyExecutor] Building LP flow for {pair} with ${allocation_per_pool:.2f}")
                         
-                        # USDC PAIR: Direct flow - swap 50% USDC to target, addLiquidity(target, USDC)
+                        # USDC PAIR: INSTANT swap via Aerodrome Router, then addLiquidity
                         if base_token == "USDC":
-                            print(f"[StrategyExecutor] 🔄 USDC pair flow: 50% USDC → {target_token}")
-                            
-                            from integrations.cow_swap import cow_client
-                            import asyncio
+                            print(f"[StrategyExecutor] 🔄 USDC pair flow: swap 50% USDC → {target_token} (instant)")
                             
                             half_usdc = usdc_wei // 2
                             
-                            # Get target token address
+                            # Get token addresses
                             target_addr = builder._get_token_address(target_token)
                             usdc_addr = builder._get_token_address("USDC")
+                            AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
                             
-                            # CoW Swap 50% USDC → target token
-                            cow_result = await cow_client.swap(
-                                sell_token=usdc_addr,
-                                buy_token=target_addr,
-                                sell_amount=half_usdc,
-                                from_address=agent_account.address,
-                                private_key=pk,
-                                max_slippage_percent=agent.get("slippage", 1.0)
+                            slippage = agent.get("slippage", 0.5)  # Default 0.5%
+                            deadline = int(datetime.utcnow().timestamp()) + 1200  # 20 min
+                            
+                            # Build all TX steps
+                            steps = []
+                            w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+                            
+                            # Step 1: Approve USDC to Aerodrome Router
+                            approve_usdc = builder.build_approve_calldata("USDC", AERODROME_ROUTER, half_usdc)
+                            steps.append({"step": 1, "to": usdc_addr, "data": approve_usdc, "desc": f"Approve {half_usdc/1e6:.2f} USDC"})
+                            
+                            # Step 2: Swap USDC → target token via Aerodrome (instant)
+                            swap_calldata = builder.build_swap_calldata(
+                                "USDC", target_token, half_usdc, 
+                                int(half_usdc * (1 - slippage/100)),  # minAmountOut with slippage
+                                agent_account.address, deadline
                             )
+                            steps.append({"step": 2, "to": AERODROME_ROUTER, "data": swap_calldata, "desc": f"Swap {half_usdc/1e6:.2f} USDC → {target_token}"})
                             
-                            # cow_swap.swap() returns order_uid string directly, not dict
-                            order_uid = cow_result if isinstance(cow_result, str) else cow_result.get("order_uid") if cow_result else None
+                            # Execute swap steps first to get target token amount
+                            tx_hashes = []
+                            target_received = 0
                             
-                            if not order_uid:
-                                print(f"[StrategyExecutor] ❌ CoW Swap failed for {target_token}")
-                                result = {"success": False, "error": f"CoW Swap failed: {cow_result}"}
+                            for step in steps[:2]:  # Execute approve + swap
+                                print(f"[StrategyExecutor] Executing: {step['desc']}")
+                                tx = {
+                                    'to': Web3.to_checksum_address(step['to']),
+                                    'data': step['data'].hex() if isinstance(step['data'], bytes) else step['data'],
+                                    'from': agent_account.address,
+                                    'nonce': w3.eth.get_transaction_count(agent_account.address, 'latest'),
+                                    'gas': 300000,
+                                    'gasPrice': int(w3.eth.gas_price * 2),
+                                    'chainId': 8453
+                                }
+                                signed_tx = agent_account.sign_transaction(tx)
+                                tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                                print(f"[StrategyExecutor] TX: {tx_hash.hex()}")
+                                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                                if receipt.status != 1:
+                                    result = {"success": False, "error": f"TX failed: {step['desc']}"}
+                                    break
+                                tx_hashes.append(tx_hash.hex())
+                                
+                                # After swap, check target token balance
+                                if step['step'] == 2:
+                                    # Read target token balance
+                                    balance_calldata = "0x70a08231" + agent_account.address[2:].lower().zfill(64)
+                                    target_balance = w3.eth.call({
+                                        'to': Web3.to_checksum_address(target_addr),
+                                        'data': balance_calldata
+                                    })
+                                    target_received = int(target_balance.hex(), 16)
+                                    print(f"[StrategyExecutor] ✅ Received {target_received} {target_token} wei")
                             else:
-                                # Wait for fill
-                                print(f"[StrategyExecutor] CoW order: {order_uid[:20]}...")
-                                
-                                target_received = 0
-                                for i in range(24):  # 2 min timeout
-                                    status = await cow_client.get_order_status(order_uid)
-                                    if status.get("status") == "fulfilled":
-                                        target_received = int(status.get("executedBuyAmount", 0))
-                                        print(f"[StrategyExecutor] ✅ Received {target_received / 1e18:.4f} {target_token}")
-                                        break
-                                    elif status.get("status") in ["cancelled", "expired"]:
-                                        break
-                                    await asyncio.sleep(5)
-                                
+                                # Swap succeeded, now do LP
                                 if target_received > 0:
-                                    # Build addLiquidity steps
-                                    deadline = int(datetime.utcnow().timestamp()) + 1200
-                                    slippage = agent.get("slippage", 1.0)
-                                    
-                                    steps = []
-                                    AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
-                                    
-                                    # Approve USDC
-                                    approve_usdc = builder.build_approve_calldata("USDC", AERODROME_ROUTER, half_usdc)
-                                    steps.append({"step": 1, "protocol": usdc_addr, "calldata": approve_usdc, "description": f"Approve {half_usdc/1e6:.2f} USDC"})
-                                    
-                                    # Approve target
+                                    # Step 3: Approve target to Router
                                     approve_target = builder.build_approve_calldata(target_token, AERODROME_ROUTER, target_received)
-                                    steps.append({"step": 2, "protocol": target_addr, "calldata": approve_target, "description": f"Approve {target_received/1e18:.4f} {target_token}"})
+                                    step3 = {"step": 3, "to": target_addr, "data": approve_target, "desc": f"Approve {target_token}"}
                                     
-                                    # Add liquidity
-                                    add_liq = builder.build_add_liquidity_calldata(
-                                        target_token, "USDC", target_received, half_usdc,
-                                        agent_account.address, slippage, deadline, stable=False
-                                    )
-                                    steps.append({"step": 3, "protocol": AERODROME_ROUTER, "calldata": add_liq, "description": f"addLiquidity({target_token}/USDC)"})
-                                    
-                                    result = {"success": True, "steps": steps}
-                                else:
-                                    result = {"success": False, "error": "CoW order not filled"}
-                            
-                            if result.get("success"):
-                                # Execute the steps
-                                w3 = Web3(Web3.HTTPProvider(self.rpc_url))
-                                tx_hashes = []
-                                for step in result.get("steps", []):
-                                    target = step.get("protocol")
-                                    calldata = step.get("calldata")
-                                    desc = step.get("description")
-                                    print(f"[StrategyExecutor] Executing: {desc}")
-                                    
+                                    print(f"[StrategyExecutor] Executing: {step3['desc']}")
                                     tx = {
-                                        'to': Web3.to_checksum_address(target),
-                                        'data': calldata.hex() if isinstance(calldata, bytes) else calldata,
+                                        'to': Web3.to_checksum_address(step3['to']),
+                                        'data': step3['data'].hex() if isinstance(step3['data'], bytes) else step3['data'],
                                         'from': agent_account.address,
                                         'nonce': w3.eth.get_transaction_count(agent_account.address, 'latest'),
-                                        'gas': 300000,
-                                        'gasPrice': int(w3.eth.gas_price * 5),
+                                        'gas': 60000,
+                                        'gasPrice': int(w3.eth.gas_price * 2),
                                         'chainId': 8453
                                     }
                                     signed_tx = agent_account.sign_transaction(tx)
                                     tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-                                    print(f"[StrategyExecutor] TX: {tx_hash.hex()}")
-                                    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-                                    if receipt.status != 1:
-                                        result = {"success": False, "error": f"TX failed: {desc}"}
-                                        break
+                                    w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
                                     tx_hashes.append(tx_hash.hex())
+                                    
+                                    # Step 4: addLiquidity
+                                    add_liq = builder.build_add_liquidity_calldata(
+                                        target_token, "USDC", target_received, half_usdc,
+                                        agent_account.address, slippage, deadline, stable=False
+                                    )
+                                    step4 = {"step": 4, "to": AERODROME_ROUTER, "data": add_liq, "desc": f"addLiquidity({target_token}/USDC)"}
+                                    
+                                    print(f"[StrategyExecutor] Executing: {step4['desc']}")
+                                    tx = {
+                                        'to': Web3.to_checksum_address(step4['to']),
+                                        'data': step4['data'].hex() if isinstance(step4['data'], bytes) else step4['data'],
+                                        'from': agent_account.address,
+                                        'nonce': w3.eth.get_transaction_count(agent_account.address, 'latest'),
+                                        'gas': 400000,
+                                        'gasPrice': int(w3.eth.gas_price * 2),
+                                        'chainId': 8453
+                                    }
+                                    signed_tx = agent_account.sign_transaction(tx)
+                                    tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                                    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                                    
+                                    if receipt.status == 1:
+                                        tx_hashes.append(tx_hash.hex())
+                                        result = {"success": True, "tx_hashes": tx_hashes}
+                                        print(f"[StrategyExecutor] ✅ LP position created!")
+                                    else:
+                                        result = {"success": False, "error": "addLiquidity failed"}
                                 else:
-                                    result = {"success": True, "tx_hashes": tx_hashes}
+                                    result = {"success": False, "error": "No target tokens received from swap"}
                             
                             results.append({"pool": symbol, "protocol": project, "amount": allocation_per_pool, "result": result})
                             continue

@@ -1,7 +1,12 @@
 import asyncio
 import os
-os.environ["SUPABASE_URL"] = "https://qbsllpllbulbocuypsjy.supabase.co"
-os.environ["SUPABASE_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFic2xscGxsYnVsYm9jdXlwc2p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5ODIwMjgsImV4cCI6MjA4NDU1ODAyOH0.iZzL6e8Eqc_eOoxvOWq3JXFhAzfHwSUWJ4S8XfcBviY"
+from dotenv import load_dotenv
+load_dotenv()
+
+# Ensure credentials loaded
+if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
+    print("❌ SUPABASE_URL and SUPABASE_KEY must be set in .env")
+    exit(1)
 
 from infrastructure.supabase_client import SupabaseClient
 

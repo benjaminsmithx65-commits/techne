@@ -347,6 +347,26 @@ class PortfolioDashboard {
 
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
+
+            // Check network - must be on Base (chainId 8453)
+            const network = await provider.getNetwork();
+            console.log('[Portfolio] Current network:', network.chainId);
+
+            if (Number(network.chainId) !== 8453) {
+                console.warn('[Portfolio] ⚠️ Wrong network! Expected Base (8453), got:', network.chainId);
+                // Try to switch to Base
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: '0x2105' }] // 8453 in hex
+                    });
+                    console.log('[Portfolio] Switched to Base network');
+                } catch (switchError) {
+                    console.error('[Portfolio] Failed to switch network:', switchError);
+                    // Continue anyway - balances will be 0 but that's ok
+                }
+            }
+
             let balanceUSDC = 0;
             let agentAddress = null;
             let v4Balance = 0; // Track V4 separately for "Fund Agent" awareness
@@ -355,11 +375,14 @@ class PortfolioDashboard {
             // Step 2: Get USDC balance of agent's EOA wallet
             try {
                 const API_BASE = window.API_BASE || 'http://localhost:8000';
+                console.log('[Portfolio] Fetching agent status from:', `${API_BASE}/api/agent/status/${window.connectedWallet}`);
                 const statusResp = await fetch(`${API_BASE}/api/agent/status/${window.connectedWallet}`);
                 const statusData = await statusResp.json();
+                console.log('[Portfolio] Status response:', statusData);
 
                 if (statusData.agents && statusData.agents.length > 0) {
                     agentAddress = statusData.agents[0].agent_address;
+                    console.log('[Portfolio] Found agent address:', agentAddress);
 
                     if (agentAddress) {
                         // Get USDC balance of agent's EOA
@@ -373,10 +396,14 @@ class PortfolioDashboard {
                         window.AgentWallet.agentAddress = agentAddress;
 
                         console.log('[Portfolio] Agent EOA USDC balance:', balanceUSDC, 'Address:', agentAddress);
+                    } else {
+                        console.warn('[Portfolio] Agent found but no agent_address!', statusData.agents[0]);
                     }
+                } else {
+                    console.warn('[Portfolio] No agents found in response:', statusData);
                 }
             } catch (e) {
-                console.warn('[Portfolio] Agent balance check failed:', e.message);
+                console.warn('[Portfolio] Agent balance check failed:', e.message, e);
             }
 
             // Step 3: Also check V4 contract balance (for Fund Agent awareness)
@@ -459,7 +486,8 @@ class PortfolioDashboard {
 
             // Only show ETH/WETH for agent if user has a deployed agent
             const deployedAgent = this.getDeployedAgent();
-            const hasAgent = deployedAgent && deployedAgent.address && deployedAgent.isActive;
+            const hasAgent = deployedAgent && deployedAgent.address && (deployedAgent.isActive || deployedAgent.is_active);
+            console.log('[Portfolio] deployedAgent:', deployedAgent, 'hasAgent:', hasAgent);
 
             const ethPrice = 3000; // Approximate ETH price
 
@@ -526,6 +554,67 @@ class PortfolioDashboard {
                 } catch (e) {
                     console.warn('[Portfolio] Agent ETH/WETH balance fetch failed:', e.message);
                 }
+
+                // ==== NEW: Check additional tokens (cbBTC, AERO, SOL) ====
+                const additionalTokens = [
+                    { symbol: 'cbBTC', address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf', decimals: 8, price: 100000 },
+                    { symbol: 'AERO', address: '0x940181a94A35A4569E4529A3CDfB74e38FD98631', decimals: 18, price: 1.5 },
+                    { symbol: 'SOL', address: '0x1c61629598e4a901136a81bc138e5828dc150d67', decimals: 9, price: 180 }
+                ];
+
+                for (const token of additionalTokens) {
+                    try {
+                        const tokenContract = new ethers.Contract(token.address, [
+                            'function balanceOf(address) view returns (uint256)'
+                        ], provider);
+                        const tokenBalance = await tokenContract.balanceOf(AGENT_ADDRESS);
+                        const tokenFormatted = Number(tokenBalance) / Math.pow(10, token.decimals);
+                        const tokenValue = tokenFormatted * token.price;
+
+                        // Only show if value > $0.10
+                        if (tokenValue > 0.10) {
+                            this.portfolio.holdings.push({
+                                asset: token.symbol,
+                                balance: tokenFormatted.toFixed(token.decimals === 8 ? 8 : 4),
+                                value: tokenValue.toFixed(2),
+                                change: 0,
+                                label: `Agent ${token.symbol} balance`
+                            });
+                            console.log(`[Portfolio] ${token.symbol}: ${tokenFormatted} ($${tokenValue.toFixed(2)})`);
+                        }
+                    } catch (e) {
+                        // Token might not exist or have 0 balance - skip silently
+                    }
+                }
+
+                // ==== NEW: Query LP positions from backend (stored for Positions section) ====
+                this.lpPositionsFromBackend = [];
+                try {
+                    const API_BASE = window.API_BASE || 'http://localhost:8000';
+                    const lpResponse = await fetch(`${API_BASE}/api/agent/lp-positions/${window.connectedWallet}`);
+                    const lpData = await lpResponse.json();
+
+                    if (lpData.success && lpData.positions && lpData.positions.length > 0) {
+                        // Store LP positions for Agent Positions section (not holdings)
+                        this.lpPositionsFromBackend = lpData.positions;
+                        console.log('[Portfolio] Found LP positions:', lpData.positions.length);
+                    }
+                } catch (e) {
+                    console.warn('[Portfolio] LP positions fetch failed:', e.message);
+                }
+
+                // ==== Calculate REAL Total Value from all holdings ====
+                let calculatedTotal = 0;
+                for (const holding of this.portfolio.holdings) {
+                    const val = parseFloat(holding.value) || 0;
+                    calculatedTotal += val;
+                }
+                // Add LP values
+                for (const lp of this.lpPositionsFromBackend) {
+                    calculatedTotal += lp.value_usd || 0;
+                }
+                this.portfolio.totalValue = calculatedTotal;
+                console.log('[Portfolio] Total calculated value (all holdings + LP):', calculatedTotal);
             }
 
             // Load and render Agent Positions
@@ -544,7 +633,7 @@ class PortfolioDashboard {
     }
 
     /**
-     * Update allocation donut chart with real data
+     * Update allocation donut chart with real data from ALL holdings
      */
     updateAllocationChart(idleAmount, investedAmount) {
         const chartEl = document.getElementById('allocationChart');
@@ -552,11 +641,40 @@ class PortfolioDashboard {
 
         if (!chartEl) return;
 
-        // Guard against NaN values
-        idleAmount = isNaN(idleAmount) ? 0 : Number(idleAmount) || 0;
-        investedAmount = isNaN(investedAmount) ? 0 : Number(investedAmount) || 0;
+        // Use ALL holdings for chart, not just idle/invested
+        const holdings = this.portfolio.holdings || [];
+        const lpPositions = this.lpPositionsFromBackend || [];
 
-        const total = idleAmount + investedAmount;
+        // Build allocation data from all holdings
+        const allocations = [];
+        const colors = ['#22c55e', '#d4a853', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        let colorIndex = 0;
+
+        for (const holding of holdings) {
+            const value = parseFloat(holding.value) || 0;
+            if (value > 0.10) {
+                allocations.push({
+                    name: holding.asset,
+                    value: value,
+                    color: colors[colorIndex % colors.length]
+                });
+                colorIndex++;
+            }
+        }
+
+        // Add LP positions
+        for (const lp of lpPositions) {
+            if (lp.value_usd > 0.10) {
+                allocations.push({
+                    name: `LP: ${lp.pool_name}`,
+                    value: lp.value_usd,
+                    color: colors[colorIndex % colors.length]
+                });
+                colorIndex++;
+            }
+        }
+
+        const total = allocations.reduce((sum, a) => sum + a.value, 0);
 
         if (total <= 0) {
             // No data state
@@ -573,20 +691,19 @@ class PortfolioDashboard {
             return;
         }
 
-        // Calculate percentages
-        const investedPct = (investedAmount / total * 100).toFixed(1);
-        const idlePct = (idleAmount / total * 100).toFixed(1);
+        // Build conic gradient from allocations
+        let gradientParts = [];
+        let currentDeg = 0;
 
-        // Conic gradient for donut chart
-        // Invested = green, Idle = gray
-        const investedDeg = (investedAmount / total) * 360;
+        for (const alloc of allocations) {
+            const deg = (alloc.value / total) * 360;
+            gradientParts.push(`${alloc.color} ${currentDeg}deg ${currentDeg + deg}deg`);
+            currentDeg += deg;
+        }
 
         chartEl.innerHTML = `
             <div class="chart-placeholder">
-                <div class="donut-chart" style="background: conic-gradient(
-                    #22c55e 0deg ${investedDeg}deg,
-                    rgba(255,255,255,0.1) ${investedDeg}deg 360deg
-                );">
+                <div class="donut-chart" style="background: conic-gradient(${gradientParts.join(', ')});">
                     <div class="donut-hole">
                         <span class="donut-total">$${total.toFixed(2)}</span>
                         <span class="donut-label">Total</span>
@@ -595,23 +712,19 @@ class PortfolioDashboard {
             </div>
         `;
 
-        // Update legend
+        // Update legend with all allocations
         if (legendEl) {
-            legendEl.innerHTML = `
-                <div class="legend-item">
-                    <span class="legend-color" style="background: #22c55e;"></span>
-                    <span class="legend-name">Invested (Aave)</span>
-                    <span class="legend-value">$${investedAmount.toFixed(2)} (${investedPct}%)</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-color" style="background: rgba(255,255,255,0.2);"></span>
-                    <span class="legend-name">Idle</span>
-                    <span class="legend-value">$${idleAmount.toFixed(2)} (${idlePct}%)</span>
-                </div>
-            `;
+            legendEl.innerHTML = allocations.map(alloc => {
+                const pct = (alloc.value / total * 100).toFixed(1);
+                return `
+                    <div class="legend-item">
+                        <span class="legend-color" style="background: ${alloc.color};"></span>
+                        <span class="legend-name">${alloc.name}</span>
+                        <span class="legend-value">$${alloc.value.toFixed(2)} (${pct}%)</span>
+                    </div>
+                `;
+            }).join('');
         }
-
-        console.log('[Portfolio] Allocation chart updated:', { idle: idleAmount, invested: investedAmount });
     }
 
     /**
@@ -681,27 +794,59 @@ class PortfolioDashboard {
         }
 
         // Fallback: if no real positions but have invested USDC, show Aave position
-        if (investedUSDC > 0) {
+        // Also include LP positions from backend
+        const lpPositions = this.lpPositionsFromBackend || [];
+        const hasLpPositions = lpPositions.length > 0 && lpPositions.some(lp => lp.value_usd > 0.10);
+
+        // Convert LP positions to position format
+        const lpPositionObjects = lpPositions
+            .filter(lp => lp.value_usd > 0.10)
+            .map((lp, idx) => ({
+                id: `lp_${idx}`,
+                protocol: lp.protocol || 'Aerodrome',
+                vaultName: lp.pool_name || 'LP Position',
+                amount: lp.value_usd,
+                deposited: lp.value_usd, // We don't track deposit price
+                current: lp.value_usd,
+                pnl: 0, // TODO: track LP P&L
+                asset: 'LP',
+                apy: lp.apy || 25, // Default 25% APY for Aerodrome LP
+                isLP: true,
+                lpTokens: lp.lp_tokens
+            }));
+
+        if (investedUSDC > 0 || hasLpPositions) {
             if (emptyEl) emptyEl.style.display = 'none';
-            if (countEl) countEl.textContent = '1 Active';
 
-            const position = {
-                id: 1,
-                protocol: 'aave',
-                vaultName: 'Aave V3',
-                amount: investedUSDC,
-                deposited: investedUSDC,
-                current: investedUSDC,
-                pnl: 0,
-                asset: 'USDC',
-                apy: 6.2
-            };
+            let allPositions = [];
 
-            this.portfolio.positions = [position];
-            this.portfolio.avgApy = 6.2;
+            // Add Aave position if has invested USDC
+            if (investedUSDC > 0) {
+                allPositions.push({
+                    id: 1,
+                    protocol: 'aave',
+                    vaultName: 'Aave V3',
+                    amount: investedUSDC,
+                    deposited: investedUSDC,
+                    current: investedUSDC,
+                    pnl: 0,
+                    asset: 'USDC',
+                    apy: 6.2
+                });
+            }
+
+            // Add LP positions
+            allPositions = allPositions.concat(lpPositionObjects);
+
+            if (countEl) countEl.textContent = `${allPositions.length} Active`;
+
+            this.portfolio.positions = allPositions;
+            this.portfolio.avgApy = allPositions.length > 0
+                ? allPositions.reduce((sum, p) => sum + (p.apy || 0), 0) / allPositions.length
+                : 0;
             this.renderPositions();
 
-            console.log('[Portfolio] Fallback to Aave position:', investedUSDC);
+            console.log('[Portfolio] Positions:', allPositions.length, '(including LP)');
         } else {
             if (emptyEl) emptyEl.style.display = 'block';
             if (countEl) countEl.textContent = '0 Active';

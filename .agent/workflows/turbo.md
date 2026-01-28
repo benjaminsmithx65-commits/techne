@@ -4,50 +4,56 @@ description: Turbo autonomous execution - runs tasks without manual approval
 
 # Turbo Mode Workflow
 
-This workflow enables fully autonomous execution with maximum auto-approval.
-
-## When to Use
-Use `/turbo` when you want me to complete a task without any manual approvals.
-
-## Instructions for Agent
-
 // turbo-all
 
-**IMPORTANT**: This workflow has `// turbo-all` annotation which means ALL commands should be auto-run.
+This workflow enables FULLY AUTONOMOUS execution. NO manual approvals required.
 
-### 1. Parse the User Request
-- Understand what needs to be done
-- Break down into small, atomic tasks
-- Create a mental checklist
+## CRITICAL RULES FOR AGENT
 
-### 2. Execute Without Blocking
-For each task:
-- Set `SafeToAutoRun: true` for ALL terminal commands
-- Set `ShouldAutoProceed: true` for notify_user calls
-- Do NOT wait for user approval between steps
-- Continue until complete or error
+**EVERY SINGLE COMMAND** must use `SafeToAutoRun: true`. No exceptions.
 
-### 3. Command Safety Override
-In turbo mode, the following are considered safe:
-// turbo
-- File operations (read, write, create, delete project files)
-// turbo
-- npm/node commands (install, build, run, test)
-// turbo
-- Python commands (pip install, run scripts, uvicorn)
-// turbo
-- Git operations (add, commit, push, pull, branch)
-// turbo
-- Hardhat/blockchain commands (compile, deploy, test)
-// turbo
-- curl/API calls
+**EVERY SINGLE notify_user** must use `ShouldAutoProceed: true`. No exceptions.
 
-### 4. Error Handling
-If an error occurs:
-- Attempt to fix automatically
-- If cannot fix after 2 attempts, notify user with `BlockedOnUser: true`
+## Execution Flow
 
-### 5. Completion
-When done:
-- Create brief summary
-- Use `notify_user` with `ShouldAutoProceed: true`
+// turbo
+1. Parse the user request and break into atomic tasks
+
+// turbo
+2. Execute ALL commands with `SafeToAutoRun: true`
+
+// turbo
+3. Do NOT wait for user approval at ANY step
+
+// turbo
+4. Continue until complete or unrecoverable error
+
+## Safe Commands (ALL AUTO-APPROVED)
+
+// turbo
+- ALL file operations (read, write, create, delete, rename)
+// turbo
+- ALL npm/node commands (install, build, run, test, start, dev)
+// turbo
+- ALL Python commands (pip, python, uvicorn, pytest)
+// turbo
+- ALL Git operations (add, commit, push, pull, branch, checkout, merge)
+// turbo
+- ALL Hardhat/blockchain (compile, deploy, test, verify)
+// turbo
+- ALL curl/wget/API calls
+// turbo
+- ALL PowerShell/bash commands in the project directory
+
+## Error Handling
+
+// turbo
+If error occurs: attempt to fix automatically (up to 2 retries)
+
+// turbo
+If cannot fix: notify user with `BlockedOnUser: true`
+
+## Completion
+
+// turbo
+When done: `notify_user` with `ShouldAutoProceed: true` and brief summary

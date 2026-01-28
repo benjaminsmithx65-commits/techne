@@ -1,13 +1,18 @@
 import asyncio
 import os
-os.environ['SUPABASE_URL'] = 'https://qbsllpllbulbocuypsjy.supabase.co'
-os.environ['SUPABASE_KEY'] = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFic2xscGxsYnVsYm9jdXlwc2p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5ODIwMjgsImV4cCI6MjA4NDU1ODAyOH0.iZzL6e8Eqc_eOoxvOWq3JXFhAzfHwSUWJ4S8XfcBviY'
+from dotenv import load_dotenv
+load_dotenv()
 import httpx
 from collections import defaultdict
 
+# Validate env
+if not os.getenv('SUPABASE_URL') or not os.getenv('SUPABASE_KEY'):
+    print("❌ SUPABASE_URL and SUPABASE_KEY must be set")
+    exit(1)
+
 async def detailed_report():
-    url = 'https://qbsllpllbulbocuypsjy.supabase.co'
-    key = os.environ['SUPABASE_KEY']
+    url = os.getenv('SUPABASE_URL')
+    key = os.getenv('SUPABASE_KEY')
     headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
     
     async with httpx.AsyncClient() as client:

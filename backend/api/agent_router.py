@@ -513,6 +513,115 @@ async def fund_agent_from_v4(
         }
 
 # ============================================
+# LP POSITIONS ENDPOINT
+# ============================================
+
+@router.get("/lp-positions/{user_address}")
+async def get_agent_lp_positions(user_address: str):
+    """
+    Get all LP positions held by the agent's EOA wallet.
+    Queries known LP token balances from Aerodrome pools.
+    """
+    try:
+        from api.agent_config_router import DEPLOYED_AGENTS
+        from web3 import Web3
+        
+        user_lower = user_address.lower()
+        user_agents = DEPLOYED_AGENTS.get(user_lower, [])
+        
+        if not user_agents:
+            return {"success": True, "positions": [], "message": "No agent deployed"}
+        
+        agent = user_agents[0]
+        agent_address = agent.get("agent_address")
+        
+        if not agent_address:
+            return {"success": True, "positions": [], "message": "Agent has no address"}
+        
+        # Known Aerodrome LP tokens on Base (from Factory.getPool)
+        LP_TOKENS = [
+            {"name": "cbBTC/USDC", "address": "0x9c38b55f9a9aba91bbcedeb12bf4428f47a6a0b8", "protocol": "Aerodrome"},
+            {"name": "WETH/USDC", "address": "0xb4cb800910B228ED3d0834cF79D697127BBB00e5", "protocol": "Aerodrome"},
+            {"name": "AERO/USDC", "address": "0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d", "protocol": "Aerodrome"},
+        ]
+        
+        RPC_URL = "https://mainnet.base.org"
+        w3 = Web3(Web3.HTTPProvider(RPC_URL))
+        
+        positions = []
+        
+        for lp in LP_TOKENS:
+            try:
+                balance_call = w3.eth.call({
+                    'to': Web3.to_checksum_address(lp["address"]),
+                    'data': '0x70a08231' + agent_address[2:].lower().zfill(64)
+                })
+                balance = int(balance_call.hex(), 16)
+                
+                if balance > 0:
+                    # LP tokens typically 18 decimals
+                    lp_tokens = balance / 1e18
+                    
+                    # Get pool reserves and total supply to calculate LP value
+                    try:
+                        # getReserves() returns (reserve0, reserve1, blockTimestampLast)
+                        reserves_call = w3.eth.call({
+                            'to': Web3.to_checksum_address(lp["address"]),
+                            'data': '0x0902f1ac'  # getReserves()
+                        })
+                        reserve0 = int(reserves_call.hex()[2:66], 16)
+                        reserve1 = int(reserves_call.hex()[66:130], 16)
+                        
+                        # totalSupply()
+                        supply_call = w3.eth.call({
+                            'to': Web3.to_checksum_address(lp["address"]),
+                            'data': '0x18160ddd'
+                        })
+                        total_supply = int(supply_call.hex(), 16)
+                        
+                        if total_supply > 0:
+                            # Share of pool
+                            share = balance / total_supply
+                            # Assuming USDC is token1 (6 decimals), estimate USD value
+                            # For cbBTC/USDC: reserve0 = cbBTC, reserve1 = USDC
+                            usdc_value = (reserve1 / 1e6) * share * 2  # *2 because LP = both sides
+                            estimated_value = usdc_value if usdc_value > 0.001 else lp_tokens
+                        else:
+                            estimated_value = lp_tokens
+                    except:
+                        estimated_value = lp_tokens * 1.0
+                    
+                    positions.append({
+                        "pool_name": lp["name"],
+                        "lp_address": lp["address"],
+                        "lp_tokens": lp_tokens,
+                        "value_usd": estimated_value,
+                        "protocol": lp["protocol"]
+                    })
+                    
+                    print(f"[LPPositions] Found {lp['name']}: {lp_tokens:.18f} LP tokens (~${estimated_value:.4f})")
+                    
+            except Exception as e:
+                # Skip if balance check fails
+                pass
+        
+        return {
+            "success": True,
+            "positions": positions,
+            "agent_address": agent_address,
+            "count": len(positions)
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "positions": []
+        }
+
+# ============================================
 # SMART ACCOUNT ENDPOINTS (Trustless Architecture)
 # ============================================
 
@@ -597,7 +706,7 @@ async def register_smart_account(
 
 class ClosePositionRequest(BaseModel):
     user_address: str
-    position_id: int
+    position_id: str  # Can be int "1" or string "lp_0" for LP positions
     protocol: str
     percentage: int  # 1-100
     amount: int  # USDC in 6 decimals
