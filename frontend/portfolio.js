@@ -322,16 +322,108 @@ class PortfolioDashboard {
                 // Populate with deployed agent data
                 await this.populateFromDeployedAgent(deployedAgent);
             }
-            // Note: Do NOT call showEmptyState here - loadContractBalances will show data anyway
 
             // ============================================
-            // ALWAYS load contract balances from V4.3.2
+            // TRY FAST AGGREGATED PORTFOLIO API FIRST
             // ============================================
-            await this.loadContractBalances();
+            const fastLoaded = await this.tryFastPortfolioLoad();
+
+            if (!fastLoaded) {
+                // Fallback to old sequential loading
+                await this.loadContractBalances();
+            }
 
             this.updateUI();
         } catch (error) {
             console.error('[Portfolio] Failed to load data:', error);
+        }
+    }
+
+    /**
+     * Try to load portfolio data from fast aggregated API
+     * Returns true if successful, false if should fallback
+     */
+    async tryFastPortfolioLoad() {
+        if (!window.connectedWallet) {
+            return false;
+        }
+
+        try {
+            const API_BASE = window.API_BASE || 'http://localhost:8000';
+            const startTime = performance.now();
+
+            const response = await fetch(`${API_BASE}/api/portfolio/${window.connectedWallet}`);
+
+            if (!response.ok) {
+                console.warn('[Portfolio] Fast API not available, using fallback');
+                return false;
+            }
+
+            const data = await response.json();
+            const loadTime = performance.now() - startTime;
+
+            if (!data.success) {
+                return false;
+            }
+
+            // If no agent found, fallback to old method which tries different sources
+            if (!data.agent_address) {
+                console.log('[Portfolio] Fast API: no agent found, using fallback');
+                return false;
+            }
+
+            // If no holdings or positions, also fallback (agent might have funds not detected)
+            if ((!data.holdings || data.holdings.length === 0) && (!data.positions || data.positions.length === 0)) {
+                console.log('[Portfolio] Fast API: no data found, using fallback');
+                return false;
+            }
+
+            console.log(`[Portfolio] ⚡ Fast load in ${loadTime.toFixed(0)}ms (API: ${data.load_time_ms}ms)`);
+
+            // Update holdings from fast API
+            this.portfolio.holdings = [];
+            for (const h of data.holdings || []) {
+                this.portfolio.holdings.push({
+                    asset: h.asset,
+                    balance: h.balance,
+                    value: h.value_usd,
+                    change: 0,
+                    label: h.label || `${h.asset} balance`
+                });
+            }
+
+            // Store LP positions for Agent Positions section
+            this.lpPositionsFromBackend = (data.positions || []).map(p => ({
+                pool_name: p.pool_name || p.protocol,
+                value_usd: p.value_usd,
+                lp_tokens: p.value_usd,  // Approximate
+                protocol: p.protocol,
+                apy: p.apy || 25
+            }));
+
+            // Update total value
+            this.portfolio.totalValue = data.total_value_usd || 0;
+
+            // Store agent address
+            if (data.agent_address) {
+                if (!window.AgentWallet) window.AgentWallet = {};
+                window.AgentWallet.agentAddress = data.agent_address;
+            }
+
+            // Load Agent Positions section
+            const investedUSDC = this.lpPositionsFromBackend.reduce((sum, lp) => sum + (lp.value_usd || 0), 0);
+            await this.loadAgentPositions(investedUSDC);
+
+            // Update charts
+            const idleUSDC = data.holdings?.find(h => h.asset === 'USDC')?.value_usd || 0;
+            this.updateAllocationChart(idleUSDC, investedUSDC);
+            this.generateMockPerformanceData();
+            this.drawPerformanceChart('7d');
+
+            return true;
+        } catch (e) {
+            console.warn('[Portfolio] Fast API error, falling back:', e.message);
+            return false;
         }
     }
 
@@ -815,28 +907,11 @@ class PortfolioDashboard {
                 lpTokens: lp.lp_tokens
             }));
 
-        if (investedUSDC > 0 || hasLpPositions) {
+        if (hasLpPositions) {
             if (emptyEl) emptyEl.style.display = 'none';
 
-            let allPositions = [];
-
-            // Add Aave position if has invested USDC
-            if (investedUSDC > 0) {
-                allPositions.push({
-                    id: 1,
-                    protocol: 'aave',
-                    vaultName: 'Aave V3',
-                    amount: investedUSDC,
-                    deposited: investedUSDC,
-                    current: investedUSDC,
-                    pnl: 0,
-                    asset: 'USDC',
-                    apy: 6.2
-                });
-            }
-
-            // Add LP positions
-            allPositions = allPositions.concat(lpPositionObjects);
+            // Only use real LP positions from backend - no fake Aave positions
+            let allPositions = lpPositionObjects;
 
             if (countEl) countEl.textContent = `${allPositions.length} Active`;
 

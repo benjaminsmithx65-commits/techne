@@ -145,6 +145,14 @@ except ImportError as e:
     print(f"[Warning] WebSocket router not available: {e}")
     WEBSOCKET_AVAILABLE = False
 
+# Import portfolio router (Aggregated Portfolio Data - Fast Loading)
+try:
+    from api.portfolio_router import router as portfolio_router
+    PORTFOLIO_ROUTER_AVAILABLE = True
+except ImportError as e:
+    print(f"[Warning] Portfolio router not available: {e}")
+    PORTFOLIO_ROUTER_AVAILABLE = False
+
 app = FastAPI(
     title="Techne.finance API",
     description="AI-powered yield optimizer - Production Grade | Security + AI + Revenue",
@@ -273,6 +281,11 @@ if AUDIT_AVAILABLE:
 if WEBSOCKET_AVAILABLE:
     app.include_router(websocket_router)
     print("[WebSocket] Real-time portfolio updates loaded")
+
+# Include Portfolio routes (Aggregated Data - Fast Loading)
+if PORTFOLIO_ROUTER_AVAILABLE:
+    app.include_router(portfolio_router)
+    print("[Portfolio] Aggregated portfolio API loaded")
 
 # Include Telegram bot API routes
 try:
