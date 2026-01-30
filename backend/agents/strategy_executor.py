@@ -73,9 +73,9 @@ class StrategyExecutor:
         self.last_execution: Dict[str, datetime] = {}
         
         # PARK THRESHOLDS - auto-deposit to Aave if conditions met
-        self.park_idle_threshold = 5000  # $5k USDC minimum to trigger Park
+        self.park_idle_threshold = 100  # $100 USDC minimum to trigger Park (covers tx fees)
         self.park_idle_hours = 12  # Hours idle before Park
-        self.park_no_pools_hours = 6  # Hours without matching pools before Park
+        self.park_no_pools_hours = 0.25  # 15 minutes without matching pools before Park
         
         # Track state for Park logic
         self.last_pools_found: Dict[str, datetime] = {}  # agent_id -> when pools were last found
