@@ -111,7 +111,7 @@ PROTOCOLS = {
         "tvl": 150000000,  # $150M TVL
         "volatility": 2.5  # Low volatility %
     },
-    "morpho": {
+    "morpho_blue": {
         "address": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
         "name": "Morpho Blue",
         "asset": "USDC",
@@ -124,6 +124,20 @@ PROTOCOLS = {
         "apy": 8.5,
         "tvl": 80000000,   # $80M TVL
         "volatility": 4.0  # Medium volatility
+    },
+    "morpho_v1": {
+        "address": "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca",  # Morpho Aave V3 Base
+        "name": "Morpho Aave V3",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 7.8,
+        "tvl": 45000000,
+        "volatility": 3.5
     },
     "moonwell": {
         "address": "0xEdc817A28E8B93B03976FBd4a3dDBc9f7D176c22",
