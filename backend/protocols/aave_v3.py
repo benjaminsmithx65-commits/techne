@@ -236,48 +236,62 @@ class AaveV3Protocol:
             ).call()
             
             reserves_data, base_currency_info = result
+            logger.info(f"🔷 Aave V3: Got {len(reserves_data)} raw reserves")
             
             pools = []
-            for reserve in reserves_data:
-                # Skip paused/frozen reserves
-                if reserve[12] or reserve[56]:  # isFrozen or isPaused
+            for i, reserve in enumerate(reserves_data):
+                try:
+                    # Reserve is a tuple - access by index matching ABI order
+                    # Index mapping based on ABI:
+                    # 0: underlyingAsset, 1: name, 2: symbol, 3: decimals
+                    # 11: isActive, 12: isFrozen
+                    # 15: liquidityRate (supply APY in Ray 1e27)
+                    # 19: aTokenAddress
+                    # 23: availableLiquidity
+                    
+                    symbol = reserve[2]
+                    decimals = int(reserve[3])
+                    is_active = reserve[11]
+                    is_frozen = reserve[12]
+                    
+                    # Skip frozen/inactive reserves
+                    if is_frozen or not is_active:
+                        continue
+                    
+                    # liquidityRate is in Ray (1e27) - convert to APY %
+                    liquidity_rate_ray = int(reserve[15])
+                    supply_apy = (liquidity_rate_ray / 1e27) * 100
+                    
+                    # Available liquidity (TVL proxy)
+                    available_liquidity = int(reserve[23])
+                    tvl_usd = available_liquidity / (10 ** decimals)
+                    
+                    atoken_address = reserve[19]
+                    
+                    pools.append({
+                        "id": f"aave_v3_{symbol.lower()}",
+                        "protocol": "aave_v3",
+                        "name": f"Aave V3 {symbol}",
+                        "asset": symbol,
+                        "underlying_asset": reserve[0],
+                        "atoken_address": atoken_address,
+                        "decimals": decimals,
+                        "apy": round(supply_apy, 2),
+                        "tvl": tvl_usd,
+                        "pool_type": "single",
+                        "risk_level": "low",
+                        "is_lending": True,
+                        "is_active": is_active,
+                        "is_frozen": is_frozen,
+                        "audited": True,
+                        "implemented": True
+                    })
+                    
+                except Exception as inner_e:
+                    logger.warning(f"⚠️ Error parsing reserve {i}: {inner_e}")
                     continue
-                
-                symbol = reserve[2]
-                decimals = reserve[3]
-                
-                # liquidityRate is in Ray (1e27) - convert to APY %
-                liquidity_rate_ray = reserve[15]
-                supply_apy = (liquidity_rate_ray / 1e27) * 100  # Convert to percentage
-                
-                # Available liquidity (TVL proxy)
-                available_liquidity = reserve[23]
-                tvl_usd = (available_liquidity / (10 ** decimals))
-                
-                # Calculate total supply using aToken
-                atoken_address = reserve[19]
-                
-                pools.append({
-                    "id": f"aave_v3_{symbol.lower()}",
-                    "protocol": "aave_v3",
-                    "name": f"Aave V3 {symbol}",
-                    "asset": symbol,
-                    "underlying_asset": reserve[0],  # Token address
-                    "atoken_address": atoken_address,
-                    "decimals": decimals,
-                    "apy": round(supply_apy, 2),
-                    "tvl": tvl_usd,
-                    "pool_type": "single",
-                    "risk_level": "low",
-                    "is_lending": True,
-                    "is_active": reserve[11],
-                    "is_frozen": reserve[12],
-                    "borrowing_enabled": reserve[9],
-                    "audited": True,
-                    "implemented": True
-                })
             
-            logger.info(f"🔷 Aave V3: Fetched {len(pools)} reserves on-chain")
+            logger.info(f"🔷 Aave V3: Fetched {len(pools)} active reserves on-chain")
             return pools
             
         except Exception as e:
