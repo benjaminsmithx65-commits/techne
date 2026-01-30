@@ -49,6 +49,12 @@ try:
 except ImportError:
     log_audit_entry = None
 
+# Import historian for APY tracking and rotation
+try:
+    from agents.historian_agent import historian
+except ImportError:
+    historian = None
+
 
 class StrategyExecutor:
     """
@@ -467,6 +473,36 @@ class StrategyExecutor:
                 if old_apy > 0 and abs(new_apy - old_apy) / old_apy > rebalance_threshold:
                     print(f"[StrategyExecutor] APY drift detected: {pool_symbol} {old_apy:.1f}% → {new_apy:.1f}% (threshold: {rebalance_threshold*100:.0f}%)")
                     agent["needs_rebalance"] = True
+        
+        # Check if any position APY is below min_apy for apy_check_hours (default 24h)
+        if historian:
+            min_apy = agent.get("min_apy", 5)
+            apy_check_hours = agent.get("apy_check_hours", 24)  # Default 24h (1 day)
+            
+            for alloc in allocations:
+                pool_id = alloc.get("pool_id") or alloc.get("pool")
+                if not pool_id:
+                    continue
+                
+                rotation_check = historian.check_below_min_apy(pool_id, min_apy, apy_check_hours)
+                
+                if rotation_check.get("should_rotate"):
+                    print(f"[StrategyExecutor] 🔄 ROTATION TRIGGER: {pool_id} - {rotation_check['reason']}")
+                    agent["needs_rebalance"] = True
+                    alloc["needs_rotation"] = True
+                    alloc["rotation_reason"] = rotation_check["reason"]
+                    
+                    if log_audit_entry:
+                        log_audit_entry(
+                            action="ROTATION_TRIGGER",
+                            wallet=agent.get("user_address", ""),
+                            details={
+                                "pool_id": pool_id,
+                                "avg_apy": rotation_check.get("current_avg"),
+                                "min_apy": min_apy,
+                                "check_hours": apy_check_hours
+                            }
+                        )
     
     async def check_position_risks(self, agent: dict):
         """

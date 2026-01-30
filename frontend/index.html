@@ -3129,6 +3129,24 @@
                                         </div>
                                     </div>
 
+                                    <!-- APY Check Window (rotation trigger) -->
+                                    <div class="config-group">
+                                        <label>APY Rotation Window
+                                            <span class="info-icon"
+                                                data-tooltip="If APY stays below your min_apy for this period, agent rotates to better pool.">i</span>
+                                        </label>
+                                        <div class="apy-check-buttons">
+                                            <button class="apy-check-btn" data-hours="12">12h</button>
+                                            <button class="apy-check-btn active" data-hours="24">1 Day</button>
+                                            <button class="apy-check-btn" data-hours="72">3 Days</button>
+                                            <button class="apy-check-btn" data-hours="168">7 Days</button>
+                                            <div class="apy-check-custom">
+                                                <input type="number" id="apyCheckCustom" min="1" max="720"
+                                                    placeholder="hrs">
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Only Audited -->
                                     <div class="config-group toggle-group">
                                         <label>Only Audited Protocols</label>

@@ -220,6 +220,52 @@ class HistorianAgent:
         
         return sorted(stable, key=lambda p: p.get("stability_score", 0), reverse=True)
     
+    def get_recent_average_apy(self, pool_id: str, hours: int = 12) -> Optional[float]:
+        """
+        Get average APY for the last N hours.
+        Used for rotation trigger - if 12h average < min_apy, rotate out.
+        """
+        if pool_id not in self.pool_histories:
+            return None
+        
+        history = self.pool_histories[pool_id]
+        cutoff = datetime.now() - timedelta(hours=hours)
+        
+        recent_data = [
+            dp for dp in history.data_points 
+            if dp.timestamp >= cutoff
+        ]
+        
+        if not recent_data:
+            return None
+        
+        return statistics.mean([dp.apy for dp in recent_data])
+    
+    def check_below_min_apy(self, pool_id: str, min_apy: float, hours: int = 12) -> dict:
+        """
+        Check if pool's average APY has been below min_apy for the specified hours.
+        Returns rotation recommendation.
+        """
+        avg_apy = self.get_recent_average_apy(pool_id, hours)
+        
+        if avg_apy is None:
+            return {"should_rotate": False, "reason": "Insufficient data"}
+        
+        if avg_apy < min_apy:
+            return {
+                "should_rotate": True,
+                "reason": f"12h average APY ({avg_apy:.2f}%) < min_apy ({min_apy}%)",
+                "current_avg": avg_apy,
+                "min_apy": min_apy,
+                "hours_checked": hours
+            }
+        
+        return {
+            "should_rotate": False,
+            "reason": f"APY OK: {avg_apy:.2f}% >= {min_apy}%",
+            "current_avg": avg_apy
+        }
+    
     # ===========================================
     # HISTORICAL METRICS
     # ===========================================

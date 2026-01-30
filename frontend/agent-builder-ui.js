@@ -41,6 +41,7 @@ class AgentBuilderUI {
             onlyAudited: true,
             avoidIL: true,  // True for single-sided
             emergencyExit: true,
+            apyCheckHours: 24,  // Hours before APY rotation (12, 24, 72, 168)
 
             // Pro Features
             minPoolTvl: 500000,  // $500k - degens welcome
@@ -539,6 +540,32 @@ class AgentBuilderUI {
             });
         }
 
+        // APY Check Window buttons (12h, 24h, 3d, 7d)
+        document.querySelectorAll('.apy-check-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.apy-check-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.config.apyCheckHours = parseInt(btn.dataset.hours);
+                // Clear custom input when preset selected
+                const customInput = document.getElementById('apyCheckCustom');
+                if (customInput) customInput.value = '';
+                console.log('[AgentBuilder] APY check window:', this.config.apyCheckHours, 'hours');
+            });
+        });
+
+        // APY Check Custom input
+        const apyCheckCustom = document.getElementById('apyCheckCustom');
+        if (apyCheckCustom) {
+            apyCheckCustom.addEventListener('change', () => {
+                const hours = parseInt(apyCheckCustom.value);
+                if (hours && hours > 0) {
+                    document.querySelectorAll('.apy-check-btn').forEach(b => b.classList.remove('active'));
+                    this.config.apyCheckHours = hours;
+                    console.log('[AgentBuilder] APY check window (custom):', hours, 'hours');
+                }
+            });
+        }
+
         // Toggles
         ['autoRebalance', 'onlyAudited', 'avoidIL', 'emergencyExit'].forEach(id => {
             const el = document.getElementById(id);
@@ -805,6 +832,7 @@ What would you like to configure?`;
                         emergency_exit: this.config.emergencyExit,
                         min_pool_tvl: this.config.minPoolTvl,
                         duration: this.config.duration,
+                        apy_check_hours: this.config.apyCheckHours,
                         // Pro mode
                         is_pro_mode: isProMode,
                         pro_config: proConfig

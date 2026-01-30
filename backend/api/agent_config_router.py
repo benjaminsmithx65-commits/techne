@@ -95,6 +95,7 @@ class AgentDeployRequest(BaseModel):
     emergency_exit: bool = True            # Enable emergency exit on high volatility
     min_pool_tvl: int = 500000             # $500k minimum TVL - degens welcome
     duration: int = 30                     # Investment duration in days (0 = no limit)
+    apy_check_hours: int = 24              # Hours to check avg APY before rotation (12, 24, 72, 168)
 
 
 class AgentStatusResponse(BaseModel):
@@ -197,6 +198,7 @@ async def deploy_agent(request: AgentDeployRequest):
             "emergency_exit": request.emergency_exit,
             "min_pool_tvl": request.min_pool_tvl,
             "duration": request.duration,
+            "apy_check_hours": request.apy_check_hours,
             # Operational state
             "deployed_at": datetime.utcnow().isoformat(),
             "is_active": True,
