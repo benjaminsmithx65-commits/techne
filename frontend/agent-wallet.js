@@ -49,10 +49,10 @@ const AgentWallet = {
         }
 
         try {
-            Toast?.show('Creating agent wallet...', 'info');
+            Toast?.show('Deploying ERC-8004 Smart Account...', 'info');
 
-            // Get signature from user as encryption key
-            const message = `Create Techne Agent Wallet\n\nTimestamp: ${Date.now()}\n\nThis signature will be used to encrypt your agent wallet's private key.`;
+            // Get signature from user to authorize Smart Account deployment
+            const message = `Deploy Techne Smart Account\n\nTimestamp: ${Date.now()}\n\nThis signature authorizes the creation of your ERC-8004 Smart Account.`;
 
             const signature = await window.ethereum.request({
                 method: 'personal_sign',
@@ -73,25 +73,26 @@ const AgentWallet = {
             if (data.success) {
                 this.agentAddress = data.agent_address;
 
-                // Show private key modal - IMPORTANT
-                this.showPrivateKeyModal(data.private_key, data.agent_address);
+                // Show Smart Account success modal
+                this.showSmartAccountModal(data.agent_address, data.account_type || 'erc8004');
 
-                Toast?.show('✅ Agent wallet created!', 'success');
+                Toast?.show('✅ Smart Account deployed!', 'success');
 
                 await this.init();
                 return data;
             } else {
-                Toast?.show('Failed to create wallet', 'error');
+                Toast?.show('Failed to deploy Smart Account', 'error');
                 return null;
             }
         } catch (e) {
-            console.error('Create wallet error:', e);
-            Toast?.show('Wallet creation cancelled', 'warning');
+            console.error('Smart Account deployment error:', e);
+            Toast?.show('Deployment cancelled', 'warning');
             return null;
         }
     },
 
-    showPrivateKeyModal(privateKey, agentAddress) {
+    // ERC-8004 Smart Account success modal (no private key needed)
+    showSmartAccountModal(agentAddress, accountType) {
         const modal = document.createElement('div');
         modal.className = 'agent-wallet-modal';
         modal.style.cssText = `
@@ -110,30 +111,31 @@ const AgentWallet = {
                 border: 2px solid var(--gold);
                 border-radius: 20px;
                 padding: 32px;
-                max-width: 600px;
+                max-width: 500px;
                 width: 90%;
             ">
                 <h2 style="color: var(--gold); margin: 0 0 20px; text-align: center;">
-                    🔐 Agent Wallet Created
+                    🔐 Smart Account Deployed
                 </h2>
                 
                 <div style="
-                    background: rgba(212, 175, 55, 0.1);
-                    border: 1px solid var(--gold);
+                    background: rgba(74, 222, 128, 0.1);
+                    border: 1px solid #4ade80;
                     border-radius: 12px;
                     padding: 16px;
                     margin-bottom: 20px;
                 ">
-                    <p style="color: #ff6b6b; font-weight: 600; margin: 0 0 8px;">
-                        ⚠️ SAVE THIS PRIVATE KEY NOW!
+                    <p style="color: #4ade80; font-weight: 600; margin: 0 0 8px;">
+                        ✅ ERC-8004 Smart Account Active
                     </p>
                     <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
-                        This is your only chance to save it. You need this key to access funds directly.
+                        Your funds are secured by your connected wallet. No private key to backup - 
+                        you control this account through your main wallet.
                     </p>
                 </div>
                 
                 <div style="margin-bottom: 20px;">
-                    <label style="color: var(--text-muted); font-size: 0.8rem;">Agent Address:</label>
+                    <label style="color: var(--text-muted); font-size: 0.8rem;">Smart Account Address:</label>
                     <div style="
                         background: #0a0a1a;
                         border-radius: 8px;
@@ -145,41 +147,27 @@ const AgentWallet = {
                     ">${agentAddress}</div>
                 </div>
                 
-                <div style="margin-bottom: 24px;">
-                    <label style="color: var(--text-muted); font-size: 0.8rem;">Private Key:</label>
-                    <div id="privateKeyDisplay" style="
+                <div style="margin-bottom: 20px;">
+                    <label style="color: var(--text-muted); font-size: 0.8rem;">Account Type:</label>
+                    <div style="
                         background: #0a0a1a;
                         border-radius: 8px;
                         padding: 12px;
                         font-family: monospace;
-                        font-size: 0.75rem;
-                        color: #f59e0b;
-                        word-break: break-all;
-                        user-select: all;
-                    ">${privateKey}</div>
+                        font-size: 0.85rem;
+                        color: #60a5fa;
+                    ">${accountType.toUpperCase()} Smart Account</div>
                 </div>
                 
-                <div style="display: flex; gap: 12px;">
-                    <button onclick="AgentWallet.copyToClipboard('${privateKey}')" style="
-                        flex: 1;
-                        padding: 14px;
-                        background: var(--bg-elevated);
-                        border: 1px solid var(--border);
-                        border-radius: 10px;
-                        color: var(--text);
-                        cursor: pointer;
-                    ">📋 Copy Key</button>
-                    
-                    <button onclick="this.closest('.agent-wallet-modal').remove()" style="
-                        flex: 1;
-                        padding: 14px;
-                        background: var(--gradient-gold);
-                        border: none;
-                        border-radius: 10px;
-                        font-weight: 600;
-                        cursor: pointer;
-                    ">✓ I've Saved It</button>
-                </div>
+                <button onclick="AgentWallet.copyToClipboard('${agentAddress}'); this.closest('.agent-wallet-modal').remove()" style="
+                    width: 100%;
+                    padding: 14px;
+                    background: var(--gradient-gold);
+                    border: none;
+                    border-radius: 10px;
+                    font-weight: 600;
+                    cursor: pointer;
+                ">📋 Copy Address & Continue</button>
             </div>
         `;
 
@@ -668,57 +656,74 @@ const AgentWallet = {
     },
 
     // ===========================================
-    // EXPORT KEY
+    // SMART ACCOUNT INFO (ERC-8004)
     // ===========================================
 
-    async exportPrivateKey() {
+    showSmartAccountInfo() {
         if (!this.agentAddress) {
-            Toast?.show('No agent wallet found', 'warning');
+            Toast?.show('No Smart Account found', 'warning');
             return;
         }
 
-        if (!confirm('⚠️ You are about to export your private key. Never share this with anyone!')) {
-            return;
-        }
+        const modal = document.createElement('div');
+        modal.className = 'agent-wallet-modal';
+        modal.style.cssText = `
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            display: flex; align-items: center; justify-content: center; z-index: 3000;
+        `;
 
-        try {
-            Toast?.show('Signing to export key...', 'info');
+        modal.innerHTML = `
+            <div style="
+                background: var(--bg-card); border: 1px solid var(--gold);
+                border-radius: 20px; padding: 28px; max-width: 500px; width: 90%;
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h2 style="margin: 0;">🔐 Smart Account Info</h2>
+                    <button onclick="this.closest('.agent-wallet-modal').remove()" style="
+                        background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted);
+                    ">×</button>
+                </div>
+                
+                <div style="
+                    background: rgba(96, 165, 250, 0.1);
+                    border: 1px solid #60a5fa;
+                    border-radius: 12px;
+                    padding: 16px;
+                    margin-bottom: 20px;
+                ">
+                    <p style="color: #60a5fa; font-weight: 600; margin: 0 0 8px;">
+                        🔷 ERC-8004 Smart Account
+                    </p>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
+                        This is a Smart Account controlled by your connected wallet. 
+                        There is no private key to export - your wallet IS the key.
+                    </p>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="color: var(--text-muted); font-size: 0.8rem;">Smart Account Address:</label>
+                    <div style="
+                        background: #0a0a1a; border-radius: 8px; padding: 12px;
+                        font-family: monospace; font-size: 0.85rem; color: #4ade80; word-break: break-all;
+                    ">${this.agentAddress}</div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="color: var(--text-muted); font-size: 0.8rem;">Owner Wallet:</label>
+                    <div style="
+                        background: #0a0a1a; border-radius: 8px; padding: 12px;
+                        font-family: monospace; font-size: 0.85rem; color: #f59e0b; word-break: break-all;
+                    ">${window.connectedWallet}</div>
+                </div>
+                
+                <button onclick="AgentWallet.copyToClipboard('${this.agentAddress}')" style="
+                    width: 100%; padding: 14px; background: var(--gradient-gold);
+                    border: none; border-radius: 10px; font-weight: 600; cursor: pointer;
+                ">📋 Copy Address</button>
+            </div>
+        `;
 
-            // Get signature for decryption
-            const message = `Export Techne Agent Private Key\n\nTimestamp: ${Date.now()}`;
-            const signature = await window.ethereum.request({
-                method: 'personal_sign',
-                params: [message, window.connectedWallet]
-            });
-
-            // Get 2FA code if enabled
-            let totpCode = null;
-            if (this.is2FAEnabled) {
-                totpCode = prompt('Enter your 2FA code:');
-                if (!totpCode) return;
-            }
-
-            const response = await fetch(`${API_BASE}/api/agent-wallet/export-key`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_address: window.connectedWallet,
-                    signature: signature,
-                    totp_code: totpCode
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showPrivateKeyModal(data.private_key, this.agentAddress);
-            } else {
-                Toast?.show(data.detail || 'Failed to export key', 'error');
-            }
-        } catch (e) {
-            console.error('Export key error:', e);
-            Toast?.show('Export cancelled', 'warning');
-        }
+        document.body.appendChild(modal);
     },
 
     // ===========================================

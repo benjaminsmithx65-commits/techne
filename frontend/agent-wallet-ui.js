@@ -1133,18 +1133,18 @@ const AgentWalletUI = {
 
             let depositTx;
 
-            // Handle native ETH - send to agent's EOA for gas
+            // Handle native ETH - send to agent's Smart Account for gas
             if (token.isNative) {
                 btn.innerHTML = '<span>⏳</span> Funding Agent Gas...';
 
-                // Get agent's EOA address from API (same as USDC)
+                // Get agent's Smart Account address from API (same as USDC)
                 let gasRecipient;
                 try {
                     const resp = await fetch(`${window.API_BASE || 'http://localhost:8000'}/api/agent/status/${userAddress}`);
                     const data = await resp.json();
                     if (data.agents && data.agents.length > 0) {
                         gasRecipient = data.agents[0].agent_address;
-                        console.log('[AgentWallet] Sending ETH to agent EOA:', gasRecipient);
+                        console.log('[AgentWallet] Sending ETH to agent Smart Account:', gasRecipient);
                     }
                 } catch (e) {
                     console.error('[AgentWallet] Failed to get agent address:', e);
@@ -1160,15 +1160,15 @@ const AgentWalletUI = {
                     value: amountWei
                 });
 
-                console.log('[AgentWallet] ETH sent to agent:', gasRecipient);
+                console.log('[AgentWallet] ETH sent to agent Smart Account:', gasRecipient);
             } else {
                 // For ERC20 tokens - different handling for USDC vs other tokens
                 btn.innerHTML = '<span>⏳</span> Approving...';
                 const tokenContract = new ethers.Contract(token.address, this.ERC20_ABI, signer);
 
                 if (this.selectedToken === 'USDC') {
-                    // EOA Flow: Transfer USDC directly to agent's wallet (not V4 contract)
-                    // Agent's private key will be used by backend for allocation
+                    // Smart Account Flow: Transfer USDC directly to agent's wallet
+                    // Agent's Smart Account will be used by backend for allocation
 
                     // Get agent's wallet address - try API first (most reliable)
                     let agentAddress;
@@ -1203,7 +1203,7 @@ const AgentWalletUI = {
                         throw new Error('No agent deployed. Please deploy an agent first.');
                     }
 
-                    console.log('[AgentWallet] Transferring USDC to agent EOA:', agentAddress);
+                    console.log('[AgentWallet] Transferring USDC to agent Smart Account:', agentAddress);
                     btn.innerHTML = '<span>⏳</span> Transferring to Agent...';
 
                     // Direct transfer to agent's wallet

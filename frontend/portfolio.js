@@ -438,7 +438,7 @@ class PortfolioDashboard {
     }
 
     /**
-     * Load contract balances from agent EOA wallet ONLY
+     * Load contract balances from agent Smart Account wallet ONLY
      * Portfolio tracks the agent's wallet, not V4 contract
      */
     async loadContractBalances() {
@@ -474,7 +474,7 @@ class PortfolioDashboard {
             let v4Balance = 0; // Track V4 separately for "Fund Agent" awareness
 
             // Step 1: Get agent address from backend
-            // Step 2: Get USDC balance of agent's EOA wallet
+            // Step 2: Get USDC balance of agent's Smart Account wallet
             try {
                 const API_BASE = window.API_BASE || 'http://localhost:8000';
                 console.log('[Portfolio] Fetching agent status from:', `${API_BASE}/api/agent/status/${window.connectedWallet}`);
@@ -487,7 +487,7 @@ class PortfolioDashboard {
                     console.log('[Portfolio] Found agent address:', agentAddress);
 
                     if (agentAddress) {
-                        // Get USDC balance of agent's EOA
+                        // Get USDC balance of agent's Smart Account
                         const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
                         const usdc = new ethers.Contract(USDC_ADDRESS, ['function balanceOf(address) view returns (uint256)'], provider);
                         const agentBalance = await usdc.balanceOf(agentAddress);
@@ -497,7 +497,7 @@ class PortfolioDashboard {
                         if (!window.AgentWallet) window.AgentWallet = {};
                         window.AgentWallet.agentAddress = agentAddress;
 
-                        console.log('[Portfolio] Agent EOA USDC balance:', balanceUSDC, 'Address:', agentAddress);
+                        console.log('[Portfolio] Agent Smart Account USDC balance:', balanceUSDC, 'Address:', agentAddress);
                     } else {
                         console.warn('[Portfolio] Agent found but no agent_address!', statusData.agents[0]);
                     }
@@ -509,7 +509,7 @@ class PortfolioDashboard {
             }
 
             // NOTE: V4 contract balance check REMOVED
-            // All funds are in agent EOA wallet, not V4 contract
+            // All funds are in agent Smart Account wallet, not V4 contract
             // If user has V4 funds, they need to withdraw from V4 contract manually
 
             // Get invested amount from BACKEND (Supabase) instead of contract
@@ -532,7 +532,7 @@ class PortfolioDashboard {
                 idle: balanceUSDC,
                 invested: investedUSDC,
                 total: totalUSDC,
-                source: agentAddress ? 'agent_eoa' : 'v4_contract'
+                source: agentAddress ? 'smart_account' : 'v4_contract'
             });
 
             // Update portfolio with TOTAL value (idle + invested)
@@ -582,12 +582,11 @@ class PortfolioDashboard {
 
             const ethPrice = 3000; // Approximate ETH price
 
-            // NOTE: Smart Account ETH check REMOVED
-            // All agent funds are in agent EOA wallet
-            // Smart Account (ERC-4337) is not used - agent has simple EOA
+            // All agent funds are in Smart Account wallet
+            // ERC-8004 Smart Account - no separate EOA private key
 
             if (hasAgent) {
-                // Fetch agent's ETH balance from EOA
+                // Fetch agent's ETH balance from Smart Account
                 const AGENT_ADDRESS = agentAddr;
                 const WETH_ADDRESS = '0x4200000000000000000000000000000000000006';
 

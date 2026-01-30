@@ -276,8 +276,8 @@ async function fundAgentWallet(amountUSDC, userAddress) {
 
 
 /**
- * Get user's Smart Account address (ERC-4337)
- * @param {string} userAddress - User's EOA wallet address
+ * Get user's Smart Account address (ERC-8004)
+ * @param {string} userAddress - User's owner wallet address
  * @returns {object} Smart account info
  */
 async function getSmartAccount(userAddress) {
@@ -302,8 +302,8 @@ async function getSmartAccount(userAddress) {
 }
 
 /**
- * Create/Deploy Smart Account for user (ERC-4337)
- * @param {string} userAddress - User's EOA wallet address
+ * Create/Deploy Smart Account for user (ERC-8004)
+ * @param {string} userAddress - User's owner wallet address
  * @returns {object} Deployment result
  */
 async function createSmartAccount(userAddress) {
@@ -332,7 +332,7 @@ async function createSmartAccount(userAddress) {
 
 /**
  * Ensure user has a Smart Account (create if doesn't exist)
- * @param {string} userAddress - User's EOA wallet address
+ * @param {string} userAddress - User's owner wallet address
  * @returns {object} Smart account info
  */
 async function ensureSmartAccount(userAddress) {
