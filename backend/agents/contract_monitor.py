@@ -105,7 +105,7 @@ PROTOCOLS = {
         "risk_level": "low",    # Low risk - major audited protocol
         "is_lending": True,
         "audited": True,
-        "implemented": True,  # ERC-8004 Smart Account integration ready
+        "implemented": False,  # Coming soon - no on-chain integration yet
         "supply_sig": "supply(address,uint256,address,uint16)",
         "apy": 6.2,
         "tvl": 150000000,  # $150M TVL
@@ -119,7 +119,7 @@ PROTOCOLS = {
         "risk_level": "medium",  # Medium - newer protocol
         "is_lending": True,
         "audited": True,
-        "implemented": True,  # ERC-8004 Smart Account integration ready
+        "implemented": False,  # Coming soon - no on-chain integration yet
         "supply_sig": None,      # Complex - needs market params
         "apy": 8.5,
         "tvl": 80000000,   # $80M TVL
@@ -133,7 +133,7 @@ PROTOCOLS = {
         "risk_level": "low",
         "is_lending": True,
         "audited": True,
-        "implemented": True,  # ERC-8004 Smart Account integration ready
+        "implemented": False,  # Coming soon - no on-chain integration yet
         "supply_sig": "mint(uint256)",
         "apy": 7.1,
         "tvl": 45000000,   # $45M TVL
