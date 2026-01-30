@@ -183,6 +183,48 @@ class StrategyExecutor:
             return True
         return False
     
+    def check_duration_expired(self, agent: dict) -> bool:
+        """
+        Check if investment duration has expired.
+        Returns True if should exit positions.
+        
+        Duration options from UI: 1H, 1D, 1W, 1M, 3M, 6M, 1Y, ∞
+        Stored as days: 0.04 (1H), 1, 7, 30, 90, 180, 365, 0 (infinite)
+        """
+        duration_days = agent.get("duration", 30)  # Default 1 month
+        
+        # Duration 0 or None means infinite/permanent
+        if not duration_days or duration_days <= 0:
+            return False
+        
+        # Check when agent was deployed or first position opened
+        deployed_at = agent.get("deployed_at") or agent.get("created_at")
+        if not deployed_at:
+            return False
+        
+        try:
+            if isinstance(deployed_at, str):
+                deployed_dt = datetime.fromisoformat(deployed_at.replace('Z', '+00:00'))
+            else:
+                deployed_dt = deployed_at
+            
+            # Make timezone naive for comparison
+            if deployed_dt.tzinfo:
+                deployed_dt = deployed_dt.replace(tzinfo=None)
+            
+            expiry = deployed_dt + timedelta(days=duration_days)
+            now = datetime.utcnow()
+            
+            if now >= expiry:
+                days_over = (now - expiry).days
+                print(f"[StrategyExecutor] DURATION EXPIRED: {duration_days}d limit reached ({days_over}d overdue)")
+                return True
+                
+        except Exception as e:
+            print(f"[StrategyExecutor] Duration check error: {e}")
+        
+        return False
+    
     def filter_avoid_il(self, pools: list, agent: dict) -> list:
         """
         Filter out pools that may cause impermanent loss if avoid_il is enabled.
@@ -373,6 +415,25 @@ class StrategyExecutor:
             return
         
         print(f"[StrategyExecutor] Executing for agent {agent_id[:15]}...")
+        
+        # Check if duration has expired - auto-exit if so
+        if self.check_duration_expired(agent):
+            if log_audit_entry:
+                log_audit_entry(
+                    action="DURATION_EXPIRED",
+                    wallet=user_address,
+                    details={
+                        "agent_id": agent_id[:15],
+                        "duration_days": agent.get("duration", 30),
+                        "deployed_at": agent.get("deployed_at")
+                    }
+                )
+            # Trigger exit - agent has reached its investment duration limit
+            agent["should_exit"] = True
+            agent["exit_reason"] = "duration_expired"
+            print(f"[StrategyExecutor] Agent {agent_id[:15]} duration expired - triggering exit")
+            # TODO: Call exit_position here when implemented
+            return
         
         # Log: Starting scan
         if log_audit_entry:
