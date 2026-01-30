@@ -55,6 +55,12 @@ try:
 except ImportError:
     historian = None
 
+# Import LLM analyzer for trading_style-aware risk assessment
+try:
+    from data_sources.llm_analyzer import llm_analyzer
+except ImportError:
+    llm_analyzer = None
+
 
 class StrategyExecutor:
     """
@@ -849,6 +855,13 @@ class StrategyExecutor:
         max_allocation = agent.get("max_allocation", 25)
         risk_level = agent.get("risk_level", "medium")
         
+        # Map risk_level to trading_style for LLM analyzer
+        trading_style = agent.get("trading_style", {
+            "low": "conservative",
+            "medium": "moderate", 
+            "high": "aggressive"
+        }.get(risk_level, "moderate"))
+        
         # Score each pool
         for pool in pools:
             score = 0
@@ -866,15 +879,19 @@ class StrategyExecutor:
             elif tvl > 100_000:
                 score += 10
             
-            # Risk adjustment
-            if risk_level == "low":
-                # Prefer lower APY, higher TVL
+            # Risk adjustment based on trading_style
+            if trading_style == "conservative":
+                # Prefer lower APY, higher TVL, penalize high APY
+                if apy > 100:
+                    score -= 20  # Suspicious APY for conservative
                 score = score * 0.7 + (30 - min(apy, 30))
-            elif risk_level == "high":
+            elif trading_style == "aggressive":
                 # Prefer higher APY
                 score = score * 1.3
+            # moderate keeps default scoring
             
             pool["_score"] = score
+            pool["_trading_style"] = trading_style
         
         # Sort by score
         pools.sort(key=lambda p: p.get("_score", 0), reverse=True)
@@ -887,7 +904,53 @@ class StrategyExecutor:
             # Distribute allocation (higher score = higher allocation)
             pool["_allocation"] = min(max_allocation, 100 // vault_count)
         
+        print(f"[StrategyExecutor] Selected {len(selected)} pools with trading_style={trading_style}")
         return selected
+    
+    async def analyze_pools_with_llm(self, pools: List[dict], agent: dict) -> List[dict]:
+        """
+        Run LLM analysis on pools for deep risk assessment.
+        Uses trading_style from agent config.
+        
+        Returns pools with LLM risk scores attached.
+        """
+        if not llm_analyzer:
+            print("[StrategyExecutor] LLM analyzer not available, skipping")
+            return pools
+        
+        # Get trading_style
+        risk_level = agent.get("risk_level", "medium")
+        trading_style = agent.get("trading_style", {
+            "low": "conservative",
+            "medium": "moderate",
+            "high": "aggressive"
+        }.get(risk_level, "moderate"))
+        
+        analyzed = []
+        for pool in pools[:10]:  # Limit to top 10 to save API calls
+            try:
+                result = await llm_analyzer.analyze_pool(pool, trading_style=trading_style)
+                pool["_llm_risk_score"] = result.get("risk_score", 5)
+                pool["_llm_recommendation"] = result.get("recommendation", "CAUTION")
+                pool["_llm_reasoning"] = result.get("reasoning", "")
+                pool["_llm_provider"] = result.get("llm_provider", "unknown")
+                
+                # Filter out AVOID recommendations for conservative style
+                if trading_style == "conservative" and result.get("recommendation") == "AVOID":
+                    print(f"[StrategyExecutor] LLM AVOID for {pool.get('symbol')} - skipping (conservative)")
+                    continue
+                    
+                analyzed.append(pool)
+                
+            except Exception as e:
+                print(f"[StrategyExecutor] LLM error for {pool.get('symbol')}: {e}")
+                analyzed.append(pool)  # Keep pool even on error
+        
+        # Add remaining pools without LLM analysis
+        analyzed.extend(pools[10:])
+        
+        print(f"[StrategyExecutor] LLM analyzed {min(10, len(pools))} pools with style={trading_style}")
+        return analyzed
     
     async def execute_v4_strategy(
         self, 
