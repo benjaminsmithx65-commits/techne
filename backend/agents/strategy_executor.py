@@ -102,6 +102,85 @@ class StrategyExecutor:
             }
         ]
     
+    def check_gas_price(self, agent: dict, w3) -> tuple[bool, float]:
+        """
+        Check if current gas price is within agent's max_gas_price limit.
+        Returns (is_ok, current_gwei)
+        """
+        max_gas_gwei = agent.get("max_gas_price", 50)  # Default 50 gwei
+        current_gas = w3.eth.gas_price
+        current_gwei = current_gas / 1e9
+        
+        if current_gwei > max_gas_gwei:
+            print(f"[StrategyExecutor] Gas too high: {current_gwei:.2f} > {max_gas_gwei} gwei - SKIPPING")
+            return False, current_gwei
+        return True, current_gwei
+    
+    def check_should_compound(self, agent: dict) -> bool:
+        """
+        Check if it's time to compound based on compound_frequency setting.
+        Returns True if should compound now.
+        """
+        compound_freq = agent.get("compound_frequency", 7)  # Days between compounds
+        last_compound = agent.get("last_compound_time")
+        
+        if not last_compound:
+            return True  # Never compounded, do it now
+        
+        from datetime import datetime, timedelta
+        try:
+            last_dt = datetime.fromisoformat(last_compound)
+            next_compound = last_dt + timedelta(days=compound_freq)
+            return datetime.utcnow() >= next_compound
+        except:
+            return True
+    
+    def check_emergency_exit(self, agent: dict, current_value: float, initial_value: float) -> bool:
+        """
+        Check if emergency exit should trigger based on max_drawdown setting.
+        Returns True if should exit positions.
+        """
+        if not agent.get("emergency_exit", True):
+            return False
+        
+        max_drawdown = agent.get("max_drawdown", 30)  # Default -30%
+        
+        if initial_value <= 0:
+            return False
+        
+        current_drawdown = ((initial_value - current_value) / initial_value) * 100
+        
+        if current_drawdown >= max_drawdown:
+            print(f"[StrategyExecutor] EMERGENCY EXIT: Drawdown {current_drawdown:.1f}% >= {max_drawdown}%")
+            return True
+        return False
+    
+    def filter_avoid_il(self, pools: list, agent: dict) -> list:
+        """
+        Filter out pools that may cause impermanent loss if avoid_il is enabled.
+        Single-sided lending pools are preferred.
+        """
+        if not agent.get("avoid_il", False):
+            return pools
+        
+        # Single-sided lending protocols (no IL risk)
+        safe_protocols = ["aave", "aave-v3", "compound", "compound-v3", "morpho", "moonwell", "beefy"]
+        
+        filtered = []
+        for pool in pools:
+            project = pool.get("project", "").lower()
+            pool_type = pool.get("pool_type", pool.get("category", "")).lower()
+            
+            # Keep if it's a lending protocol or single-asset vault
+            if any(safe in project for safe in safe_protocols):
+                filtered.append(pool)
+            elif "lending" in pool_type or "single" in pool_type:
+                filtered.append(pool)
+            # Skip DEX LP pools (high IL risk)
+        
+        print(f"[StrategyExecutor] Avoid IL filter: {len(pools)} -> {len(filtered)} pools")
+        return filtered if filtered else pools[:3]  # Fallback to top 3 if all filtered
+    
     async def start(self):
         """Start the executor loop"""
         self.running = True
@@ -140,8 +219,16 @@ class StrategyExecutor:
                 # Check existing positions for risk (stop-loss, take-profit)
                 await self.check_position_risks(agent)
                 
+                # Check if compound timing is right based on compound_frequency
+                if not self.check_should_compound(agent):
+                    print(f"[StrategyExecutor] Skipping {agent.get('id', 'unknown')[:15]} - not compound time yet")
+                    continue
+                
                 # Execute strategy
                 await self.execute_agent_strategy(agent)
+                
+                # Update last compound time
+                agent["last_compound_time"] = datetime.utcnow().isoformat()
                 
                 # Check if rebalancing needed
                 if agent.get("auto_rebalance", True):
@@ -366,7 +453,9 @@ class StrategyExecutor:
                 "detected_at": datetime.utcnow().isoformat()
             }
         
-        # Check for APY drift (>20% change)
+        # Check for APY drift using rebalance_threshold setting
+        rebalance_threshold = agent.get("rebalance_threshold", 5) / 100  # Default 5%, convert to decimal
+        
         for alloc in allocations:
             pool_symbol = alloc.get("pool")
             old_apy = alloc.get("apy", 0)
@@ -375,8 +464,8 @@ class StrategyExecutor:
             current = next((p for p in recommended if p.get("symbol") == pool_symbol), None)
             if current:
                 new_apy = current.get("apy", 0)
-                if old_apy > 0 and abs(new_apy - old_apy) / old_apy > 0.2:
-                    print(f"[StrategyExecutor] APY drift detected: {pool_symbol} {old_apy:.1f}% → {new_apy:.1f}%")
+                if old_apy > 0 and abs(new_apy - old_apy) / old_apy > rebalance_threshold:
+                    print(f"[StrategyExecutor] APY drift detected: {pool_symbol} {old_apy:.1f}% → {new_apy:.1f}% (threshold: {rebalance_threshold*100:.0f}%)")
                     agent["needs_rebalance"] = True
     
     async def check_position_risks(self, agent: dict):
@@ -416,6 +505,29 @@ class StrategyExecutor:
                 agent["paused"] = True
                 agent["pause_reason"] = "High market volatility"
                 agent["pause_until"] = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        
+        # Check emergency exit based on max_drawdown setting
+        total_invested = sum(p.get("amount", 0) for p in allocations)
+        total_current = sum(p.get("current_value", p.get("amount", 0)) for p in allocations)
+        
+        if self.check_emergency_exit(agent, total_current, total_invested):
+            print(f"[StrategyExecutor] 🚨 EMERGENCY EXIT triggered for {agent_id}")
+            # Mark all positions for exit
+            for position in allocations:
+                position["needs_exit"] = True
+                position["exit_reason"] = f"Emergency exit: max drawdown exceeded"
+            
+            if log_audit_entry:
+                log_audit_entry(
+                    action="EMERGENCY_EXIT",
+                    wallet=agent.get("user_address", ""),
+                    details={
+                        "invested": total_invested,
+                        "current": total_current,
+                        "drawdown_pct": ((total_invested - total_current) / total_invested * 100) if total_invested > 0 else 0,
+                        "max_drawdown": agent.get("max_drawdown", 30)
+                    }
+                )
     
     async def find_matching_pools(self, agent: dict) -> List[dict]:
         """Find pools matching agent's configuration"""
@@ -498,6 +610,9 @@ class StrategyExecutor:
                         continue
                 
                 filtered.append(pool)
+            
+            # Apply avoid_il filter if enabled
+            filtered = self.filter_avoid_il(filtered, agent)
             
             print(f"[StrategyExecutor] Filtered to {len(filtered)} pools matching agent config")
             return filtered
@@ -611,6 +726,14 @@ class StrategyExecutor:
                 return {
                     "success": False, 
                     "error": f"Insufficient balance: {user_balance/1e6:.2f} USDC < {amount_usdc:.2f} USDC"
+                }
+            
+            # Check gas price limit
+            gas_ok, current_gwei = self.check_gas_price(agent, w3)
+            if not gas_ok:
+                return {
+                    "success": False,
+                    "error": f"Gas too high: {current_gwei:.1f} gwei > {agent.get('max_gas_price', 50)} gwei limit"
                 }
             
             # Build transaction

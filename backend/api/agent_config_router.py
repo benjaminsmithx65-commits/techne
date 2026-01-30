@@ -88,12 +88,12 @@ class AgentDeployRequest(BaseModel):
     pro_config: Optional[ProConfig] = None
     # Additional configs from Build UI
     rebalance_threshold: int = 5           # % APY change to trigger rebalance
-    max_gas_price: int = 50                # Max gwei for transactions
+    max_gas_price: int = 10                # Max gwei - Base: normal 0.01, spike 1-5
     slippage: float = 0.5                  # Max slippage %
     compound_frequency: int = 7            # Days between auto-compound
     avoid_il: bool = True                  # Avoid impermanent loss (single-sided only)
     emergency_exit: bool = True            # Enable emergency exit on high volatility
-    min_pool_tvl: int = 10000000           # $10M minimum TVL default
+    min_pool_tvl: int = 500000             # $500k minimum TVL - degens welcome
     duration: int = 30                     # Investment duration in days (0 = no limit)
 
 

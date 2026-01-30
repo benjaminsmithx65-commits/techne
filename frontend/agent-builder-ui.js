@@ -35,7 +35,7 @@ class AgentBuilderUI {
             // Advanced
             autoRebalance: true,
             rebalanceThreshold: 5,
-            maxGasPrice: 50,
+            maxGasPrice: 10,  // 10 gwei - Base normally 0.001-0.01, spikes to 1-5
             slippage: 0.5,
             compoundFrequency: 7,
             onlyAudited: true,
@@ -43,7 +43,7 @@ class AgentBuilderUI {
             emergencyExit: true,
 
             // Pro Features
-            minPoolTvl: 500000,
+            minPoolTvl: 500000,  // $500k - degens welcome
             harvestStrategy: 'compound',
             volatilityThreshold: 10,
             mevProtection: false
@@ -796,6 +796,16 @@ What would you like to configure?`;
                         vault_count: this.config.vaultCount,
                         auto_rebalance: this.config.autoRebalance,
                         only_audited: this.config.onlyAudited,
+                        // Advanced settings - MUST match backend expectations
+                        rebalance_threshold: this.config.rebalanceThreshold,
+                        max_gas_price: this.config.maxGasPrice,
+                        slippage: this.config.slippage,
+                        compound_frequency: this.config.compoundFrequency,
+                        avoid_il: this.config.avoidIL,
+                        emergency_exit: this.config.emergencyExit,
+                        min_pool_tvl: this.config.minPoolTvl,
+                        duration: this.config.duration,
+                        // Pro mode
                         is_pro_mode: isProMode,
                         pro_config: proConfig
                     })
