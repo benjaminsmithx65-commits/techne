@@ -90,6 +90,7 @@ class ProtocolLoader {
         const isSelected = this.selectedProtocols.has(protocol.id);
         const riskColor = this.getRiskColor(protocol.risk_level);
         const icon = this.getProtocolIcon(protocol.id);
+        const isImplemented = protocol.implemented !== false;  // Default to true
 
         // Format TVL
         const tvlFormatted = protocol.tvl >= 1000000
@@ -98,14 +99,16 @@ class ProtocolLoader {
 
         // Special badges
         let badge = '';
-        if (protocol.is_stableswap) badge = '<span class="proto-badge stable">Stableswap</span>';
+        if (!isImplemented) badge = '<span class="proto-badge coming-soon">Coming Soon</span>';
+        else if (protocol.is_stableswap) badge = '<span class="proto-badge stable">Stableswap</span>';
         else if (protocol.is_leveraged_farm) badge = '<span class="proto-badge leverage">Leveraged</span>';
         else if (protocol.is_reward_aggregator) badge = '<span class="proto-badge rewards">Rewards</span>';
 
         return `
-            <div class="protocol-card ${isSelected ? 'selected' : ''}" 
+            <div class="protocol-card ${isSelected ? 'selected' : ''} ${!isImplemented ? 'disabled' : ''}" 
                  data-protocol="${protocol.id}"
-                 data-pool-type="${protocol.pool_type}">
+                 data-pool-type="${protocol.pool_type}"
+                 data-implemented="${isImplemented}">
                 <div class="proto-icon">${icon}</div>
                 <div class="proto-info">
                     <span class="proto-name">${protocol.name}</span>
@@ -132,6 +135,13 @@ class ProtocolLoader {
      */
     toggleProtocol(card) {
         const protocolId = card.dataset.protocol;
+        const isImplemented = card.dataset.implemented !== 'false';
+
+        // Don't allow selecting unimplemented protocols
+        if (!isImplemented) {
+            console.log('[ProtocolLoader] Protocol not yet implemented:', protocolId);
+            return;
+        }
 
         if (this.selectedProtocols.has(protocolId)) {
             this.selectedProtocols.delete(protocolId);
@@ -179,6 +189,12 @@ class ProtocolLoader {
             'moonwell': '🌙',
             'compound': '🟢',
             'seamless': '🌊',
+            'sonne': '☀️',
+            'exactly': 'ℹ️',
+            'avantis': '🛡️',
+            'origin': '🔘',
+            'convex': '📝',
+            'beefy': '🐮',
             'aerodrome': '✈️',
             'uniswap': '🦄',
             'extra': '🔥',

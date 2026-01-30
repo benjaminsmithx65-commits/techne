@@ -11352,6 +11352,30 @@ input:checked+.toggle-slider.info {
     color: #A855F7;
 }
 
+/* Coming Soon badge - greyed out protocols */
+.proto-badge.coming-soon {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Disabled protocol card - greyed out, not clickable */
+.protocol-card.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.protocol-card.disabled:hover {
+    border-color: var(--border);
+    background: var(--bg-surface);
+}
+
+.protocol-card.disabled .proto-apy,
+.protocol-card.disabled .proto-name,
+.protocol-card.disabled .proto-risk {
+    color: var(--text-muted);
+}
+
 .proto-stats {
     display: flex;
     justify-content: space-between;

@@ -42,6 +42,7 @@ async def get_protocols(
             "tvl": proto.get("tvl", 0),
             "volatility": proto.get("volatility", 5.0),
             "audited": proto.get("audited", False),
+            "implemented": proto.get("implemented", True),  # Default True for backwards compat
             "is_lending": proto.get("is_lending", False),
             "is_stableswap": proto.get("is_stableswap", False),
             "is_leveraged_farm": proto.get("is_leveraged_farm", False),

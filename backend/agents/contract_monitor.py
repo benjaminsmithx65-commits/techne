@@ -105,6 +105,7 @@ PROTOCOLS = {
         "risk_level": "low",    # Low risk - major audited protocol
         "is_lending": True,
         "audited": True,
+        "implemented": True,  # ERC-8004 Smart Account integration ready
         "supply_sig": "supply(address,uint256,address,uint16)",
         "apy": 6.2,
         "tvl": 150000000,  # $150M TVL
@@ -118,6 +119,7 @@ PROTOCOLS = {
         "risk_level": "medium",  # Medium - newer protocol
         "is_lending": True,
         "audited": True,
+        "implemented": True,  # ERC-8004 Smart Account integration ready
         "supply_sig": None,      # Complex - needs market params
         "apy": 8.5,
         "tvl": 80000000,   # $80M TVL
@@ -131,6 +133,7 @@ PROTOCOLS = {
         "risk_level": "low",
         "is_lending": True,
         "audited": True,
+        "implemented": True,  # ERC-8004 Smart Account integration ready
         "supply_sig": "mint(uint256)",
         "apy": 7.1,
         "tvl": 45000000,   # $45M TVL
@@ -144,6 +147,7 @@ PROTOCOLS = {
         "risk_level": "low",
         "is_lending": True,
         "audited": True,
+        "implemented": False,  # Coming soon - no Smart Account integration yet
         "supply_sig": "supply(address,uint256)",
         "apy": 5.8,
         "tvl": 200000000,  # $200M TVL
@@ -157,10 +161,101 @@ PROTOCOLS = {
         "risk_level": "medium",
         "is_lending": True,
         "audited": True,
+        "implemented": False,  # Coming soon - no Smart Account integration yet
         "supply_sig": "deposit(uint256,address)",
         "apy": 9.2,
         "tvl": 25000000,   # $25M TVL
         "volatility": 5.0  # Higher volatility
+    },
+    # ================================================
+    # ADDITIONAL SINGLE-SIDED PROTOCOLS (NOT YET IMPLEMENTED)
+    # These show in UI as greyed out - coming soon
+    # ================================================
+    "sonne": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Sonne Finance",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 7.5,
+        "tvl": 20000000,
+        "volatility": 4.0
+    },
+    "exactly": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Exactly Protocol",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 8.2,
+        "tvl": 15000000,
+        "volatility": 4.5
+    },
+    "avantis": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Avantis",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "high",
+        "is_lending": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 12.0,
+        "tvl": 10000000,
+        "volatility": 8.0
+    },
+    "origin": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Origin Protocol",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 6.8,
+        "tvl": 30000000,
+        "volatility": 3.5
+    },
+    "convex": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Convex Finance",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": False,
+        "is_reward_aggregator": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 9.5,
+        "tvl": 50000000,
+        "volatility": 5.0
+    },
+    "beefy": {
+        "address": "0x0000000000000000000000000000000000000000",  # TBD
+        "name": "Beefy Finance",
+        "asset": "USDC",
+        "pool_type": "single",
+        "risk_level": "medium",
+        "is_lending": False,
+        "is_reward_aggregator": True,
+        "audited": True,
+        "implemented": False,  # Coming soon
+        "supply_sig": None,
+        "apy": 11.0,
+        "tvl": 40000000,
+        "volatility": 6.0
     },
     "aerodrome": {
         "address": "0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d",  # USDC/WETH pool
