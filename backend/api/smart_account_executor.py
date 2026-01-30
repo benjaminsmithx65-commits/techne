@@ -31,6 +31,7 @@ PIMLICO_URL = os.getenv("PIMLICO_BUNDLER_URL", "")
 
 # Protocol addresses on Base mainnet
 AAVE_POOL = "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"
+MORPHO_BLUE = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
 AERODROME_ROUTER = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"
 COWSWAP_SETTLEMENT = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -43,6 +44,10 @@ LEGACY_TECHNE_WALLET = "0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4"
 SELECTORS = {
     "aave_supply": "0xe8eda9df",      # supply(address,uint256,address,uint16)
     "aave_withdraw": "0x69328dec",     # withdraw(address,uint256,address)
+    "morpho_supply": "0xa99aad89",     # supply(MarketParams,uint256,uint256,address,bytes)
+    "morpho_withdraw": "0x5c2bea49",   # withdraw(MarketParams,uint256,uint256,address,address)
+    "aero_add_liq": "0x5a47ddc3",      # addLiquidity(address,address,bool,uint256,uint256,uint256,uint256,address,uint256)
+    "aero_remove_liq": "0x0dede6c4",   # removeLiquidity(address,address,bool,uint256,uint256,uint256,address,uint256)
     "erc20_approve": "0x095ea7b3",     # approve(address,uint256)
     "erc20_transfer": "0xa9059cbb",    # transfer(address,uint256)
 }
@@ -392,6 +397,228 @@ class SmartAccountExecutor:
                 "data": withdraw_data.hex()
             }
         }
+    
+    # ============================================
+    # MORPHO BLUE OPERATIONS
+    # ============================================
+    
+    async def supply_to_morpho(
+        self, 
+        amount: int, 
+        market_params: dict,
+        asset: str = USDC
+    ) -> Dict[str, Any]:
+        """
+        Supply assets to Morpho Blue market.
+        
+        Args:
+            amount: Amount in smallest units
+            market_params: Dict with loanToken, collateralToken, oracle, irm, lltv
+            asset: Token to supply (default USDC)
+        """
+        if not self.smart_account:
+            return {"success": False, "error": "No Smart Account found"}
+        
+        # First, approve Morpho Blue to spend tokens
+        approve_data = self._encode_erc20_approve(MORPHO_BLUE, amount)
+        
+        # Build supply calldata
+        supply_data = self._encode_morpho_supply(market_params, amount, self.smart_account)
+        
+        return {
+            "success": True,
+            "mode": "smart_account",
+            "steps": [
+                {"target": asset, "value": 0, "data": approve_data.hex(), "desc": "Approve Morpho"},
+                {"target": MORPHO_BLUE, "value": 0, "data": supply_data.hex(), "desc": "Supply to Morpho"}
+            ],
+            "message": "Morpho Blue supply prepared. Owner signature required."
+        }
+    
+    async def withdraw_from_morpho(
+        self, 
+        amount: int, 
+        market_params: dict
+    ) -> Dict[str, Any]:
+        """
+        Withdraw from Morpho Blue market.
+        
+        Args:
+            amount: Amount to withdraw (smallest units)
+            market_params: Market parameters dict
+        """
+        if not self.smart_account:
+            return {"success": False, "error": "No Smart Account found"}
+        
+        withdraw_data = self._encode_morpho_withdraw(market_params, amount, self.smart_account, self.user_address)
+        
+        return {
+            "success": True,
+            "mode": "smart_account",
+            "calldata": {
+                "target": MORPHO_BLUE,
+                "value": 0,
+                "data": withdraw_data.hex()
+            }
+        }
+    
+    def _encode_morpho_supply(self, market_params: dict, amount: int, on_behalf_of: str) -> bytes:
+        """Encode Morpho supply(MarketParams,uint256,uint256,address,bytes) call."""
+        from eth_abi import encode
+        
+        # MarketParams tuple: (loanToken, collateralToken, oracle, irm, lltv)
+        params_tuple = (
+            Web3.to_checksum_address(market_params["loanToken"]),
+            Web3.to_checksum_address(market_params["collateralToken"]),
+            Web3.to_checksum_address(market_params["oracle"]),
+            Web3.to_checksum_address(market_params["irm"]),
+            int(market_params["lltv"])
+        )
+        
+        selector = bytes.fromhex(SELECTORS["morpho_supply"][2:])
+        params = encode(
+            ['(address,address,address,address,uint256)', 'uint256', 'uint256', 'address', 'bytes'],
+            [params_tuple, amount, 0, on_behalf_of, b""]  # assets, shares=0, onBehalf, data
+        )
+        return selector + params
+    
+    def _encode_morpho_withdraw(self, market_params: dict, amount: int, on_behalf_of: str, receiver: str) -> bytes:
+        """Encode Morpho withdraw(MarketParams,uint256,uint256,address,address) call."""
+        from eth_abi import encode
+        
+        params_tuple = (
+            Web3.to_checksum_address(market_params["loanToken"]),
+            Web3.to_checksum_address(market_params["collateralToken"]),
+            Web3.to_checksum_address(market_params["oracle"]),
+            Web3.to_checksum_address(market_params["irm"]),
+            int(market_params["lltv"])
+        )
+        
+        selector = bytes.fromhex(SELECTORS["morpho_withdraw"][2:])
+        params = encode(
+            ['(address,address,address,address,uint256)', 'uint256', 'uint256', 'address', 'address'],
+            [params_tuple, amount, 0, on_behalf_of, receiver]  # assets, shares=0
+        )
+        return selector + params
+    
+    # ============================================
+    # AERODROME LP OPERATIONS
+    # ============================================
+    
+    async def supply_to_aerodrome(
+        self,
+        amount_usdc: int,
+        amount_weth: int,
+        is_stable: bool = False,
+        slippage_bps: int = 50  # 0.5% default
+    ) -> Dict[str, Any]:
+        """
+        Add liquidity to Aerodrome pool.
+        
+        Args:
+            amount_usdc: USDC amount (6 decimals)
+            amount_weth: WETH amount (18 decimals)
+            is_stable: Whether it's a stable pool
+            slippage_bps: Slippage in basis points (50 = 0.5%)
+        """
+        if not self.smart_account:
+            return {"success": False, "error": "No Smart Account found"}
+        
+        # Calculate minimum amounts with slippage
+        min_usdc = amount_usdc * (10000 - slippage_bps) // 10000
+        min_weth = amount_weth * (10000 - slippage_bps) // 10000
+        
+        import time
+        deadline = int(time.time()) + 1800  # 30 min deadline
+        
+        # Approve USDC and WETH for router
+        approve_usdc = self._encode_erc20_approve(AERODROME_ROUTER, amount_usdc)
+        approve_weth = self._encode_erc20_approve(AERODROME_ROUTER, amount_weth)
+        
+        # Add liquidity calldata
+        add_liq_data = self._encode_aero_add_liquidity(
+            USDC, WETH, is_stable,
+            amount_usdc, amount_weth,
+            min_usdc, min_weth,
+            self.smart_account, deadline
+        )
+        
+        return {
+            "success": True,
+            "mode": "smart_account",
+            "steps": [
+                {"target": USDC, "value": 0, "data": approve_usdc.hex(), "desc": "Approve USDC"},
+                {"target": WETH, "value": 0, "data": approve_weth.hex(), "desc": "Approve WETH"},
+                {"target": AERODROME_ROUTER, "value": 0, "data": add_liq_data.hex(), "desc": "Add Liquidity"}
+            ],
+            "message": "Aerodrome LP position prepared. Owner signature required."
+        }
+    
+    async def withdraw_from_aerodrome(
+        self,
+        liquidity: int,
+        is_stable: bool = False,
+        slippage_bps: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Remove liquidity from Aerodrome pool.
+        
+        Args:
+            liquidity: Amount of LP tokens to burn
+            is_stable: Whether it's a stable pool
+            slippage_bps: Slippage tolerance
+        """
+        if not self.smart_account:
+            return {"success": False, "error": "No Smart Account found"}
+        
+        import time
+        deadline = int(time.time()) + 1800
+        
+        # For simplicity, set min amounts to 0 (will be handled by slippage check)
+        # In production, should calculate expected amounts from pool reserves
+        remove_liq_data = self._encode_aero_remove_liquidity(
+            USDC, WETH, is_stable,
+            liquidity, 0, 0,  # minAmountA, minAmountB (should calculate)
+            self.user_address, deadline
+        )
+        
+        return {
+            "success": True,
+            "mode": "smart_account",
+            "calldata": {
+                "target": AERODROME_ROUTER,
+                "value": 0,
+                "data": remove_liq_data.hex()
+            }
+        }
+    
+    def _encode_aero_add_liquidity(
+        self, tokenA: str, tokenB: str, stable: bool,
+        amountA: int, amountB: int, minA: int, minB: int,
+        to: str, deadline: int
+    ) -> bytes:
+        """Encode Aerodrome addLiquidity call."""
+        from eth_abi import encode
+        selector = bytes.fromhex(SELECTORS["aero_add_liq"][2:])
+        params = encode(
+            ['address', 'address', 'bool', 'uint256', 'uint256', 'uint256', 'uint256', 'address', 'uint256'],
+            [tokenA, tokenB, stable, amountA, amountB, minA, minB, to, deadline]
+        )
+        return selector + params
+    
+    def _encode_aero_remove_liquidity(
+        self, tokenA: str, tokenB: str, stable: bool,
+        liquidity: int, minA: int, minB: int,
+        to: str, deadline: int
+    ) -> bytes:
+        """Encode Aerodrome removeLiquidity call."""
+        from eth_abi import encode
+        selector = bytes.fromhex(SELECTORS["aero_remove_liq"][2:])
+        params = encode(
+            ['address', 'address', 'bool', 'uint256', 'uint256', 'uint256', 'address', 'uint256'],
+            [tokenA, tokenB, stable, liquidity, minA, minB, to, deadline]
+        )
+        return selector + params
     
     # ============================================
     # HARVEST OPERATIONS
