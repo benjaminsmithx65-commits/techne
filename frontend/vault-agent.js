@@ -114,35 +114,34 @@ class VaultAgent {
     }
 
     /**
-     * Initialize agent with wallet
+     * Initialize agent with Smart Account address (from backend)
      */
-    async initAgentWallet(provider, privateKey) {
+    async initAgentWallet(provider, smartAccountAddress) {
         try {
             this.provider = provider;
-            // In production: this.agentWallet = new ethers.Wallet(privateKey, provider);
-            this.agentAddress = '0x' + Array.from({ length: 40 }, () =>
-                '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+            // ERC-8004: Use Smart Account address from backend deployment
+            this.agentAddress = smartAccountAddress;
 
-            console.log(`[Agent] Initialized with address: ${this.agentAddress}`);
+            console.log(`[Agent] ERC-8004 Smart Account initialized: ${this.agentAddress}`);
             this.isActive = true;
             return this.agentAddress;
         } catch (error) {
-            console.error('[Agent] Failed to init wallet:', error);
+            console.error('[Agent] Failed to init Smart Account:', error);
             throw error;
         }
     }
 
     /**
-     * Create new agent wallet
+     * Create new agent wallet (ERC-8004 Smart Account)
+     * NOTE: Actual Smart Account is created by backend via SmartAccountService
+     * This method returns a placeholder indicating the backend will deploy the account
      */
     static createAgentWallet() {
-        const address = '0x' + Array.from({ length: 40 }, () =>
-            '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
         return {
-            address,
-            privateKey: '0x' + Array.from({ length: 64 }, () =>
-                '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''),
-            fundingRequired: true
+            address: null,  // Will be set by backend Smart Account creation
+            accountType: 'erc8004',
+            fundingRequired: true,
+            message: 'Smart Account will be deployed on-chain by backend'
         };
     }
 

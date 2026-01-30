@@ -11,11 +11,10 @@ import json
 import os
 
 # Agent key management (wallet generation, encryption)
-from services.agent_keys import (
-    generate_agent_wallet,
-    encrypt_private_key,
-    verify_signature
-)
+from services.agent_keys import verify_signature
+
+# ERC-8004 Smart Account Service (replaces EOA)
+from services.smart_account_service import get_smart_account_service
 
 # Auto-whitelist service for V4.3.2
 from services.whitelist_service import get_whitelist_service
@@ -143,26 +142,40 @@ async def deploy_agent(request: AgentDeployRequest):
                 print(f"[AgentConfig] WARNING: Signature verification failed for {user_address}")
                 # Don't block - just log warning (for MVP)
         
-        # GENERATE AGENT WALLET
-        # EOA mode: Generate new wallet with private key that backend can use for signing
-        # (Smart Account / ERC-4337 disabled for now - will enable with Pimlico later)
+        # CREATE SMART ACCOUNT (ERC-8004)
+        # Uses SmartAccountService to deploy deterministic smart wallet for user
+        # No private key needed - user remains owner, backend has session key permission
+        smart_account_service = get_smart_account_service()
+        
         if request.agent_address:
-            # Use provided address (legacy flow - no private key)
+            # Use provided address (legacy flow)
             agent_address = request.agent_address
-            encrypted_pk = None
+            smart_account_tx = None
             print(f"[AgentConfig] Using provided agent address: {agent_address[:10]}...")
         else:
-            # Generate EOA wallet with private key for backend signing
+            # Deploy ERC-8004 Smart Account for user
             try:
-                private_key, agent_address = generate_agent_wallet()
-                encrypted_pk = encrypt_private_key(private_key, request.signature)
-                print(f"[AgentConfig] Generated EOA agent wallet: {agent_address[:10]}...")
-                print(f"[AgentConfig] Private key encrypted and stored for allocation signing")
-            except Exception as key_error:
-                print(f"[AgentConfig] Key generation failed: {key_error}")
-                import secrets
-                agent_address = "0x" + secrets.token_hex(20)
-                encrypted_pk = None
+                result = smart_account_service.create_account(user_address)
+                if result.get("success"):
+                    agent_address = result.get("account_address")
+                    smart_account_tx = result.get("tx_hash")
+                    print(f"[AgentConfig] Deployed ERC-8004 Smart Account: {agent_address[:10]}...")
+                    print(f"[AgentConfig] Deployment tx: {smart_account_tx}")
+                else:
+                    # Account may already exist
+                    existing = smart_account_service.get_account(user_address)
+                    if existing:
+                        agent_address = existing
+                        smart_account_tx = None
+                        print(f"[AgentConfig] Using existing Smart Account: {agent_address[:10]}...")
+                    else:
+                        raise Exception(result.get("message", "Smart Account creation failed"))
+            except Exception as sa_error:
+                print(f"[AgentConfig] Smart Account error: {sa_error}")
+                # Fallback: use deterministic address (counterfactual)
+                agent_address = smart_account_service.get_account_address(user_address)
+                smart_account_tx = None
+                print(f"[AgentConfig] Using counterfactual Smart Account address: {agent_address[:10]}...")
         
         # Generate agent ID
         agent_id = f"agent_{len(user_agents) + 1}_{int(datetime.utcnow().timestamp())}"
@@ -171,8 +184,9 @@ async def deploy_agent(request: AgentDeployRequest):
             "id": agent_id,
             "name": request.agent_name or f"Agent #{len(user_agents) + 1}",
             "user_address": user_address,  # Owner (normalized)
-            "agent_address": agent_address,  # Agent's public address
-            "encrypted_private_key": encrypted_pk,  # Agent's encrypted private key
+            "agent_address": agent_address,  # Smart Account address
+            "account_type": "erc8004",  # NEW: Account type marker
+            "smart_account_tx": smart_account_tx,  # NEW: Deployment tx hash
             "signature_verified": signature_verified,  # Was ownership proved
             "chain": request.chain,
             "preset": request.preset,
@@ -224,17 +238,18 @@ async def deploy_agent(request: AgentDeployRequest):
         
         print(f"[AgentConfig] Agent {agent_id} deployed for {user_address}")
         print(f"[AgentConfig] Total agents for user: {len(user_agents)}")
-        print(f"[AgentConfig] Agent has execution key: {encrypted_pk is not None}")
+        print(f"[AgentConfig] Smart Account type: erc8004, tx: {smart_account_tx}")
         
-        # Remove encrypted_private_key from response (security)
-        response_config = {k: v for k, v in agent_data.items() if k != 'encrypted_private_key'}
+        # Remove internal fields from response (security)
+        response_config = {k: v for k, v in agent_data.items() if k not in ['smart_account_tx']}
         
         return {
             "success": True,
             "agent_id": agent_id,
             "agent_address": agent_address,
-            "has_execution_key": encrypted_pk is not None,
-            "message": "Agent deployed successfully",
+            "account_type": "erc8004",
+            "smart_account_deployed": smart_account_tx is not None,
+            "message": "Smart Account agent deployed successfully",
             "config": response_config,
             "total_agents": len(user_agents),
             "whitelist": whitelist_result
