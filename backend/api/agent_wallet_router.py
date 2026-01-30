@@ -1,6 +1,6 @@
 """
 Agent Wallet API Router
-Endpoints for agent wallet management, deposits, withdrawals, and security
+Endpoints for ERC-8004 Smart Account management, deposits, withdrawals, and security
 """
 
 from fastapi import APIRouter, HTTPException, Query, Body
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/agent-wallet", tags=["Agent Wallet"])
 
 class CreateWalletRequest(BaseModel):
     user_address: str
-    signature: str  # User's signature for encryption key
+    signature: str  # User's signature for verification
 
 
 class DepositRequest(BaseModel):
@@ -64,7 +64,7 @@ class Verify2FARequest(BaseModel):
 
 class ExportKeyRequest(BaseModel):
     user_address: str
-    signature: str  # User's signature for decryption
+    signature: str  # User's signature for verification
     totp_code: Optional[str] = None  # Required if 2FA enabled
 
 
@@ -87,34 +87,54 @@ class ApproveMultiSigRequest(BaseModel):
 @router.post("/create")
 async def create_agent_wallet(request: CreateWalletRequest):
     """
-    Create a new agent wallet for user
-    Returns agent address. Private key must be retrieved via /export-key with signature.
+    Create a new ERC-8004 Smart Account for user.
     
-    C-02 FIX: Private key is NOT returned in this response for security.
-    User must call /export-key with their signature to retrieve it.
+    ERC-8004 ARCHITECTURE:
+    - Smart Account is deployed on-chain via factory contract
+    - User's connected wallet is the owner - NO private key needed
+    - User can withdraw funds directly using their wallet signature
     """
     try:
-        agent_address, _ = agent_wallet_manager.create_wallet(
-            user_address=request.user_address,
-            encryption_key=request.signature
-        )
+        # For ERC-8004, we use SmartAccountService instead of EOA generation
+        from services.smart_account_service import get_smart_account_service
         
-        # Log wallet creation for audit
-        contract_audit.log_interaction(
-            user_id=request.user_address,
-            contract_address="agent_wallet_manager",
-            function_name="create_wallet",
-            parameters={"agent_address": agent_address}
-        )
+        smart_account_service = get_smart_account_service()
+        result = smart_account_service.create_account(request.user_address)
         
-        return {
-            "success": True,
-            "agent_address": agent_address,
-            "key_retrieval": "Use POST /api/agent-wallet/export-key with your signature to get private key",
-            "message": "⚠️ Wallet created! Use /export-key endpoint to securely retrieve your private key."
-        }
+        if result.get("success"):
+            agent_address = result.get("account_address")
+            tx_hash = result.get("tx_hash")
+            
+            # Log wallet creation for audit
+            contract_audit.log_interaction(
+                user_id=request.user_address,
+                contract_address="smart_account_factory",
+                function_name="create_account",
+                parameters={"agent_address": agent_address},
+                tx_hash=tx_hash
+            )
+            
+            return {
+                "success": True,
+                "agent_address": agent_address,
+                "account_type": "erc8004",
+                "tx_hash": tx_hash,
+                "message": "✅ ERC-8004 Smart Account created! Your wallet controls this account - no private key needed."
+            }
+        else:
+            # Account may already exist
+            existing = smart_account_service.get_account(request.user_address)
+            if existing:
+                return {
+                    "success": True,
+                    "agent_address": existing,
+                    "account_type": "erc8004",
+                    "message": "Smart Account already exists for this wallet"
+                }
+            raise Exception(result.get("message", "Smart Account creation failed"))
+            
     except Exception as e:
-        logger.error(f"Wallet creation error: {e}")
+        logger.error(f"Smart Account creation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -316,39 +336,22 @@ async def execute_strategy_deposit(request: StrategyDepositRequest):
 @router.post("/export-key")
 async def export_private_key(request: ExportKeyRequest):
     """
-    Export agent wallet private key
-    User has 24/7 access to their funds via this
+    ERC-8004 Smart Account - No Private Key Available
+    
+    Smart Accounts are controlled by the user's connected wallet.
+    There is no private key to export - the user's wallet IS the key.
+    
+    For fund access: Use /withdraw or /emergency-drain endpoints.
     """
-    # Verify 2FA if enabled
-    if two_factor_auth.is_2fa_enabled(request.user_address):
-        if not request.totp_code:
-            raise HTTPException(
-                status_code=400, 
-                detail="2FA code required for key export"
-            )
-        if not two_factor_auth.verify_totp(request.user_address, request.totp_code):
-            raise HTTPException(status_code=401, detail="Invalid 2FA code")
-    
-    private_key = agent_wallet_manager.export_private_key(
-        user_address=request.user_address,
-        encryption_key=request.signature
-    )
-    
-    if not private_key:
-        raise HTTPException(status_code=400, detail="Could not decrypt key. Wrong signature?")
-    
-    # Log key export
-    contract_audit.log_interaction(
-        user_id=request.user_address,
-        contract_address="key_management",
-        function_name="export_private_key",
-        parameters={}
-    )
-    
     return {
-        "success": True,
-        "private_key": private_key,
-        "warning": "🔐 Keep this key safe! Anyone with this key can access your agent wallet."
+        "success": False,
+        "error": "ERC-8004 Smart Accounts don't have exportable private keys",
+        "account_type": "erc8004",
+        "message": "🔐 Your Smart Account is controlled by your connected wallet. Use Withdraw to access funds.",
+        "alternatives": [
+            "POST /api/agent-wallet/withdraw - Withdraw specific amount",
+            "POST /api/agent-wallet/emergency-drain - Withdraw all funds"
+        ]
     }
 
 
