@@ -119,7 +119,7 @@ PROTOCOLS = {
         "risk_level": "medium",  # Medium - newer protocol
         "is_lending": True,
         "audited": True,
-        "implemented": False,  # Coming soon - no on-chain integration yet
+        "implemented": True,  # Full integration: supply, withdraw, partial, API discovery
         "supply_sig": None,      # Complex - needs market params
         "apy": 8.5,
         "tvl": 80000000,   # $80M TVL

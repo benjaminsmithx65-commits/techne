@@ -738,3 +738,67 @@ async def aave_get_reserves():
     except Exception as e:
         logger.error(f"Aave reserves error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# MORPHO BLUE INTEGRATION
+# ==========================================
+
+@router.get("/morpho/markets")
+async def get_morpho_markets():
+    """
+    Get all Morpho Blue USDC markets with live APY and TVL.
+    Uses Morpho API for market discovery.
+    
+    Returns list of available lending markets with:
+    - Market ID and collateral token
+    - Current supply APY  
+    - Total supplied (TVL)
+    - Utilization rate
+    """
+    try:
+        from protocols.morpho_blue import get_morpho_protocol
+        
+        morpho = get_morpho_protocol()
+        markets = morpho.get_usdc_markets()
+        
+        return {
+            "success": True,
+            "markets": markets,
+            "count": len(markets),
+            "source": "morpho-api",
+            "protocol": "morpho_blue"
+        }
+        
+    except Exception as e:
+        logger.error(f"Morpho markets error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/morpho/best-market")
+async def get_morpho_best_market():
+    """
+    Get the best (highest APY) Morpho Blue USDC market.
+    """
+    try:
+        from protocols.morpho_blue import get_morpho_protocol
+        
+        morpho = get_morpho_protocol()
+        market = morpho.get_best_usdc_market()
+        
+        if market:
+            return {
+                "success": True,
+                "market": market,
+                "protocol": "morpho_blue"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "No USDC markets found"
+            }
+        
+    except Exception as e:
+        logger.error(f"Morpho best market error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
