@@ -173,57 +173,35 @@ class LLMAnalyzer:
         apy_7d_ago = pool.get("apy_7d_ago", pool.get("previous_apy", 0))
         apy_change = ((apy - apy_7d_ago) / apy_7d_ago * 100) if apy_7d_ago > 0 else 0
         
-        return f"""Analyze this DeFi liquidity pool for investment risk.
+        return f"""You are a veteran DeFi trader with sharp intuition. Analyze this pool like you're protecting your own money.
 
-POOL IDENTIFICATION:
-- Symbol: {symbol}
-- Address: {pool_address}
-- Token Pair: {token0} / {token1}
-- Protocol: {protocol}
-- Pool Type: {pool_type}
+POOL: {symbol} on {protocol}
+Tokens: {token0}/{token1} | Type: {pool_type}
 
-FINANCIAL METRICS:
-- Current APY: {apy:.1f}%
-- APY 7d ago: {apy_7d_ago:.1f}% (change: {apy_change:+.1f}%)
-- APY 30d average: {apy_mean_30d:.1f}%
-- TVL: ${tvl:.2f}M
-- Volume 24h: ${volume_24h:.2f}M
-- Fee Tier: {fee_tier}%
+NUMBERS:
+• APY: {apy:.1f}% (7d ago: {apy_7d_ago:.1f}%, 30d avg: {apy_mean_30d:.1f}%)
+• TVL: ${tvl:.2f}M | Volume 24h: ${volume_24h:.2f}M
+• Age: {pool_age_days} days | Fee: {fee_tier}%
 
-RISK INDICATORS (from DefiLlama + on-chain):
-- Pool Age: {pool_age_days} days (older = safer)
-- DefiLlama IL Risk: {il_risk_llama}
-- DefiLlama Trend: {prediction}
-- 7d Volatility: {volatility:.1f}%
-- Estimated IL (4d): {il_estimate:.2f}%
+SIGNALS:
+• DefiLlama IL Risk: {il_risk_llama}
+• DefiLlama Trend: {prediction}
+• 7d Volatility: {volatility:.1f}%
 
-USER TRADING STYLE: {trading_style.upper()}
-Apply these {trading_style} evaluation thresholds:
-- Minimum TVL: {thresholds['min_tvl']} (AVOID if below)
-- Maximum APY: {thresholds['max_apy']}% (suspicious if higher, unless aggressive)
-- Minimum Pool Age: {thresholds['min_age']} days (CAUTION if younger)
-- Token types allowed: {thresholds['tokens']}
-- Audit status: {thresholds['audited']}
+USER STYLE: {trading_style.upper()}
+Thresholds: TVL>{thresholds['min_tvl']}, APY<{thresholds['max_apy']}%, Age>{thresholds['min_age']}d
 
-EVALUATION CRITERIA (apply {trading_style} thresholds):
-1. APY Sustainability - compare current to 30d average. >{thresholds['max_apy']}% = suspicious
-2. Liquidity Depth - TVL must exceed {thresholds['min_tvl']}
-3. Trading Activity - Volume/TVL ratio indicates real usage
-4. IL Risk - Use DefiLlama IL risk assessment + volatility
-5. Protocol Trust - Aerodrome/Aave = trusted; unknown = risky  
-6. Token Quality - {thresholds['tokens']}
-7. Pool Maturity - {pool_age_days} days. <{thresholds['min_age']} days = high risk
-8. Trend - DefiLlama prediction: {prediction}
+🔍 USE YOUR INTUITION - CHECK FOR:
+1. RUG SIGNALS: New pool + insane APY + low TVL = honeypot?
+2. APY SUSTAINABILITY: Is {apy:.0f}% realistic for {protocol}? Compare to 30d avg
+3. SMART MONEY: High volume/TVL = real usage or wash trading?
+4. TOKEN QUALITY: {token0}/{token1} - blue chips or shitcoins?
+5. PROTOCOL TRUST: {protocol} track record? Exploits? Audits?
+6. TIMING: APY spiking/dumping? Why now?
+7. GUT FEELING: Would YOU put money here with {trading_style} mindset?
 
-RESPOND IN THIS EXACT JSON FORMAT:
-{{
-    "risk_score": <1-10, where 1=safest, 10=highest risk>,
-    "risk_factors": ["factor1", "factor2", "factor3"],
-    "recommendation": "<INVEST|CAUTION|AVOID>",
-    "reasoning": "<2-3 sentence detailed explanation>"
-}}
-
-JSON ONLY, no other text:"""
+RESPOND JSON ONLY:
+{{"risk_score": 1-10, "risk_factors": ["max 3 key factors"], "recommendation": "INVEST|CAUTION|AVOID", "reasoning": "2-3 sentences - be specific, not generic"}}"""
     
     async def _call_groq(self, prompt: str, api_key: str = None) -> Dict:
         """Call Groq API (Llama)"""
@@ -245,7 +223,7 @@ JSON ONLY, no other text:"""
                             {"role": "user", "content": prompt}
                         ],
                         "temperature": 0.3,
-                        "max_tokens": 300
+                        "max_tokens": 500
                     }
                 )
                 
