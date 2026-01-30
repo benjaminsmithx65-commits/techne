@@ -105,7 +105,7 @@ PROTOCOLS = {
         "risk_level": "low",    # Low risk - major audited protocol
         "is_lending": True,
         "audited": True,
-        "implemented": False,  # Coming soon - no on-chain integration yet
+        "implemented": True,  # Full integration: supply, withdraw, partial withdraw
         "supply_sig": "supply(address,uint256,address,uint16)",
         "apy": 6.2,
         "tvl": 150000000,  # $150M TVL

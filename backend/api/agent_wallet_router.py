@@ -542,3 +542,168 @@ async def get_audit_log(
         "logs": logs,
         "suspicious_count": len(suspicious)
     }
+
+
+# ===========================================
+# AAVE V3 PROTOCOL INTEGRATION
+# ===========================================
+
+class AaveSupplyRequest(BaseModel):
+    user_address: str
+    agent_address: str
+    amount_usdc: float
+
+class AaveWithdrawRequest(BaseModel):
+    user_address: str
+    agent_address: str
+    amount_usdc: Optional[float] = None  # None = full withdraw
+
+class AaveWithdrawPercentRequest(BaseModel):
+    user_address: str
+    agent_address: str
+    percent: int  # 25, 50, or 100
+
+
+@router.post("/aave/supply")
+async def aave_supply(request: AaveSupplyRequest):
+    """
+    Supply (deposit) USDC to Aave V3.
+    
+    The agent will:
+    1. Approve USDC for Aave Pool (if needed)
+    2. Supply USDC and receive aUSDC
+    """
+    try:
+        from protocols.aave_v3 import get_aave_protocol
+        
+        aave = get_aave_protocol()
+        
+        # Get agent's private key (from secure storage)
+        # In production, this would use ERC-8004 Smart Account execution
+        agent_key = os.getenv("AGENT_PRIVATE_KEY")
+        if not agent_key:
+            raise HTTPException(status_code=500, detail="Agent key not configured")
+        
+        result = await aave.supply(
+            user_address=request.agent_address,
+            amount_usdc=request.amount_usdc,
+            private_key=agent_key
+        )
+        
+        if result["success"]:
+            # Log the interaction
+            contract_audit.log_interaction(
+                user_id=request.user_address,
+                contract_address=request.agent_address,
+                function_name="aave_v3_supply",
+                parameters={"amount_usdc": request.amount_usdc},
+                tx_hash=result.get("tx_hash")
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Aave supply error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/aave/withdraw")
+async def aave_withdraw(request: AaveWithdrawRequest):
+    """
+    Withdraw USDC from Aave V3.
+    
+    Pass amount_usdc=null for full withdrawal.
+    """
+    try:
+        from protocols.aave_v3 import get_aave_protocol
+        
+        aave = get_aave_protocol()
+        
+        agent_key = os.getenv("AGENT_PRIVATE_KEY")
+        if not agent_key:
+            raise HTTPException(status_code=500, detail="Agent key not configured")
+        
+        result = await aave.withdraw(
+            user_address=request.agent_address,
+            amount_usdc=request.amount_usdc,
+            private_key=agent_key
+        )
+        
+        if result["success"]:
+            contract_audit.log_interaction(
+                user_id=request.user_address,
+                contract_address=request.agent_address,
+                function_name="aave_v3_withdraw",
+                parameters={"amount_usdc": request.amount_usdc or "full"},
+                tx_hash=result.get("tx_hash")
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Aave withdraw error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/aave/withdraw-percent")
+async def aave_withdraw_percent(request: AaveWithdrawPercentRequest):
+    """
+    Partial withdraw from Aave V3 (for Portfolio Close buttons).
+    
+    Supports:
+    - 25% - Close 25% of position
+    - 50% - Close 50% of position  
+    - 100% - Close entire position
+    """
+    try:
+        if request.percent not in [25, 50, 100]:
+            raise HTTPException(status_code=400, detail="Percent must be 25, 50, or 100")
+        
+        from protocols.aave_v3 import get_aave_protocol
+        
+        aave = get_aave_protocol()
+        
+        agent_key = os.getenv("AGENT_PRIVATE_KEY")
+        if not agent_key:
+            raise HTTPException(status_code=500, detail="Agent key not configured")
+        
+        result = await aave.withdraw_percent(
+            user_address=request.agent_address,
+            percent=request.percent,
+            private_key=agent_key
+        )
+        
+        if result["success"]:
+            contract_audit.log_interaction(
+                user_id=request.user_address,
+                contract_address=request.agent_address,
+                function_name=f"aave_v3_close_{request.percent}pct",
+                parameters={"percent": request.percent},
+                tx_hash=result.get("tx_hash")
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Aave withdraw-percent error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/aave/position")
+async def aave_get_position(agent_address: str = Query(...)):
+    """Get Aave V3 position for an agent."""
+    try:
+        from protocols.aave_v3 import get_aave_protocol
+        
+        aave = get_aave_protocol()
+        position = aave.get_position(agent_address)
+        
+        return {
+            "success": True,
+            "position": position,
+            "protocol": "aave_v3"
+        }
+        
+    except Exception as e:
+        logger.error(f"Aave position error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
