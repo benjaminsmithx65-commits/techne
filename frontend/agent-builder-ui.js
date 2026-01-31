@@ -229,13 +229,11 @@ class AgentBuilderUI {
                 const amount = document.getElementById('instantAmount')?.value || 1000;
                 console.log('[AgentBuilder] Deploying AI-Instant with amount:', amount);
 
-                // Trigger deploy with AI config
-                if (window.agentWallet) {
-                    window.agentWallet.deployFromConfig({
-                        ...this.config,
-                        amount: parseFloat(amount)
-                    });
-                }
+                // Store amount in config for deploy
+                this.config.amount = parseFloat(amount);
+
+                // Use the same ERC-8004 cold deploy flow as Advanced mode
+                this.deployAgent();
             });
         }
     }
