@@ -1,3 +1,50 @@
 {
-  "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058": []
+  "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058": [
+    {
+      "id": "agent_1_1769892693",
+      "name": "Agent #1",
+      "user_address": "0xba9d6947c0ad6ea2aaa99507355cf83b4d098058",
+      "agent_address": "0x5E047DeB5eb22F4E4A7f2207087369468575e3EF",
+      "account_type": "erc8004",
+      "deploy_tx_hash": "0xee10f7ecf9f58005b5e9a0f1f6441490d4234493713e09efe1dd7b54dc4374bc",
+      "signature_verified": true,
+      "chain": "base",
+      "preset": "custom",
+      "pool_type": "dual",
+      "risk_level": "medium",
+      "min_apy": 56.0,
+      "max_apy": 10000.0,
+      "max_drawdown": 20.0,
+      "protocols": [
+        "morpho",
+        "aave",
+        "aerodrome"
+      ],
+      "preferred_assets": [
+        "USDC",
+        "WETH",
+        "USDT"
+      ],
+      "max_allocation": 20,
+      "vault_count": 5,
+      "auto_rebalance": true,
+      "only_audited": true,
+      "is_pro_mode": false,
+      "pro_config": null,
+      "rebalance_threshold": 5,
+      "max_gas_price": 50,
+      "slippage": 1.0,
+      "compound_frequency": 7,
+      "avoid_il": false,
+      "emergency_exit": true,
+      "min_pool_tvl": 1,
+      "duration": 0.25,
+      "apy_check_hours": 12,
+      "deployed_at": "2026-01-31T21:51:46.531496",
+      "is_active": true,
+      "positions": [],
+      "total_deposited": 0,
+      "total_value": 0
+    }
+  ]
 }
