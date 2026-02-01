@@ -25,8 +25,8 @@ RPC_URL = os.getenv("ALCHEMY_RPC_URL", "https://base-mainnet.g.alchemy.com/v2/Aq
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 BUNDLER_URL = os.getenv("PIMLICO_BUNDLER_URL", "https://api.pimlico.io/v2/8453/rpc?apikey=pim_demo_key")
 
-# Contract addresses - Factory v3 (1 Agent = 1 Wallet + ReentrancyGuard)
-FACTORY_ADDRESS = os.getenv("TECHNE_FACTORY_ADDRESS", "0x557049646BDe5B7C7eE2C08256Aea59A5A48B20f")
+# Contract addresses - Factory V2 (executeWithSessionKey - no bundler!) 2026-02-01
+FACTORY_ADDRESS = os.getenv("TECHNE_FACTORY_ADDRESS", "0x9192DC52445E3d6e85EbB53723cFC2Eb9dD6e02A")
 ENTRYPOINT_V07 = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
 
 # Factory ABI (with salt support for 1 agent = 1 smart account)
@@ -145,6 +145,40 @@ ACCOUNT_ABI = [
         "inputs": [],
         "name": "owner",
         "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    # NEW: Direct session key execution (no bundler needed!)
+    {
+        "inputs": [
+            {"name": "target", "type": "address"},
+            {"name": "value", "type": "uint256"},
+            {"name": "data", "type": "bytes"},
+            {"name": "estimatedValueUSD", "type": "uint256"},
+            {"name": "signature", "type": "bytes"}
+        ],
+        "name": "executeWithSessionKey",
+        "outputs": [{"name": "", "type": "bytes"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    # Helper to get hash for session key signing
+    {
+        "inputs": [
+            {"name": "target", "type": "address"},
+            {"name": "value", "type": "uint256"},
+            {"name": "data", "type": "bytes"}
+        ],
+        "name": "getSessionKeyCallHash",
+        "outputs": [{"name": "", "type": "bytes32"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    # Nonce for replay protection
+    {
+        "inputs": [],
+        "name": "nonce",
+        "outputs": [{"name": "", "type": "uint256"}],
         "stateMutability": "view",
         "type": "function"
     }
@@ -432,6 +466,105 @@ class SmartAccountService:
             
         except Exception as e:
             logger.error(f"[SmartAccount] Execution failed: {e}")
+            return {
+                "success": False,
+                "tx_hash": None,
+                "message": str(e)
+            }
+
+    def execute_with_session_key(
+        self,
+        smart_account: str,
+        target: str,
+        value: int,
+        calldata: bytes,
+        session_key_private: str,
+        estimated_value_usd: int = 0
+    ) -> dict:
+        """
+        Execute a call via session key signature - NO BUNDLER NEEDED!
+        
+        This is the new flow that allows autonomous operations without
+        depending on ERC-4337 bundler. Backend signs with session key,
+        then submits directly.
+        
+        Args:
+            smart_account: The smart account address
+            target: Contract to call
+            value: ETH value to send
+            calldata: Encoded call data
+            session_key_private: Session key private key (hex)
+            estimated_value_usd: Estimated USD value for limit tracking
+        
+        Returns:
+            {success, tx_hash, message}
+        """
+        from eth_account.messages import encode_defunct
+        
+        try:
+            account_contract = self.w3.eth.contract(
+                address=Web3.to_checksum_address(smart_account),
+                abi=ACCOUNT_ABI
+            )
+            
+            # Get the hash that needs to be signed
+            call_hash = account_contract.functions.getSessionKeyCallHash(
+                Web3.to_checksum_address(target),
+                value,
+                calldata
+            ).call()
+            
+            logger.info(f"[SmartAccount] Session key call hash: {call_hash.hex()}")
+            
+            # Sign with session key (EIP-191 personal sign)
+            sk_account = Account.from_key(session_key_private)
+            message = encode_defunct(call_hash)
+            signature = sk_account.sign_message(message)
+            
+            logger.info(f"[SmartAccount] Session key signer: {sk_account.address}")
+            
+            # Build the transaction - anyone can submit but signature proves session key auth
+            tx = account_contract.functions.executeWithSessionKey(
+                Web3.to_checksum_address(target),
+                value,
+                calldata,
+                estimated_value_usd,
+                signature.signature
+            ).build_transaction({
+                "from": self.signer.address,  # Backend pays gas
+                "nonce": self.w3.eth.get_transaction_count(self.signer.address),
+                "gas": 500000,  # Will estimate
+                "maxFeePerGas": self.w3.eth.gas_price * 2,
+                "maxPriorityFeePerGas": self.w3.to_wei(0.01, 'gwei'),
+                "chainId": 8453
+            })
+            
+            # Estimate gas
+            try:
+                estimate = self.w3.eth.estimate_gas(tx)
+                tx['gas'] = int(estimate * 1.3)  # 30% buffer
+            except Exception as e:
+                logger.warning(f"[SmartAccount] Gas estimate failed: {e}")
+            
+            # Sign and send
+            signed = self.signer.sign_transaction(tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            
+            logger.info(f"[SmartAccount] Session key TX sent: {tx_hash.hex()}")
+            
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            
+            return {
+                "success": receipt['status'] == 1,
+                "tx_hash": tx_hash.hex(),
+                "message": "Session key execution complete" if receipt['status'] == 1 else "Transaction reverted"
+            }
+            
+        except Exception as e:
+            logger.error(f"[SmartAccount] Session key execution failed: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 "success": False,
                 "tx_hash": None,

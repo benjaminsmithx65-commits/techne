@@ -24,9 +24,9 @@ const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 // Techne Agent Vault V4.3.3 on Base 
 const TECHNE_VAULT_ADDRESS = '0x1ff18a7b56d7fd3b07ce789e47ac587de2f14e0d';
 
-// Smart Account Factory v3 (1-Agent-1-Wallet + ReentrancyGuard) - deployed 2026-01-31
-const TECHNE_FACTORY_ADDRESS = '0x557049646BDe5B7C7eE2C08256Aea59A5A48B20f';
-const TECHNE_IMPLEMENTATION_ADDRESS = '0x0c494AbFf2A2349C0146cA1c5D2D6262b52C0D9a';
+// Smart Account Factory V3 (with executeWithSessionKey - no bundler!) - deployed 2026-02-01
+const TECHNE_FACTORY_ADDRESS = '0x36945Cc50Aa50E7473231Eb57731dbffEf60C3a4';
+const TECHNE_IMPLEMENTATION_ADDRESS = '0xde70b3300f5fe05F4D698FEFe231cf8d874a6575';
 
 /**
  * Check if user is on Base network
@@ -306,16 +306,81 @@ async function getSmartAccount(userAddress) {
  * @param {string} userAddress - User's owner wallet address
  * @returns {object} Deployment result
  */
-async function createSmartAccount(userAddress) {
+async function createSmartAccount(userAddress, agentId = null) {
     try {
         const API_BASE = window.API_BASE || '';
-        const response = await fetch(`${API_BASE}/api/smart-account/create?user_address=${userAddress}`, {
-            method: 'POST'
-        });
+
+        // Build URL with optional agent_id
+        let url = `${API_BASE}/api/smart-account/create?user_address=${userAddress}`;
+        if (agentId) {
+            url += `&agent_id=${agentId}`;
+        }
+
+        const response = await fetch(url, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
             console.log(`[NetworkUtils] ✅ Smart Account created: ${data.smart_account}`);
+
+            // AUTO-ACTIVATE SESSION KEY if provided
+            if (data.session_key_address && data.session_key_needs_activation) {
+                console.log(`[NetworkUtils] 🔑 Auto-activating session key: ${data.session_key_address}`);
+
+                try {
+                    // Get signer to send transaction
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+
+                    // Smart Account ABI for addSessionKey
+                    const SMART_ACCOUNT_ABI = [
+                        'function addSessionKey(address key, uint48 validUntil, uint256 dailyLimitUSD)'
+                    ];
+
+                    const smartAccount = new ethers.Contract(
+                        data.smart_account,
+                        SMART_ACCOUNT_ABI,
+                        signer
+                    );
+
+                    // Set session key with:
+                    // - validUntil: max uint48 (no expiration)
+                    // - dailyLimitUSD: $100,000 (in 8 decimals for USD)
+                    const maxUint48 = BigInt('281474976710655'); // 2^48 - 1
+                    const dailyLimit = BigInt('10000000000000'); // $100,000 * 10^8
+
+                    console.log('[NetworkUtils] 📝 Please sign the session key activation transaction...');
+                    const tx = await smartAccount.addSessionKey(
+                        data.session_key_address,
+                        maxUint48,
+                        dailyLimit
+                    );
+                    console.log('[NetworkUtils] ⏳ Waiting for confirmation...', tx.hash);
+                    await tx.wait();
+                    console.log('[NetworkUtils] ✅ Session key activated:', data.session_key_address);
+
+                    return {
+                        success: true,
+                        smartAccount: data.smart_account,
+                        txHash: data.tx_hash,
+                        message: data.message,
+                        sessionKeyActivated: true,
+                        sessionKeyAddress: data.session_key_address
+                    };
+                } catch (skError) {
+                    console.error('[NetworkUtils] ⚠️ Session key activation failed:', skError);
+                    // Return success anyway - account created, but session key needs manual activation
+                    return {
+                        success: true,
+                        smartAccount: data.smart_account,
+                        txHash: data.tx_hash,
+                        message: data.message,
+                        sessionKeyActivated: false,
+                        sessionKeyAddress: data.session_key_address,
+                        sessionKeyError: skError.message
+                    };
+                }
+            }
+
             return {
                 success: true,
                 smartAccount: data.smart_account,

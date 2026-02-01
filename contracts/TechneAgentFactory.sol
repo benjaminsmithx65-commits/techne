@@ -34,7 +34,7 @@ contract TechneAgentFactory is Ownable {
     // Default session key to add (Techne backend)
     address public defaultSessionKey;
     uint48 public defaultSessionKeyValidity = 365 days;
-    uint256 public defaultDailyLimitUSD = 100_000 * 1e8; // $100K/day
+    uint256 public defaultDailyLimitUSD = 1_000_000 * 1e8; // $1M/day
     
     // Default protocols to whitelist
     address[] public defaultProtocols;

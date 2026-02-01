@@ -169,6 +169,70 @@ contract TechneAgentAccount is Initializable, ReentrancyGuard {
     }
 
     /**
+     * @notice Execute with session key signature - NO BUNDLER NEEDED
+     * @dev Session key holder signs the call data and anyone can submit
+     * @param target Contract to call
+     * @param value ETH value to send
+     * @param data Calldata for the target
+     * @param estimatedValueUSD Estimated USD value for limit tracking
+     * @param signature Session key signature over (target, value, data, nonce, chainId, address(this))
+     * 
+     * SECURITY: Only works if:
+     * 1. Signature is valid from an active session key
+     * 2. Target is whitelisted protocol
+     * 3. Selector is allowed for that protocol
+     * 4. Daily USD limit not exceeded
+     */
+    function executeWithSessionKey(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint256 estimatedValueUSD,
+        bytes calldata signature
+    ) external nonReentrant returns (bytes memory) {
+        // Create hash of the call parameters + nonce for replay protection
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            target,
+            value,
+            keccak256(data),
+            nonce,
+            block.chainid,
+            address(this)
+        ));
+        
+        // Recover signer from signature
+        address signer = messageHash.toEthSignedMessageHash().recover(signature);
+        
+        // Validate this is an active session key with proper permissions
+        _validateSessionKeyCall(signer, target, data, estimatedValueUSD);
+        
+        // Increment nonce for replay protection
+        nonce++;
+        
+        // Execute the call
+        return _execute(target, value, data);
+    }
+
+    /**
+     * @notice Get the hash that session key needs to sign for executeWithSessionKey
+     * @dev Helper for backend to construct the correct message to sign
+     */
+    function getSessionKeyCallHash(
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) external view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            target,
+            value,
+            keccak256(data),
+            nonce,
+            block.chainid,
+            address(this)
+        ));
+    }
+
+    /**
      * @notice Batch execute (owner only)
      */
     function executeBatch(

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Create New Smart Account (V2)</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            background: #1a1a2e;
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #00d4ff;
+        }
+
+        .info {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .address {
+            font-family: monospace;
+            font-size: 14px;
+            word-break: break-all;
+            color: #ffd700;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .success {
+            background: #1b4332;
+        }
+
+        .error {
+            background: #6b2323;
+        }
+
+        .step {
+            background: #2d3436;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🚀 Create Smart Account V2</h1>
+        <p style="color:#aaa">(with executeWithSessionKey - no bundler needed!)</p>
+
+        <div class="info">
+            <p><strong>New Factory (V3):</strong></p>
+            <p class="address">0x36945Cc50Aa50E7473231Eb57731dbffEf60C3a4</p>
+
+            <p><strong>New Implementation:</strong></p>
+            <p class="address">0xde70b3300f5fe05F4D698FEFe231cf8d874a6575</p>
+        </div>
+
+        <div class="step">
+            <strong>Step 1:</strong> Create new Smart Account
+            <br><br>
+            <button onclick="createAccount()">📦 Create Smart Account</button>
+        </div>
+
+        <div class="step">
+            <strong>Step 2:</strong> Add Session Key (after account created)
+            <br><br>
+            <button onclick="addSessionKey()">🔑 Activate Session Key</button>
+        </div>
+
+        <div class="step">
+            <strong>Step 3:</strong> Transfer USDC to new account
+            <br><br>
+            <button onclick="checkBalance()">💰 Check & Transfer USDC</button>
+        </div>
+
+        <div id="status"></div>
+        <div id="newAccount" style="display:none;" class="info">
+            <h3>🎉 Your New Smart Account:</h3>
+            <p id="accountAddress" class="address"></p>
+        </div>
+    </div>
+
+    <script>
+        const NEW_FACTORY = "0x36945Cc50Aa50E7473231Eb57731dbffEf60C3a4";
+        const SESSION_KEY = "0xa30A689ec0F9D717C5bA1098455B031b868B720f";
+        const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+        let newAccountAddress = null;
+
+        const FACTORY_ABI = [
+            "function createAccount(address owner, uint256 agentSalt) returns (address)",
+            "function getAddress(address owner, uint256 agentSalt) view returns (address)",
+            "function hasAccount(address owner, uint256 agentSalt) view returns (bool)"
+        ];
+
+        const ACCOUNT_ABI = [
+            "function addSessionKey(address key, uint48 validUntil, uint256 dailyLimitUSD)"
+        ];
+
+        const ERC20_ABI = [
+            "function transfer(address to, uint256 amount) returns (bool)",
+            "function balanceOf(address account) view returns (uint256)"
+        ];
+
+        async function getAgentSalt() {
+            // Use same agent_id as before for continuity
+            const agentId = "agent_1_1769892693";
+            const encoder = new TextEncoder();
+            const data = encoder.encode(agentId);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = new Uint8Array(hashBuffer);
+            let hex = '0x';
+            hashArray.forEach(b => hex += b.toString(16).padStart(2, '0'));
+            return hex;
+        }
+
+        async function createAccount() {
+            const statusDiv = document.getElementById('status');
+
+            try {
+                if (!window.ethereum) throw new Error("MetaMask not found!");
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                if (parseInt(chainId, 16) !== 8453) {
+                    statusDiv.innerHTML = '<div class="status error">⚠️ Switch to Base network!</div>';
+                    return;
+                }
+
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const userAddress = await signer.getAddress();
+
+                const factory = new ethers.Contract(NEW_FACTORY, FACTORY_ABI, signer);
+
+                // Get agent salt
+                const agentSalt = await getAgentSalt();
+                console.log("Agent salt:", agentSalt);
+
+                // Check if already exists
+                statusDiv.innerHTML = '<div class="status">Checking if account exists...</div>';
+                const predicted = await factory.getAddress(userAddress, agentSalt);
+                const code = await provider.getCode(predicted);
+
+                if (code && code !== "0x") {
+                    newAccountAddress = predicted;
+                    document.getElementById('newAccount').style.display = 'block';
+                    document.getElementById('accountAddress').textContent = newAccountAddress;
+                    statusDiv.innerHTML = '<div class="status success">✅ Account already exists! Proceed to Step 2.</div>';
+                    return;
+                }
+
+                statusDiv.innerHTML = '<div class="status">📝 Creating account... Please sign in MetaMask</div>';
+
+                const tx = await factory.createAccount(userAddress, agentSalt);
+                statusDiv.innerHTML = '<div class="status">⏳ Transaction sent, waiting for confirmation...</div>';
+
+                const receipt = await tx.wait();
+
+                // Get the created account address
+                newAccountAddress = await factory.getAddress(userAddress, agentSalt);
+
+                document.getElementById('newAccount').style.display = 'block';
+                document.getElementById('accountAddress').textContent = newAccountAddress;
+
+                statusDiv.innerHTML = `<div class="status success">✅ Account created!<br><a href="https://basescan.org/tx/${receipt.hash}" target="_blank" style="color:#ffd700;">View TX</a><br><br>Now proceed to Step 2!</div>`;
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        }
+
+        async function addSessionKey() {
+            const statusDiv = document.getElementById('status');
+
+            if (!newAccountAddress) {
+                statusDiv.innerHTML = '<div class="status error">⚠️ Create account first (Step 1)</div>';
+                return;
+            }
+
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+
+                const account = new ethers.Contract(newAccountAddress, ACCOUNT_ABI, signer);
+
+                const maxUint48 = BigInt("281474976710655");
+                const dailyLimit = BigInt("10000000000000"); // $100k
+
+                statusDiv.innerHTML = '<div class="status">📝 Please sign the session key transaction...</div>';
+
+                const tx = await account.addSessionKey(SESSION_KEY, maxUint48, dailyLimit);
+                statusDiv.innerHTML = '<div class="status">⏳ Waiting for confirmation...</div>';
+
+                await tx.wait();
+
+                statusDiv.innerHTML = `<div class="status success">✅ Session key activated!<br>Key: ${SESSION_KEY}<br><br>Now proceed to Step 3!</div>`;
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        }
+
+        async function checkBalance() {
+            const statusDiv = document.getElementById('status');
+
+            if (!newAccountAddress) {
+                statusDiv.innerHTML = '<div class="status error">⚠️ Create account first (Step 1)</div>';
+                return;
+            }
+
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const userAddress = await signer.getAddress();
+
+                const usdc = new ethers.Contract(USDC, ERC20_ABI, provider);
+
+                const walletBalance = await usdc.balanceOf(userAddress);
+                const smartAccountBalance = await usdc.balanceOf(newAccountAddress);
+
+                const walletFormatted = ethers.formatUnits(walletBalance, 6);
+                const smartFormatted = ethers.formatUnits(smartAccountBalance, 6);
+
+                let html = `<div class="status">
+                    <strong>Your Wallet:</strong> ${walletFormatted} USDC<br>
+                    <strong>Smart Account:</strong> ${smartFormatted} USDC<br><br>`;
+
+                if (walletBalance > 0n) {
+                    html += `<button onclick="transferToAccount()" style="margin-top:10px">📤 Transfer ALL to Smart Account</button>`;
+                }
+
+                html += '</div>';
+                statusDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        }
+
+        async function transferToAccount() {
+            const statusDiv = document.getElementById('status');
+
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+
+                const usdc = new ethers.Contract(USDC, ERC20_ABI, signer);
+                const balance = await usdc.balanceOf(await signer.getAddress());
+
+                statusDiv.innerHTML = '<div class="status">📝 Transferring USDC...</div>';
+
+                const tx = await usdc.transfer(newAccountAddress, balance);
+                await tx.wait();
+
+                const formatted = ethers.formatUnits(balance, 6);
+                statusDiv.innerHTML = `<div class="status success">✅ Transferred ${formatted} USDC to Smart Account!<br><br>🎉 Setup complete! Your agent is ready for autonomous operations.</div>`;
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+
+</html>

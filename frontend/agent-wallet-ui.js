@@ -8,8 +8,8 @@ const AgentWalletUI = {
     contractAddress: '0xC83E01e39A56Ec8C56Dd45236E58eE7a139cCDD4',
     contractVersion: 'V4.3.3',
 
-    // NEW: Smart Account Factory v3 (1-Agent-1-Wallet + ReentrancyGuard)
-    factoryAddress: '0x557049646BDe5B7C7eE2C08256Aea59A5A48B20f',
+    // Smart Account Factory V3 (with executeWithSessionKey - no bundler!) - 2026-02-01
+    factoryAddress: '0x36945Cc50Aa50E7473231Eb57731dbffEf60C3a4',
 
     // Factory ABI v3 - 1 Agent = 1 Smart Account with salt
     FACTORY_ABI: [
@@ -1093,6 +1093,19 @@ const AgentWalletUI = {
                 setTimeout(() => window.portfolioDashboard.loadPortfolioData(), 2000);
             }
 
+            // Refresh backend cache after ~5 seconds (TX confirmation time on Base)
+            setTimeout(async () => {
+                try {
+                    if (this.selectedAgentAddress) {
+                        const API_BASE = window.API_BASE || 'http://localhost:8000';
+                        await fetch(`${API_BASE}/api/agent-wallet/refresh-balances?agent_address=${this.selectedAgentAddress}`, { method: 'POST' });
+                        console.log('[AgentWallet] ✅ Backend cache refreshed after withdraw');
+                    }
+                } catch (e) {
+                    console.warn('[AgentWallet] Cache refresh failed:', e);
+                }
+            }, 5000);
+
         } catch (error) {
             console.error('[AgentWallet] Withdraw error:', error);
             alert(`Withdraw failed: ${error.message}`);
@@ -1415,6 +1428,20 @@ const AgentWalletUI = {
 
             // Start polling for agent allocation (every 10s for 2 minutes)
             this.startAllocationPolling();
+
+            // Refresh backend cache after ~5 seconds (TX confirmation time on Base)
+            setTimeout(async () => {
+                try {
+                    const agentAddr = this.userSmartAccount || await this.checkSmartAccount();
+                    if (agentAddr) {
+                        const API_BASE = window.API_BASE || 'http://localhost:8000';
+                        await fetch(`${API_BASE}/api/agent-wallet/refresh-balances?agent_address=${agentAddr}`, { method: 'POST' });
+                        console.log('[AgentWallet] ✅ Backend cache refreshed');
+                    }
+                } catch (e) {
+                    console.warn('[AgentWallet] Cache refresh failed:', e);
+                }
+            }, 5000);
 
             setTimeout(() => {
                 document.getElementById('vaultModal')?.remove();

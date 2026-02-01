@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Withdraw from Smart Account</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            background: #1a1a2e;
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #ff6b6b;
+        }
+
+        .info {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .address {
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+            color: #ffd700;
+        }
+
+        button {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .success {
+            background: #1b4332;
+        }
+
+        .error {
+            background: #6b2323;
+        }
+
+        input {
+            padding: 10px;
+            width: 200px;
+            margin: 10px;
+            border-radius: 5px;
+            border: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>💸 Withdraw from Smart Account</h1>
+
+        <div class="info">
+            <p><strong>Smart Account:</strong></p>
+            <p class="address">0x5E047DeB5eb22F4E4A7f2207087369468575e3EF</p>
+
+            <p><strong>Your Wallet (destination):</strong></p>
+            <p class="address">0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058</p>
+
+            <p><strong>USDC on Base:</strong></p>
+            <p class="address">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</p>
+        </div>
+
+        <div>
+            <input type="number" id="amount" placeholder="Amount USDC" step="0.01">
+            <button onclick="withdrawUSDC()">💰 Withdraw USDC</button>
+        </div>
+
+        <button onclick="withdrawAll()">🔥 Withdraw ALL USDC</button>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const SMART_ACCOUNT = "0x5E047DeB5eb22F4E4A7f2207087369468575e3EF";
+        const USER_WALLET = "0xbA9D6947C0aD6eA2AaA99507355cf83B4D098058";
+        const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+        const SMART_ACCOUNT_ABI = [
+            "function execute(address target, uint256 value, bytes calldata data) external returns (bytes memory)"
+        ];
+
+        const ERC20_ABI = [
+            "function transfer(address to, uint256 amount) external returns (bool)",
+            "function balanceOf(address account) external view returns (uint256)"
+        ];
+
+        async function getBalance() {
+            const provider = new ethers.JsonRpcProvider("https://mainnet.base.org");
+            const usdc = new ethers.Contract(USDC, ERC20_ABI, provider);
+            const balance = await usdc.balanceOf(SMART_ACCOUNT);
+            return balance;
+        }
+
+        async function withdrawUSDC() {
+            const amount = document.getElementById('amount').value;
+            if (!amount || amount <= 0) {
+                alert("Enter valid amount");
+                return;
+            }
+            const amountWei = ethers.parseUnits(amount, 6); // USDC has 6 decimals
+            await doWithdraw(amountWei);
+        }
+
+        async function withdrawAll() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<div class="status">Checking balance...</div>';
+
+            const balance = await getBalance();
+            if (balance === 0n) {
+                statusDiv.innerHTML = '<div class="status error">No USDC in Smart Account!</div>';
+                return;
+            }
+
+            const formatted = ethers.formatUnits(balance, 6);
+            statusDiv.innerHTML = `<div class="status">Found ${formatted} USDC. Withdrawing...</div>`;
+
+            await doWithdraw(balance);
+        }
+
+        async function doWithdraw(amountWei) {
+            const statusDiv = document.getElementById('status');
+
+            try {
+                if (!window.ethereum) {
+                    throw new Error("MetaMask not found!");
+                }
+
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+                // Check network
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                if (parseInt(chainId, 16) !== 8453) {
+                    statusDiv.innerHTML = '<div class="status error">⚠️ Switch to Base network!</div>';
+                    return;
+                }
+
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+
+                // Check signer is owner
+                const signerAddress = await signer.getAddress();
+                if (signerAddress.toLowerCase() !== USER_WALLET.toLowerCase()) {
+                    statusDiv.innerHTML = `<div class="status error">⚠️ Wrong wallet! Use ${USER_WALLET.slice(0, 10)}...</div>`;
+                    return;
+                }
+
+                const smartAccount = new ethers.Contract(SMART_ACCOUNT, SMART_ACCOUNT_ABI, signer);
+
+                // Encode USDC transfer
+                const erc20Interface = new ethers.Interface(ERC20_ABI);
+                const transferData = erc20Interface.encodeFunctionData("transfer", [USER_WALLET, amountWei]);
+
+                statusDiv.innerHTML = '<div class="status">📝 Please confirm in MetaMask...</div>';
+
+                // Call execute on smart account
+                const tx = await smartAccount.execute(USDC, 0, transferData);
+
+                statusDiv.innerHTML = `<div class="status">⏳ TX sent: ${tx.hash.slice(0, 20)}...</div>`;
+
+                await tx.wait();
+
+                const formatted = ethers.formatUnits(amountWei, 6);
+                statusDiv.innerHTML = `<div class="status success">✅ Withdrew ${formatted} USDC!<br><br><a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color:#ffd700;">View on Basescan</a></div>`;
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+
+</html>

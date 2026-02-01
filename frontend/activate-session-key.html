@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activate Session Key - Techne Finance</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 100%);
+            min-height: 100vh;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(30, 30, 60, 0.8);
+            border: 1px solid rgba(100, 100, 200, 0.3);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            color: #888;
+        }
+
+        .value {
+            color: #00d4ff;
+            font-family: monospace;
+            word-break: break-all;
+            text-align: right;
+            max-width: 60%;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: rgba(100, 100, 200, 0.2);
+            color: #888;
+            border: 1px solid rgba(100, 100, 200, 0.3);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        .status.success {
+            display: block;
+            background: rgba(0, 255, 100, 0.1);
+            border: 1px solid rgba(0, 255, 100, 0.3);
+            color: #00ff64;
+        }
+
+        .status.error {
+            display: block;
+            background: rgba(255, 0, 100, 0.1);
+            border: 1px solid rgba(255, 0, 100, 0.3);
+            color: #ff6464;
+        }
+
+        .status.pending {
+            display: block;
+            background: rgba(255, 200, 0, 0.1);
+            border: 1px solid rgba(255, 200, 0, 0.3);
+            color: #ffc800;
+        }
+
+        .warning {
+            background: rgba(255, 150, 0, 0.1);
+            border: 1px solid rgba(255, 150, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #ffaa00;
+        }
+
+        .check-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔑 Activate Session Key</h1>
+        <p class="subtitle">Enable autonomous trading for your Smart Account</p>
+
+        <div class="warning">
+            ⚠️ This will allow the Techne backend to execute trades on your behalf, within the daily limit.
+        </div>
+
+        <div class="info-box">
+            <div class="info-row">
+                <span class="label">Smart Account</span>
+                <span class="value" id="smartAccount">Loading...</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Session Key</span>
+                <span class="value" id="sessionKey">0xa30A689ec0F9D717C5bA1098455B031b868B720f</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Daily Limit</span>
+                <span class="value">$1,000,000 USD</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Validity</span>
+                <span class="value">Never expires</span>
+            </div>
+        </div>
+
+        <button class="btn btn-secondary" id="connectBtn" onclick="connectWallet()">
+            🦊 Connect Wallet
+        </button>
+
+        <button class="btn btn-primary" id="activateBtn" onclick="activateSessionKey()" disabled>
+            ✨ Activate Session Key
+        </button>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        // Get smart account from URL param: ?account=0x...
+        const urlParams = new URLSearchParams(window.location.search);
+        const SMART_ACCOUNT = urlParams.get('account') || "PLEASE_PROVIDE_ACCOUNT_IN_URL";
+        const SESSION_KEY = "0xa30A689ec0F9D717C5bA1098455B031b868B720f";
+        const VALID_UNTIL = "281474976710655"; // Max uint48
+        const DAILY_LIMIT = "100000000000000"; // $1M with 8 decimals
+
+        // Update UI with smart account
+        document.getElementById('smartAccount').textContent = SMART_ACCOUNT;
+
+        const ABI = [
+            "function addSessionKey(address key, uint48 validUntil, uint256 dailyLimitUSD) external",
+            "function getSessionKeyInfo(address key) view returns (bool active, uint48 validUntil, uint256 dailyLimitUSD, uint256 spentTodayUSD)",
+            "function owner() view returns (address)"
+        ];
+
+        let signer = null;
+        let connectedAddress = null;
+
+        async function connectWallet() {
+            const statusEl = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const activateBtn = document.getElementById('activateBtn');
+
+            try {
+                if (!window.ethereum) {
+                    throw new Error("MetaMask not installed!");
+                }
+
+                statusEl.className = 'status pending';
+                statusEl.textContent = '⏳ Connecting...';
+
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+
+                // Check network
+                const network = await provider.getNetwork();
+                if (network.chainId !== 8453n) {
+                    statusEl.className = 'status error';
+                    statusEl.textContent = '❌ Please switch to Base network!';
+                    return;
+                }
+
+                signer = await provider.getSigner();
+                connectedAddress = await signer.getAddress();
+
+                // Check if connected wallet is owner
+                const contract = new ethers.Contract(SMART_ACCOUNT, ABI, provider);
+                const owner = await contract.owner();
+
+                if (owner.toLowerCase() !== connectedAddress.toLowerCase()) {
+                    statusEl.className = 'status error';
+                    statusEl.textContent = `❌ Connected wallet is not the owner!\nOwner: ${owner}`;
+                    return;
+                }
+
+                // Check if already registered
+                const info = await contract.getSessionKeyInfo(SESSION_KEY);
+                if (info[0]) {
+                    statusEl.className = 'status success';
+                    statusEl.innerHTML = '✅ Session key is ALREADY active!<br>No action needed.';
+                    return;
+                }
+
+                connectBtn.textContent = `✅ Connected: ${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`;
+                connectBtn.disabled = true;
+                activateBtn.disabled = false;
+                statusEl.className = '';
+                statusEl.textContent = '';
+
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.textContent = `❌ ${error.message}`;
+            }
+        }
+
+        async function activateSessionKey() {
+            const statusEl = document.getElementById('status');
+            const activateBtn = document.getElementById('activateBtn');
+
+            try {
+                if (!signer) {
+                    throw new Error("Please connect wallet first!");
+                }
+
+                statusEl.className = 'status pending';
+                statusEl.textContent = '⏳ Preparing transaction...';
+
+                const contract = new ethers.Contract(SMART_ACCOUNT, ABI, signer);
+
+                statusEl.textContent = '⏳ Please confirm in MetaMask...';
+
+                const tx = await contract.addSessionKey(
+                    SESSION_KEY,
+                    VALID_UNTIL,
+                    DAILY_LIMIT
+                );
+
+                statusEl.textContent = `⏳ Transaction sent! Waiting for confirmation...\nTX: ${tx.hash.slice(0, 10)}...`;
+
+                await tx.wait();
+
+                statusEl.className = 'status success';
+                statusEl.innerHTML = `
+                    <span class="check-icon">✅</span>
+                    Session key activated!<br>
+                    <a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color: #00d4ff;">
+                        View on Basescan
+                    </a>
+                `;
+
+                activateBtn.textContent = '✅ Activated!';
+                activateBtn.disabled = true;
+
+            } catch (error) {
+                statusEl.className = 'status error';
+                if (error.code === 'ACTION_REJECTED') {
+                    statusEl.textContent = '❌ Transaction rejected by user';
+                } else {
+                    statusEl.textContent = `❌ ${error.message}`;
+                }
+            }
+        }
+
+        // Auto-connect if already connected
+        window.addEventListener('load', async () => {
+            if (window.ethereum && window.ethereum.selectedAddress) {
+                await connectWallet();
+            }
+        });
+    </script>
+</body>
+
+</html>

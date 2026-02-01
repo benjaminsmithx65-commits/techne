@@ -1139,8 +1139,9 @@ class StrategyExecutor:
             return {"success": False, "error": "Agent has no user_address"}
         
         recommended = agent.get("recommended_pools", [])
+        print(f"[StrategyExecutor] DEBUG execute_allocation: user={user_address[:10]}..., recommended_pools count={len(recommended)}, has_key={'recommended_pools' in agent}")
         if not recommended:
-            return {"success": False, "error": "No recommended pools"}
+            return {"success": False, "error": f"No recommended pools (keys: {list(agent.keys())[:5]})"}
         
         # Protocol addresses for single-sided lending + DEX LP
         PROTOCOL_ADDRESSES = {
@@ -1206,7 +1207,126 @@ class StrategyExecutor:
                 # DUAL-SIDED LP: Execute via AerodromeDualLPBuilder for EOA agents
                 print(f"[StrategyExecutor] 🔄 LP Pool detected: {symbol} on {project}")
                 
-                # Check if this is an EOA agent with private key
+                # Check account type - ERC-8004 smart accounts need different flow
+                account_type = agent.get("account_type", "eoa")
+                agent_address = agent.get("agent_address")
+                
+                if account_type == "erc8004":
+                    # ERC-8004 SMART ACCOUNT: Use executeWithSessionKey (no bundler needed!)
+                    print(f"[StrategyExecutor] ⚡ ERC-8004 Smart Account: {agent_address[:10]}... - using session key execution")
+                    
+                    try:
+                        from api.session_key_signer import derive_session_key, verify_session_key_registered
+                        from services.smart_account_service import get_smart_account_service
+                        from web3 import Web3
+                        import os
+                        
+                        w3 = Web3(Web3.HTTPProvider(os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")))
+                        agent_id = agent.get("id", "")
+                        
+                        # Use the backend's main PRIVATE_KEY as session key
+                        # This key must be activated on the smart account via addSessionKey
+                        BACKEND_PK = os.getenv("PRIVATE_KEY")
+                        if not BACKEND_PK:
+                            raise ValueError("PRIVATE_KEY not set in .env")
+                        
+                        from eth_account import Account
+                        backend_account = Account.from_key(BACKEND_PK)
+                        BACKEND_SESSION_KEY_ADDR = backend_account.address
+                        
+                        is_session_key_active = verify_session_key_registered(w3, agent_address, BACKEND_SESSION_KEY_ADDR)
+                        
+                        if is_session_key_active:
+                            print(f"[StrategyExecutor] ✅ Backend session key active: {BACKEND_SESSION_KEY_ADDR[:10]}...")
+                            
+                            # Build the calldata for Aerodrome swap/LP
+                            # For now: simple approve + swap flow
+                            from artisan.aerodrome_dual import AerodromeDualLPBuilder
+                            
+                            builder = AerodromeDualLPBuilder()
+                            usdc_wei = int(allocation_per_pool * 1e6)
+                            
+                            # Build swap calldata (50% USDC -> target token)
+                            pair = symbol.replace("-", "/").replace(" / ", "/")
+                            tokens = [t.strip().upper() for t in pair.split("/")]
+                            target_token = tokens[0] if tokens[1] == "USDC" else tokens[1]
+                            
+                            from artisan.aerodrome_dual import AERODROME_ROUTER, TOKENS
+                            sa_service = get_smart_account_service()
+                            
+                            # STEP 1: Approve USDC to Aerodrome Router
+                            print(f"[StrategyExecutor] Step 1: Approve USDC ({usdc_wei // 2} wei) to router...")
+                            approve_calldata = builder.build_approve_calldata("USDC", AERODROME_ROUTER, usdc_wei // 2)
+                            
+                            approve_result = sa_service.execute_with_session_key(
+                                smart_account=agent_address,
+                                target=TOKENS["USDC"],  # Call approve on USDC contract
+                                value=0,
+                                calldata=approve_calldata,
+                                session_key_private=BACKEND_PK,
+                                estimated_value_usd=0  # No value transfer
+                            )
+                            
+                            if not approve_result.get("success"):
+                                print(f"[StrategyExecutor] ❌ Approve failed: {approve_result.get('message')}")
+                                result = {"success": False, "error": f"Approve failed: {approve_result.get('message')}"}
+                            else:
+                                print(f"[StrategyExecutor] ✅ Approve TX: {approve_result['tx_hash']}")
+                                
+                                # STEP 2: Execute swap
+                                print(f"[StrategyExecutor] Step 2: Swap USDC -> {target_token}...")
+                                swap_calldata = builder.build_swap_calldata(
+                                    token_in="USDC",
+                                    token_out=target_token,
+                                    amount_in=usdc_wei // 2,
+                                    amount_out_min=0,  # Accept any amount (risky but for MVP)
+                                    recipient=agent_address
+                                )
+                                
+                                exec_result = sa_service.execute_with_session_key(
+                                    smart_account=agent_address,
+                                    target=AERODROME_ROUTER,
+                                    value=0,
+                                    calldata=swap_calldata,
+                                    session_key_private=BACKEND_PK,
+                                    estimated_value_usd=int(allocation_per_pool * 100000000)  # 8 decimals
+                                )
+                                
+                                if exec_result.get("success"):
+                                    print(f"[StrategyExecutor] ✅ Swap TX: {exec_result['tx_hash']}")
+                                    result = {
+                                        "success": True,
+                                        "tx_hash": exec_result["tx_hash"],
+                                        "approve_tx": approve_result["tx_hash"],
+                                        "message": "Executed via session key (no bundler)"
+                                    }
+                                else:
+                                    result = {
+                                        "success": False,
+                                        "error": exec_result.get("message", "Swap execution failed")
+                                    }
+                        else:
+                            print(f"[StrategyExecutor] ❌ Session key NOT active: {BACKEND_SESSION_KEY_ADDR[:10]}...")
+                            result = {
+                                "success": False, 
+                                "error": f"Session key not activated. Please activate in Agent Settings to enable autonomous LP allocation.",
+                                "session_key_to_activate": BACKEND_SESSION_KEY_ADDR,
+                                "smart_account": agent_address,
+                                "hint": "Go to Settings > Session Key > Activate to enable autonomous trading"
+                            }
+                    except Exception as sk_err:
+                        print(f"[StrategyExecutor] Session key execution error: {sk_err}")
+                        import traceback
+                        traceback.print_exc()
+                        result = {
+                            "success": False, 
+                            "error": f"Session key execution failed: {str(sk_err)}",
+                        }
+                    
+                    results.append({"pool": symbol, "protocol": project, "amount": allocation_per_pool, "result": result})
+                    continue
+                
+                # EOA FLOW: Check if this is an EOA agent with private key
                 encrypted_pk = agent.get("encrypted_private_key")
                 if encrypted_pk and "aerodrome" in project:
                     try:
@@ -1522,11 +1642,16 @@ class StrategyExecutor:
         
         successful = sum(1 for r in results if r.get("result", {}).get("success", False))
         
+        # Collect errors for failed allocations
+        errors = [r.get("result", {}).get("error") for r in results if not r.get("result", {}).get("success", False) and r.get("result", {}).get("error")]
+        error_msg = "; ".join(errors) if errors else None
+        
         return {
             "success": successful > 0,
             "total_pools": len(recommended),
             "successful": successful,
-            "results": results
+            "results": results,
+            "error": error_msg
         }
 
 

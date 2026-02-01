@@ -518,21 +518,37 @@ async def get_smart_account(user_address: str):
 
 
 @app.post("/api/smart-account/create")
-async def create_smart_account(user_address: str = Query(...)):
+async def create_smart_account(user_address: str = Query(...), agent_id: str = Query(None)):
     """
     Deploy a Smart Account for user.
+    
+    Returns session_key_address that frontend should use to call addSessionKey().
     """
     try:
         from services.smart_account_service import get_smart_account_service
+        from api.session_key_signer import get_session_key_address
         
         sa_service = get_smart_account_service()
+        
+        # Get or generate agent_id
+        effective_agent_id = agent_id or f"agent_1_{int(datetime.now().timestamp())}"
+        
+        # Get session key address (deterministic from master secret)
+        session_key_addr = None
+        try:
+            session_key_addr = get_session_key_address(effective_agent_id, user_address)
+            print(f"[SmartAccount] Session key for {effective_agent_id}: {session_key_addr}")
+        except Exception as sk_err:
+            print(f"[SmartAccount] Could not derive session key: {sk_err}")
         
         # Check if already exists
         if sa_service.has_account(user_address):
             return {
                 "success": True,
                 "smart_account": sa_service.get_account_address(user_address),
-                "message": "Smart Account already exists"
+                "message": "Smart Account already exists",
+                "session_key_address": session_key_addr,
+                "session_key_needs_activation": True  # Frontend should check on-chain and add if needed
             }
         
         # Deploy new account
@@ -542,7 +558,9 @@ async def create_smart_account(user_address: str = Query(...)):
             "success": result.get("success", False),
             "smart_account": result.get("account_address"),
             "tx_hash": result.get("tx_hash"),
-            "message": result.get("message", "Smart Account created")
+            "message": result.get("message", "Smart Account created"),
+            "session_key_address": session_key_addr,
+            "session_key_needs_activation": False  # Factory V2 auto-adds session key during createAccount!
         }
     except Exception as e:
         return {

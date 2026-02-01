@@ -161,8 +161,8 @@ async def deploy_smart_account(request: DeploySmartAccountRequest):
         user_address = Web3.to_checksum_address(request.user_address)
         agent_id = request.agent_id
         
-        # Factory address
-        FACTORY = "0x557049646BDe5B7C7eE2C08256Aea59A5A48B20f"
+        # Factory V2 address (with executeWithSessionKey + auto session key)
+        FACTORY = "0x9192DC52445E3d6e85EbB53723cFC2Eb9dD6e02A"
         RPC_URL = os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")
         
         w3 = Web3(Web3.HTTPProvider(RPC_URL))
@@ -281,6 +281,83 @@ async def get_positions(user_address: str = Query(...)):
     """Get all active yield positions"""
     positions = agent_wallet_manager.get_positions(user_address)
     return {"success": True, "positions": positions}
+
+
+@router.post("/refresh-balances")
+async def refresh_balances(
+    agent_address: str = Query(...),
+    user_address: str = Query(None)
+):
+    """
+    Refresh on-chain balances after fund/withdraw TX.
+    
+    Called by frontend ~5-10 seconds after TX confirmation.
+    Fetches fresh data from RPC and updates cache.
+    """
+    from web3 import Web3
+    import os
+    
+    logger.info(f"[RefreshBalances] Refreshing for {agent_address[:10]}...")
+    
+    try:
+        RPC_URL = os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")
+        w3 = Web3(Web3.HTTPProvider(RPC_URL))
+        
+        agent_addr = Web3.to_checksum_address(agent_address)
+        
+        # Token addresses on Base
+        TOKENS = {
+            "ETH": {"address": None, "decimals": 18},
+            "USDC": {"address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "decimals": 6},
+            "WETH": {"address": "0x4200000000000000000000000000000000000006", "decimals": 18},
+            "cbBTC": {"address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", "decimals": 8},
+            "AERO": {"address": "0x940181a94A35A4569E4529A3CDfB74e38FD98631", "decimals": 18},
+        }
+        
+        ERC20_ABI = [{"name": "balanceOf", "type": "function", "inputs": [{"name": "account", "type": "address"}], "outputs": [{"type": "uint256"}], "stateMutability": "view"}]
+        
+        balances = {}
+        total_usd = 0.0
+        
+        # Get ETH balance
+        eth_balance = w3.eth.get_balance(agent_addr)
+        eth_formatted = float(eth_balance) / 1e18
+        balances["ETH"] = {"balance": eth_formatted, "raw": str(eth_balance)}
+        
+        # Estimate ETH price (~$3500 for now, should use price feed)
+        total_usd += eth_formatted * 3500
+        
+        # Get ERC20 balances
+        for symbol, config in TOKENS.items():
+            if config["address"]:
+                try:
+                    contract = w3.eth.contract(address=Web3.to_checksum_address(config["address"]), abi=ERC20_ABI)
+                    raw_balance = contract.functions.balanceOf(agent_addr).call()
+                    formatted = float(raw_balance) / (10 ** config["decimals"])
+                    balances[symbol] = {"balance": formatted, "raw": str(raw_balance)}
+                    
+                    # Add to USD total (simplified pricing)
+                    if symbol == "USDC":
+                        total_usd += formatted
+                    elif symbol == "WETH":
+                        total_usd += formatted * 3500
+                except Exception as e:
+                    logger.warning(f"[RefreshBalances] Error fetching {symbol}: {e}")
+                    balances[symbol] = {"balance": 0, "raw": "0", "error": str(e)}
+        
+        logger.info(f"[RefreshBalances] ✅ Fetched: USDC={balances.get('USDC', {}).get('balance', 0):.2f}, ETH={balances.get('ETH', {}).get('balance', 0):.6f}")
+        
+        return {
+            "success": True,
+            "agent_address": agent_address,
+            "balances": balances,
+            "total_usd": round(total_usd, 2),
+            "timestamp": str(int(__import__('time').time()))
+        }
+        
+    except Exception as e:
+        logger.error(f"[RefreshBalances] Error: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # ===========================================

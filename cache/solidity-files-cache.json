@@ -1127,8 +1127,8 @@
       ]
     },
     "C:\\Users\\Dell\\.gemini\\antigravity\\scratch\\techne-finance\\contracts\\TechneAgentAccount.sol": {
-      "lastModificationDate": 1769818106926,
-      "contentHash": "184615ad1b132eea799a876eeb93be0b",
+      "lastModificationDate": 1769904889088,
+      "contentHash": "ed7b8e759336a75420d0a5a1a6bd60b6",
       "sourceName": "contracts/TechneAgentAccount.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1324,8 +1324,8 @@
       ]
     },
     "C:\\Users\\Dell\\.gemini\\antigravity\\scratch\\techne-finance\\contracts\\TechneAgentFactory.sol": {
-      "lastModificationDate": 1769817551052,
-      "contentHash": "e0886ae24177300701977b97549ca898",
+      "lastModificationDate": 1769948925389,
+      "contentHash": "dad39d6e5bda12878ce40a1d75f4d6b9",
       "sourceName": "contracts/TechneAgentFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
