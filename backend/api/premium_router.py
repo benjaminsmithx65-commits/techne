@@ -413,6 +413,60 @@ async def disconnect_subscription(request: DisconnectRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/delete")
+async def delete_subscription(request: DisconnectRequest):
+    """Permanently delete subscription and all associated data"""
+    try:
+        supabase = get_supabase()
+        user_address = request.user_address.lower()
+        
+        # Get subscription first for related cleanup
+        sub_result = supabase.table("premium_subscriptions").select("*").eq(
+            "user_address", user_address
+        ).execute()
+        
+        if not sub_result.data:
+            raise HTTPException(status_code=404, detail="No subscription found")
+        
+        # Delete related data (conversations, actions, memory)
+        try:
+            supabase.table("artisan_conversations").delete().eq(
+                "user_address", user_address
+            ).execute()
+            
+            supabase.table("artisan_actions").delete().eq(
+                "user_address", user_address  
+            ).execute()
+            
+            supabase.table("artisan_memory").delete().eq(
+                "user_address", user_address
+            ).execute()
+            
+            supabase.table("artisan_strategies").delete().eq(
+                "user_address", user_address
+            ).execute()
+        except Exception as e:
+            logger.warning(f"Some related data may not exist: {e}")
+        
+        # Delete subscription
+        supabase.table("premium_subscriptions").delete().eq(
+            "user_address", user_address
+        ).execute()
+        
+        logger.info(f"[Premium] DELETED: {user_address[:10]}... (full removal)")
+        
+        return {
+            "success": True,
+            "message": "Subscription and all data permanently deleted."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/subscription-by-chat")
 async def get_subscription_by_telegram(chat_id: int = Query(...)):
     """Get subscription by Telegram chat ID (used by bot)"""

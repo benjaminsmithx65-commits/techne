@@ -82,6 +82,7 @@ class ArtisanBot:
         self.app.add_handler(CommandHandler("mode", self.mode_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
         self.app.add_handler(CommandHandler("disconnect", self.disconnect_command))
+        self.app.add_handler(CommandHandler("delete", self.delete_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("import", self.import_command))
         self.app.add_handler(CommandHandler("create", self.create_command))
@@ -256,6 +257,33 @@ class ArtisanBot:
             reply_markup=reply_markup
         )
     
+    async def delete_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Permanently delete subscription and all data"""
+        chat_id = update.effective_chat.id
+        
+        sub = await self._get_subscription(chat_id)
+        if not sub or not sub.get("found"):
+            await update.message.reply_text("❌ Not connected.")
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("⚠️ Yes, DELETE everything", callback_data="confirm_delete")],
+            [InlineKeyboardButton("Cancel", callback_data="cancel_delete")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "🗑️ *PERMANENT DELETION*\n\n"
+            "This will:\n"
+            "• Cancel your subscription\n"
+            "• Delete all conversation history\n"
+            "• Delete all saved preferences\n"
+            "• Remove all agent memories\n\n"
+            "⚠️ *This cannot be undone!*",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+    
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show help"""
         await update.message.reply_text(
@@ -265,7 +293,8 @@ class ArtisanBot:
             "/mode - Change autonomy mode\n"
             "/import - Connect existing agent\n"
             "/create - Create new agent\n"
-            "/disconnect - Cancel subscription\n\n"
+            "/disconnect - Cancel subscription\n"
+            "/delete - Delete all data\n\n"
             "*Natural language:*\n"
             "Just type what you want!\n\n"
             "Examples:\n"
@@ -427,6 +456,20 @@ class ArtisanBot:
         
         elif data == "cancel_disconnect":
             await query.edit_message_text("✅ Cancelled. Still connected!")
+        
+        elif data == "confirm_delete":
+            sub = await self._get_subscription(chat_id)
+            if sub and sub.get("found"):
+                await self._delete(sub["user_address"])
+                await query.edit_message_text(
+                    "🗑️ *Deleted*\n\n"
+                    "All your data has been permanently removed.\n"
+                    "Thank you for using Artisan Bot!",
+                    parse_mode="Markdown"
+                )
+        
+        elif data == "cancel_delete":
+            await query.edit_message_text("✅ Deletion cancelled. Your data is safe!")
         
         elif data == "agent_import":
             # User wants to import existing agent
@@ -647,6 +690,16 @@ class ArtisanBot:
             )
         except Exception as e:
             logger.error(f"Disconnect error: {e}")
+    
+    async def _delete(self, user_address: str):
+        """Permanently delete subscription and all data"""
+        try:
+            await self.http.post(
+                "/api/premium/delete",
+                json={"user_address": user_address}
+            )
+        except Exception as e:
+            logger.error(f"Delete error: {e}")
     
     async def _execute_tools(
         self,
