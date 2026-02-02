@@ -161,8 +161,9 @@ async def deploy_smart_account(request: DeploySmartAccountRequest):
         user_address = Web3.to_checksum_address(request.user_address)
         agent_id = request.agent_id
         
-        # Factory V3 address (with executeWithSessionKey + auto session key + $1M limit)
-        FACTORY = "0x36945Cc50Aa50E7473231Eb57731dbffEf60C3a4"
+        # Use consistent factory address from smart_account_service (V4 with ERC-8004)
+        from services.smart_account_service import FACTORY_ADDRESS
+        FACTORY = FACTORY_ADDRESS
         RPC_URL = os.getenv("ALCHEMY_RPC_URL", "https://mainnet.base.org")
         
         w3 = Web3(Web3.HTTPProvider(RPC_URL))

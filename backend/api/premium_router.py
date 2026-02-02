@@ -137,7 +137,7 @@ async def subscribe_premium(request: SubscribeWithPaymentRequest):
                     "code_used_at": None,
                     "telegram_chat_id": None,
                     "expires_at": (datetime.now() + timedelta(days=30)).isoformat(),
-                    "x402_payment_sig": payment_sig
+                    "x402_payment_id": payment_sig
                 }).eq("user_address", user_address).execute()
                 
                 return {
@@ -158,7 +158,7 @@ async def subscribe_premium(request: SubscribeWithPaymentRequest):
             "autonomy_mode": "advisor",  # Default mode
             "activation_code": code,
             "expires_at": expires_at.isoformat(),
-            "x402_payment_sig": payment_sig
+            "x402_payment_id": payment_sig
         }).execute()
         
         logger.info(f"[Premium] New subscription: {user_address[:10]}... code: {code}")

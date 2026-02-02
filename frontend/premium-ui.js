@@ -540,10 +540,127 @@ function showUpgradeModal() {
     document.body.appendChild(modal);
 }
 
+// ============================================
+// ARTISAN BOT SETTINGS (Portfolio Page)
+// ============================================
+
+/**
+ * Initialize Artisan Bot settings in portfolio sidebar
+ */
+function initArtisanSettings() {
+    const settingsCard = document.getElementById('artisanSettingsCard');
+    if (!settingsCard) return;
+
+    // Show card if user has premium
+    if (premiumState.isPremium) {
+        settingsCard.style.display = 'block';
+    }
+
+    // Max trade slider handler
+    const slider = document.getElementById('maxTradeSlider');
+    const valueDisplay = document.getElementById('maxTradeValue');
+    if (slider && valueDisplay) {
+        slider.addEventListener('input', (e) => {
+            valueDisplay.textContent = '$' + parseInt(e.target.value).toLocaleString();
+        });
+    }
+
+    // Save settings button
+    const saveBtn = document.getElementById('saveArtisanSettings');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveArtisanSettings);
+    }
+
+    // Update TG status
+    updateArtisanStatus();
+}
+
+/**
+ * Save Artisan Bot settings to backend
+ */
+async function saveArtisanSettings() {
+    const btn = document.getElementById('saveArtisanSettings');
+    const autonomyMode = document.getElementById('autonomyModeSelect')?.value || 'advisor';
+    const maxTrade = document.getElementById('maxTradeSlider')?.value || 1000;
+
+    if (btn) {
+        btn.innerHTML = '⏳ Saving...';
+        btn.disabled = true;
+    }
+
+    try {
+        const response = await fetch('/api/premium/update-settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                wallet_address: window.connectedWallet,
+                autonomy_mode: autonomyMode,
+                max_trade_size: parseInt(maxTrade)
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            Toast?.show('✅ Settings saved!', 'success');
+            if (btn) btn.innerHTML = '✓ Saved!';
+        } else {
+            throw new Error(result.error || 'Failed to save');
+        }
+    } catch (error) {
+        console.error('Save settings error:', error);
+        Toast?.show('Failed to save settings', 'error');
+        if (btn) btn.innerHTML = '💾 Save Settings';
+    }
+
+    if (btn) {
+        btn.disabled = false;
+        setTimeout(() => {
+            btn.innerHTML = '💾 Save Settings';
+        }, 2000);
+    }
+}
+
+/**
+ * Update Artisan status indicators
+ */
+function updateArtisanStatus() {
+    const statusBadge = document.getElementById('artisanStatusBadge');
+    const tgStatus = document.getElementById('tgConnectionStatus');
+
+    if (statusBadge) {
+        if (premiumState.isPremium) {
+            statusBadge.textContent = 'Active';
+            statusBadge.className = 'status-badge premium';
+        } else {
+            statusBadge.textContent = 'Inactive';
+            statusBadge.className = 'status-badge inactive';
+        }
+    }
+
+    if (tgStatus) {
+        if (premiumState.telegramConnected) {
+            tgStatus.textContent = 'Connected';
+            tgStatus.style.color = '#10b981';
+        } else {
+            tgStatus.textContent = 'Not connected';
+            tgStatus.style.color = '#ef4444';
+        }
+    }
+}
+
+// Initialize on portfolio section load
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure DOM is ready
+    setTimeout(initArtisanSettings, 500);
+});
+
 // Expose functions globally
 window.PremiumUI = {
     canPerformSearch,
     incrementSearchCount,
     isPremium: () => premiumState.isPremium,
-    getState: () => ({ ...premiumState })
+    getState: () => ({ ...premiumState }),
+    initArtisanSettings,
+    updateArtisanStatus
 };
