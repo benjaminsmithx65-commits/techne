@@ -8,20 +8,17 @@ class AgentBuilderUI {
         // Default config matches Steady preset (the default selected strategy)
         this.config = {
             // Strategy preset - Steady is default
-            preset: 'steady',
-
-            // Chain - LOCKED to Base
+            // Core identifiers
             chain: 'base',
-
-            // Pool type - both for Steady
-            poolType: 'both',
-            maxDualPools: 3,
+            preset: 'balanced-growth',
+            poolType: 'single',
 
             // Risk & Returns - Steady values
             riskLevel: 'medium',
             tradingStyle: 'moderate',
             minApy: 10,
             maxApy: 30,
+            maxApyUnlimited: false,
             maxDrawdown: 20,
 
             // Protocols - Base only
@@ -48,6 +45,7 @@ class AgentBuilderUI {
 
             // Pro Features
             minPoolTvl: 10000000,  // $10M for Steady
+            maxPoolTvl: null,      // null = unlimited
             harvestStrategy: 'compound',
             volatilityThreshold: 10,
             mevProtection: false
