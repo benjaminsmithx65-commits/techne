@@ -1186,6 +1186,80 @@ class PortfolioDashboard {
                 }
             }
         }
+
+        // Load session key for this agent
+        const agentAddr = agent.agent_address || agent.address;
+        if (agentAddr) {
+            this.loadSessionKey(agentAddr);
+        }
+    }
+
+    /**
+     * Load and display session key for an agent
+     */
+    async loadSessionKey(agentAddress) {
+        const statusEl = document.getElementById('sessionKeyStatus');
+        const valueEl = document.getElementById('sessionKeyValue');
+        const viewBtn = document.getElementById('btnViewSessionKey');
+        const copyBtn = document.getElementById('btnCopySessionKey');
+
+        if (!statusEl || !viewBtn) return;
+
+        try {
+            // Get connected wallet for ownership verification
+            const userAddress = window.walletAddress || localStorage.getItem('connectedWallet') || '';
+            const url = `${API_BASE}/api/portfolio/${agentAddress}/session-key${userAddress ? '?user_address=' + userAddress : ''}`;
+
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.has_session_key && data.session_key_address) {
+                this._sessionKeyAddress = data.session_key_address;
+                statusEl.textContent = 'Active';
+                statusEl.style.background = 'rgba(34,197,94,0.15)';
+                statusEl.style.borderColor = 'rgba(34,197,94,0.3)';
+                statusEl.style.color = '#22c55e';
+
+                // View key toggle
+                let isVisible = false;
+                viewBtn.onclick = () => {
+                    isVisible = !isVisible;
+                    if (isVisible) {
+                        valueEl.textContent = this._sessionKeyAddress;
+                        valueEl.style.display = 'block';
+                        viewBtn.textContent = '🙈 Hide Key';
+                        copyBtn.style.display = 'block';
+                    } else {
+                        valueEl.style.display = 'none';
+                        viewBtn.textContent = '🔑 View Key';
+                        copyBtn.style.display = 'none';
+                    }
+                };
+
+                // Copy button
+                if (copyBtn) {
+                    copyBtn.onclick = () => {
+                        navigator.clipboard.writeText(this._sessionKeyAddress).then(() => {
+                            const orig = copyBtn.textContent;
+                            copyBtn.textContent = '✓ Copied!';
+                            setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+                        });
+                    };
+                }
+            } else {
+                statusEl.textContent = 'No Key';
+                viewBtn.textContent = '🔑 Generate Key';
+                viewBtn.onclick = () => {
+                    window.location.hash = '#section-build';
+                    if (window.showNotification) {
+                        window.showNotification('Deploy your agent in the Build section to generate a session key', 'info');
+                    }
+                };
+            }
+        } catch (e) {
+            console.error('[Portfolio] Session key load error:', e);
+            statusEl.textContent = 'Error';
+        }
     }
 
     updateRiskIndicators(agent) {

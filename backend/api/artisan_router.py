@@ -118,19 +118,22 @@ async def scout_pools(
     try:
         from artisan.scout_agent import get_scout_pools
         
-        pools = await get_scout_pools(
+        result = await get_scout_pools(
             chain=chain if chain != "all" else "Base",
             min_apy=min_apy,
             stablecoin_only=stablecoin_only
         )
         
+        # Extract pools list from result dict
+        pools = result.get("pools", [])
+        
         # Apply risk filter
         risk_levels = {"low": 1, "medium": 2, "high": 3}
-        max_risk_level = risk_levels.get(max_risk, 3)
+        max_risk_level = risk_levels.get(max_risk.lower(), 3)
         
         filtered = []
         for pool in pools:
-            pool_risk = pool.get("risk_level", "medium")
+            pool_risk = pool.get("risk_score", "Medium").lower()
             pool_risk_level = risk_levels.get(pool_risk, 2)
             
             if pool_risk_level <= max_risk_level:
@@ -708,3 +711,245 @@ async def log_artisan_action(
         
     except Exception as e:
         logger.error(f"Log action error: {e}")
+
+
+# ============================================
+# OPENCLAW INTEGRATION ENDPOINTS
+# ============================================
+
+class ActivateCodeRequest(BaseModel):
+    activation_code: str
+    telegram_id: str
+
+
+class SetModeRequest(BaseModel):
+    agent_address: str
+    mode: str  # observer, advisor, copilot, full_auto
+
+
+class ImportAgentRequest(BaseModel):
+    agent_address: str
+    user_id: str
+
+
+@router.post("/activate")
+async def activate_premium_code(req: ActivateCodeRequest):
+    """
+    Activate Premium subscription with activation code.
+    Called from OpenClaw /start ARTISAN-XXXX-XXXX command.
+    """
+    try:
+        supabase = get_supabase()
+        
+        # Validate activation code format
+        code = req.activation_code.upper()
+        if not code.startswith("ARTISAN-") or len(code) != 16:
+            return {
+                "success": False,
+                "error": "Invalid code format. Expected: ARTISAN-XXXX-XXXX"
+            }
+        
+        # Check if code exists and is unused
+        result = supabase.table("activation_codes").select("*").eq(
+            "code", code
+        ).execute()
+        
+        if not result.data:
+            return {
+                "success": False,
+                "error": "Activation code not found"
+            }
+        
+        code_data = result.data[0]
+        
+        if code_data.get("used"):
+            return {
+                "success": False,
+                "error": "Activation code already used"
+            }
+        
+        # Mark code as used
+        supabase.table("activation_codes").update({
+            "used": True,
+            "used_at": datetime.utcnow().isoformat(),
+            "telegram_id": req.telegram_id
+        }).eq("code", code).execute()
+        
+        # Create subscription
+        subscription = supabase.table("premium_subscriptions").insert({
+            "telegram_chat_id": int(req.telegram_id),
+            "status": "active",
+            "tier": code_data.get("tier", "artisan"),
+            "activated_at": datetime.utcnow().isoformat(),
+            "expires_at": None  # Never expires for lifetime codes
+        }).execute()
+        
+        logger.info(f"[Artisan] Activated code {code[:8]}*** for TG {req.telegram_id}")
+        
+        return {
+            "success": True,
+            "features": ["portfolio", "pools", "trading", "strategies"],
+            "tier": code_data.get("tier", "artisan"),
+            "message": "Premium activated successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Activate code error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/status/{telegram_id}")
+async def get_user_status(telegram_id: str):
+    """
+    Check if a Telegram user has active premium subscription.
+    Used by OpenClaw bot to identify returning users.
+    """
+    try:
+        # Check for active subscription
+        result = supabase.table("premium_subscriptions").select("*").eq(
+            "telegram_chat_id", int(telegram_id)
+        ).eq("status", "active").execute()
+        
+        if result.data and len(result.data) > 0:
+            sub = result.data[0]
+            
+            # Get connected agent if any
+            agent = None
+            if sub.get("agent_address"):
+                agent = {
+                    "address": sub["agent_address"],
+                    "mode": sub.get("mode", "observer")
+                }
+            
+            return {
+                "success": True,
+                "is_premium": True,
+                "tier": sub.get("tier", "artisan"),
+                "features": ["portfolio", "pools", "trading", "strategies"],
+                "agent": agent,
+                "activated_at": sub.get("activated_at")
+            }
+        else:
+            return {
+                "success": True,
+                "is_premium": False,
+                "message": "No active subscription. Use /start ARTISAN-XXXX-XXXX to activate."
+            }
+            
+    except Exception as e:
+        logger.error(f"Get user status error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/import-agent")
+async def import_agent_for_user(req: ImportAgentRequest):
+    """
+    Import deployed agent address for OpenClaw user.
+    Called from /import command.
+    """
+    try:
+        supabase = get_supabase()
+        from services.agent_service import agent_service
+        
+        # Validate address
+        if not req.agent_address.startswith("0x") or len(req.agent_address) != 42:
+            return {
+                "success": False,
+                "error": "Invalid agent address format"
+            }
+        
+        # Check agent exists
+        agent = agent_service.get_agent(req.agent_address)
+        
+        if not agent:
+            return {
+                "success": False,
+                "error": "Agent not found. Create one at techne.finance/build"
+            }
+        
+        # Get user subscription by telegram ID
+        sub_result = supabase.table("premium_subscriptions").select("*").eq(
+            "telegram_chat_id", int(req.user_id)
+        ).execute()
+        
+        if not sub_result.data:
+            return {
+                "success": False,
+                "error": "No active subscription. Use /start ARTISAN-XXXX-XXXX first."
+            }
+        
+        # Link agent to subscription
+        supabase.table("premium_subscriptions").update({
+            "agent_address": req.agent_address,
+            "session_key_address": agent.get("session_key_address"),
+            "user_address": agent.get("owner_address")
+        }).eq("telegram_chat_id", int(req.user_id)).execute()
+        
+        # Get agent balance
+        balance = agent.get("balance_usd", 0)
+        positions_count = len(agent.get("positions", []))
+        
+        logger.info(f"[Artisan] Imported agent {req.agent_address[:10]}... for user {req.user_id}")
+        
+        return {
+            "success": True,
+            "balance": balance,
+            "positions_count": positions_count,
+            "autonomy_mode": agent.get("autonomy_mode", "advisor")
+        }
+        
+    except Exception as e:
+        logger.error(f"Import agent error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/set-mode")
+async def set_autonomy_mode(req: SetModeRequest):
+    """
+    Set autonomy mode for agent.
+    Modes: observer, advisor, copilot, full_auto
+    """
+    try:
+        valid_modes = ["observer", "advisor", "copilot", "full_auto"]
+        
+        if req.mode not in valid_modes:
+            return {
+                "success": False,
+                "error": f"Invalid mode. Choose from: {', '.join(valid_modes)}"
+            }
+        
+        supabase = get_supabase()
+        
+        # Update agent mode
+        result = supabase.table("agents").update({
+            "autonomy_mode": req.mode,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("smart_account_address", req.agent_address).execute()
+        
+        if not result.data:
+            return {"success": False, "error": "Agent not found"}
+        
+        # Also update subscription
+        supabase.table("premium_subscriptions").update({
+            "autonomy_mode": req.mode
+        }).eq("agent_address", req.agent_address).execute()
+        
+        mode_limits = {
+            "observer": "View-only, no trades",
+            "advisor": "Suggests trades, requires confirmation",
+            "copilot": "Auto-executes trades under $1,000",
+            "full_auto": "Autonomous up to $10,000/day"
+        }
+        
+        logger.info(f"[Artisan] Set mode {req.mode} for agent {req.agent_address[:10]}")
+        
+        return {
+            "success": True,
+            "mode": req.mode,
+            "description": mode_limits[req.mode]
+        }
+        
+    except Exception as e:
+        logger.error(f"Set mode error: {e}")
+        return {"success": False, "error": str(e)}
+

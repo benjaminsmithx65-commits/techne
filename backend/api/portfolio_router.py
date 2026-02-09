@@ -562,3 +562,139 @@ async def close_position(request: ClosePositionRequest):
     except Exception as e:
         print(f"[Position Close] Error: {e}")
         return {"success": False, "error": str(e)}
+
+
+# ========================================
+# SESSION KEY ENDPOINT
+# ========================================
+
+@router.get("/{agent_address}/session-key")
+async def get_session_key(agent_address: str, user_address: Optional[str] = None):
+    """
+    Get session key info for an agent.
+    
+    Hybrid approach:
+    1. Find agent_id + owner from DEPLOYED_AGENTS or Supabase
+    2. Derive session key DETERMINISTICALLY (primary - always works)
+    3. Fall back to stored session_key_address in DB
+    
+    The user must provide their wallet address (user_address) to verify ownership.
+    Without user_address, returns only whether a session key exists (masked).
+    """
+    print(f"[SessionKey] Lookup for agent: {agent_address[:10]}...")
+    
+    try:
+        agent_lower = agent_address.lower()
+        session_key_address = None
+        owner_address = None
+        agent_id = None
+        source = None
+        
+        # 1. Check DEPLOYED_AGENTS (in-memory) - find agent_id + owner
+        try:
+            from api.agent_config_router import DEPLOYED_AGENTS
+            for user_addr, agents in DEPLOYED_AGENTS.items():
+                for agent in agents:
+                    stored_addr = (agent.get("agent_address") or agent.get("address", "")).lower()
+                    if stored_addr == agent_lower:
+                        agent_id = agent.get("id")
+                        owner_address = user_addr
+                        # Also grab stored session_key if present
+                        session_key_address = agent.get("session_key_address")
+                        break
+                if owner_address:
+                    break
+        except Exception as e:
+            print(f"[SessionKey] DEPLOYED_AGENTS lookup error: {e}")
+        
+        # 2. If not found in memory, check Supabase user_agents
+        if not owner_address:
+            try:
+                from infrastructure.supabase_client import supabase
+                if supabase.is_available:
+                    result = supabase.table("user_agents").select(
+                        "user_address, agent_id, settings"
+                    ).eq("agent_address", agent_address).execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        owner_address = result.data[0].get("user_address")
+                        agent_id = result.data[0].get("agent_id") or result.data[0].get("id")
+                        settings = result.data[0].get("settings", {})
+                        if isinstance(settings, dict):
+                            session_key_address = settings.get("session_key_address")
+            except Exception as e:
+                print(f"[SessionKey] Supabase user_agents lookup error: {e}")
+        
+        # 3. Also check premium_subscriptions for stored session key
+        if not session_key_address:
+            try:
+                from infrastructure.supabase_client import supabase
+                if supabase.is_available:
+                    result = supabase.table("premium_subscriptions").select(
+                        "session_key_address, wallet_address"
+                    ).eq("agent_address", agent_address).eq("status", "active").execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        session_key_address = result.data[0].get("session_key_address")
+                        if not owner_address:
+                            owner_address = result.data[0].get("wallet_address")
+            except Exception as e:
+                print(f"[SessionKey] Supabase premium lookup error: {e}")
+        
+        # 4. DETERMINISTIC DERIVATION (primary method - always works if we have agent_id + owner)
+        derived_key = None
+        if agent_id and owner_address:
+            try:
+                from api.session_key_signer import get_session_key_address
+                derived_key = get_session_key_address(agent_id, owner_address)
+                source = "derived"
+                print(f"[SessionKey] Derived session key for {agent_id}: {derived_key[:10]}...")
+            except Exception as e:
+                print(f"[SessionKey] Derivation error: {e}")
+        
+        # Use derived key as primary, fall back to stored
+        final_key = derived_key or session_key_address
+        if derived_key:
+            source = "derived"
+        elif session_key_address:
+            source = "stored"
+        
+        if not final_key:
+            return {
+                "success": True,
+                "has_session_key": False,
+                "agent_address": agent_address,
+                "message": "No session key found. Deploy your agent in Build section to generate one."
+            }
+        
+        # Determine if requester is the owner
+        is_owner = False
+        if user_address and owner_address:
+            is_owner = user_address.lower() == owner_address.lower()
+        
+        # Owner gets full key, others just see it exists
+        if is_owner:
+            return {
+                "success": True,
+                "has_session_key": True,
+                "session_key_address": final_key,
+                "agent_address": agent_address,
+                "agent_id": agent_id,
+                "owner": owner_address,
+                "source": source,
+                "message": "Session key active. Used by Artisan bot for autonomous trading."
+            }
+        else:
+            # Non-owner: mask the key
+            masked = final_key[:6] + "..." + final_key[-4:] if len(final_key) > 10 else "***"
+            return {
+                "success": True,
+                "has_session_key": True,
+                "session_key_address": masked,
+                "agent_address": agent_address,
+                "message": "Session key exists. Connect your wallet to view the full key."
+            }
+        
+    except Exception as e:
+        print(f"[SessionKey] Error: {e}")
+        return {"success": False, "error": str(e)}

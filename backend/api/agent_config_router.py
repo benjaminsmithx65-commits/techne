@@ -553,6 +553,29 @@ async def setup_auto_trading(request: SetupAutoTradingRequest):
         w3 = Web3(Web3.HTTPProvider(os.getenv("ALCHEMY_RPC_URL", "")))
         gas_price = w3.eth.gas_price
         
+        # PERSIST session key to DEPLOYED_AGENTS (in-memory cache)
+        try:
+            user_agents = DEPLOYED_AGENTS.get(user_address, [])
+            for ag in user_agents:
+                ag_addr = (ag.get("agent_address") or ag.get("address", "")).lower()
+                if ag_addr == agent_address.lower():
+                    ag["session_key_address"] = session_key_address
+                    print(f"[AgentConfig] Session key saved to DEPLOYED_AGENTS: {session_key_address[:10]}...")
+                    break
+            _save_agents(DEPLOYED_AGENTS)
+        except Exception as e:
+            print(f"[AgentConfig] Session key cache save error: {e}")
+        
+        # PERSIST session key to Supabase premium_subscriptions
+        try:
+            if supabase.is_available:
+                supabase.table("premium_subscriptions").update({
+                    "session_key_address": session_key_address
+                }).eq("agent_address", agent_address).execute()
+                print(f"[AgentConfig] Session key saved to Supabase premium_subscriptions")
+        except Exception as e:
+            print(f"[AgentConfig] Supabase session key save error (non-fatal): {e}")
+        
         return {
             "success": True,
             "session_key": session_key_address,

@@ -42,6 +42,12 @@ class DisconnectRequest(BaseModel):
     """Disconnect/cancel subscription"""
     user_address: str
 
+
+class ValidateSessionRequest(BaseModel):
+    """Validate session key from OpenClaw"""
+    session_key: str
+
+
 # ============================================
 # HELPERS
 # ============================================
@@ -496,4 +502,109 @@ async def get_subscription_by_telegram(chat_id: int = Query(...)):
         
     except Exception as e:
         logger.error(f"Get by chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/validate-session")
+async def validate_session(request: ValidateSessionRequest):
+    """
+    Validate session key from OpenClaw bridge.
+    Returns agent info if valid, for tool execution authentication.
+    
+    Session key format: ARTISAN-XXXX-XXXX (same as activation code for simplicity)
+    """
+    try:
+        supabase = get_supabase()
+        session_key = request.session_key.upper().strip()
+        
+        # Look up by activation code (for now, session_key = activation_code)
+        result = supabase.table("premium_subscriptions").select("*").eq(
+            "activation_code", session_key
+        ).eq("status", "active").execute()
+        
+        if not result.data:
+            return {
+                "success": False,
+                "error": "Invalid or expired session key"
+            }
+        
+        sub = result.data[0]
+        
+        # Check if subscription has been activated (code used)
+        if not sub.get("code_used_at"):
+            return {
+                "success": False,
+                "error": "Session key not yet activated. Use /start in Telegram first."
+            }
+        
+        logger.info(f"[OpenClaw] Session validated: {session_key[:10]}... → {sub['user_address'][:10]}")
+        
+        return {
+            "success": True,
+            "user_address": sub["user_address"],
+            "agent_address": sub.get("agent_address"),
+            "autonomy_mode": sub.get("autonomy_mode", "advisor"),
+            "expires_at": sub["expires_at"],
+            "telegram_connected": sub.get("telegram_chat_id") is not None
+        }
+        
+    except Exception as e:
+        logger.error(f"Validate session error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ImportAgentRequest(BaseModel):
+    """Import deployed agent wallet"""
+    user_address: str
+    agent_address: str
+
+
+@router.post("/import-agent")
+async def import_agent(request: ImportAgentRequest):
+    """
+    Import deployed agent wallet for trade execution.
+    Called by OpenClaw bridge after user activates their code.
+    """
+    try:
+        supabase = get_supabase()
+        user_address = request.user_address.lower()
+        agent_address = request.agent_address.lower()
+        
+        # Validate agent address format
+        if not agent_address.startswith("0x") or len(agent_address) != 42:
+            return {
+                "success": False,
+                "error": "Invalid agent address format"
+            }
+        
+        # Find active subscription
+        result = supabase.table("premium_subscriptions").select("*").eq(
+            "user_address", user_address
+        ).eq("status", "active").execute()
+        
+        if not result.data:
+            return {
+                "success": False,
+                "error": "No active subscription found for this address"
+            }
+        
+        sub = result.data[0]
+        
+        # Update subscription with agent address
+        supabase.table("premium_subscriptions").update({
+            "agent_address": agent_address
+        }).eq("id", sub["id"]).execute()
+        
+        logger.info(f"[OpenClaw] Agent imported: {agent_address[:10]}... → {user_address[:10]}")
+        
+        return {
+            "success": True,
+            "agent_address": agent_address,
+            "user_address": user_address,
+            "autonomy_mode": sub.get("autonomy_mode", "advisor"),
+            "message": "Agent wallet linked successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Import agent error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

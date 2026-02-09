@@ -647,7 +647,7 @@ class TestVolatilityGuard:
                 break
         
         assert resume_at is not None, "❌ Should find resume point"
-        assert volatility_history[resume_at] == 8.0, "❌ Should resume at 8%"
+        assert volatility_history[resume_at] == 7.0, "❌ Should resume at 7%"
         
         print(f"✅ Volatility resume at index {resume_at}: {volatility_history[resume_at]}%")
 

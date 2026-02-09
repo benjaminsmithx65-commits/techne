@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: techne-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    networks:
+      - techne-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Telegram Bot - Artisan Agent  
+  telegram-bot:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.telegram
+    container_name: techne-artisan-bot
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TECHNE_BACKEND_URL=http://backend:8000
+    networks:
+      - techne-network
+    depends_on:
+      - backend
+    volumes:
+      - bot-logs:/app/logs
+
+networks:
+  techne-network:
+    driver: bridge
+
+volumes:
+  bot-logs:

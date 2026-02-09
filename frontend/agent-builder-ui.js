@@ -475,7 +475,15 @@ class AgentBuilderUI {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.duration-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                this.config.duration = parseInt(btn.dataset.days);
+                // Handle both data-days and data-hours attributes
+                if (btn.dataset.days !== undefined) {
+                    this.config.duration = parseInt(btn.dataset.days) || 0;
+                } else if (btn.dataset.hours !== undefined) {
+                    // Convert hours to fractional days
+                    this.config.duration = parseInt(btn.dataset.hours) / 24;
+                } else {
+                    this.config.duration = 30; // Default fallback
+                }
                 // Clear custom inputs when preset selected
                 const customValue = document.getElementById('customDurationValue');
                 const customUnit = document.getElementById('customDurationUnit');
@@ -1076,9 +1084,19 @@ What would you like to configure?`;
                 const result = await response.json();
                 console.log('[AgentBuilder] Backend deployment result:', result, 'status:', response.status);
 
-                // Check HTTP status first (for 401, 400, 500 errors)
+                // Check HTTP status first (for 401, 400, 422, 500 errors)
                 if (!response.ok) {
-                    const errorMsg = result.detail || result.message || `HTTP ${response.status}`;
+                    // Handle Pydantic validation errors (422) - detail is an array
+                    let errorMsg;
+                    if (Array.isArray(result.detail)) {
+                        // Extract field names and messages from Pydantic errors
+                        errorMsg = result.detail.map(e => {
+                            const field = e.loc ? e.loc.join('.') : 'unknown';
+                            return `${field}: ${e.msg}`;
+                        }).join('; ');
+                    } else {
+                        errorMsg = result.detail || result.message || `HTTP ${response.status}`;
+                    }
                     throw new Error(errorMsg);
                 }
 
@@ -1203,7 +1221,10 @@ What would you like to configure?`;
                 console.error('[AgentBuilder] Backend API call failed:', apiError);
                 btn.innerHTML = '<span class="techne-icon">' + TechneIcons.settings + '</span> Deploy Agent';
                 btn.disabled = false;
-                alert('Deployment failed: ' + apiError.message);
+                // Extract error message properly from any error type
+                const errorMessage = apiError?.message || apiError?.detail ||
+                    (typeof apiError === 'string' ? apiError : JSON.stringify(apiError));
+                alert('Deployment failed: ' + errorMessage);
                 return;
             }
 
